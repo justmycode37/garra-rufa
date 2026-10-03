@@ -1,8 +1,6 @@
-<<<<<<< HEAD
 # garra-rufa
-Hack Nation Hackathon
-=======
-# garra-rufa sources
+
+Rare-disease research atlas for Hack Nation.
 
 Approved downloaders for the rare-disease atlas. Every fetch starts from a row in `src/garra/sources/catalog.py`. A file is kept only when the host is allowlisted, the body is larger than the empty-stub floor, and the expected header is present. The saved `manifest.json` records the publisher, license, canonical URL, resolved URL, time, byte size, and sha256.
 
@@ -44,5 +42,30 @@ PYTHONPATH=src python3 -m garra.atlas build
 PYTHONPATH=src python3 -m garra.atlas journey "Pompe disease"
 ```
 
-UI teammate should import `resolve_query`, `similar_diseases`, and `build_journey` from `garra`.
->>>>>>> 6586fa1 (Add atlas backend: sources, ingest, similarity, journey, and OpenAI explain.)
+For Python integrations, import `resolve_query` from `garra.graph.resolve`, `similar_diseases` from `garra.similarity`, and `build_journey` from `garra.actions.journey`.
+
+## Body-map UI bridge
+
+```bash
+PYTHONPATH=src python3 -m garra.ui --port 8787
+```
+
+Keep the terminal running. Open http://127.0.0.1:8787/ to see the routes, or `/api/body-map` for the symptom-menu JSON. This is the API backend, not a visual body-map frontend. See [the UI integration guide](docs/UI-BRIDGE.md) and [TypeScript client](examples/ui/atlas-client.ts).
+
+The live Monarch adapter returns phenotype similarity and matched terms. Verified biological claims, papers, and assets require a separate curated catalog. The 50/100 discovery filter is provisional, not a clinical threshold. The server binds locally and is intended for development.
+
+## Evidence-card example
+
+```bash
+PYTHONPATH=src python3 -m garra.atlas connections examples/connections-demo.json --html connections.html
+```
+
+This example is synthetic and explicitly labeled. See [the evidence contract](docs/CONNECTIONS.md).
+
+## Tests
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+
+Tests use fixtures and mocked upstream calls; no downloaded datasets or live API are required.

@@ -9,3 +9,9 @@ data/atlas.sqlite
 .DS_Store
 .env
 !.env.example
+
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+connections.html

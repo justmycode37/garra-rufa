@@ -1,0 +1,355 @@
+[
+  {
+    "subject": {
+      "id": "MONDO:0001540",
+      "name": "bagassosis",
+      "category": "biolink:Disease",
+      "subsets": [
+        "gard_rare",
+        "nord_rare",
+        "rare"
+      ]
+    },
+    "score": 0.95,
+    "similarity": {
+      "subject_termset": {
+        "HP:0001324": {
+          "id": "HP:0001324",
+          "label": "Muscle weakness"
+        }
+      },
+      "object_termset": {
+        "HP:0001324": {
+          "id": "HP:0001324",
+          "label": "Muscle weakness"
+        },
+        "HP:0001252": {
+          "id": "HP:0001252",
+          "label": "Hypotonia"
+        }
+      },
+      "subject_best_matches": {
+        "HP:0001324": {
+          "match_source": "HP:0001324",
+          "match_source_label": "Muscle weakness",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 1.0,
+          "match_subsumer": "HP:0001324",
+          "match_subsumer_label": "Muscle weakness",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001324",
+            "object_label": "Muscle weakness",
+            "object_source": null,
+            "ancestor_id": "HP:0001324",
+            "ancestor_label": "Muscle weakness",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 12.529000862954343,
+            "jaccard_similarity": 1.0,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 3.5396328712105642
+          }
+        }
+      },
+      "object_best_matches": {
+        "HP:0001324": {
+          "match_source": "HP:0001324",
+          "match_source_label": "Muscle weakness",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 1.0,
+          "match_subsumer": "HP:0001324",
+          "match_subsumer_label": "Muscle weakness",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001324",
+            "object_label": "Muscle weakness",
+            "object_source": null,
+            "ancestor_id": "HP:0001324",
+            "ancestor_label": "Muscle weakness",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 12.529000862954343,
+            "jaccard_similarity": 1.0,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 3.5396328712105642
+          }
+        },
+        "HP:0001252": {
+          "match_source": "HP:0001252",
+          "match_source_label": "Hypotonia",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 0.8,
+          "match_subsumer": "HP:0011804",
+          "match_subsumer_label": "Abnormal muscle physiology",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001252",
+            "object_label": "Hypotonia",
+            "object_source": null,
+            "ancestor_id": "HP:0011804",
+            "ancestor_label": "Abnormal muscle physiology",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 11.131853522571388,
+            "jaccard_similarity": 0.8,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 2.9842055589481618
+          }
+        }
+      },
+      "average_score": 0.95,
+      "best_score": 1.0,
+      "metric": "jaccard_similarity"
+    }
+  },
+  {
+    "subject": {
+      "id": "MONDO:0002782",
+      "name": "cranial nerve palsy",
+      "category": "biolink:Disease",
+      "subsets": [
+        "otar"
+      ]
+    },
+    "score": 0.95,
+    "similarity": {
+      "subject_termset": {
+        "HP:0001324": {
+          "id": "HP:0001324",
+          "label": "Muscle weakness"
+        }
+      },
+      "object_termset": {
+        "HP:0001324": {
+          "id": "HP:0001324",
+          "label": "Muscle weakness"
+        },
+        "HP:0001252": {
+          "id": "HP:0001252",
+          "label": "Hypotonia"
+        }
+      },
+      "subject_best_matches": {
+        "HP:0001324": {
+          "match_source": "HP:0001324",
+          "match_source_label": "Muscle weakness",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 1.0,
+          "match_subsumer": "HP:0001324",
+          "match_subsumer_label": "Muscle weakness",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001324",
+            "object_label": "Muscle weakness",
+            "object_source": null,
+            "ancestor_id": "HP:0001324",
+            "ancestor_label": "Muscle weakness",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 12.529000862954343,
+            "jaccard_similarity": 1.0,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 3.5396328712105642
+          }
+        }
+      },
+      "object_best_matches": {
+        "HP:0001324": {
+          "match_source": "HP:0001324",
+          "match_source_label": "Muscle weakness",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 1.0,
+          "match_subsumer": "HP:0001324",
+          "match_subsumer_label": "Muscle weakness",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001324",
+            "object_label": "Muscle weakness",
+            "object_source": null,
+            "ancestor_id": "HP:0001324",
+            "ancestor_label": "Muscle weakness",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 12.529000862954343,
+            "jaccard_similarity": 1.0,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 3.5396328712105642
+          }
+        },
+        "HP:0001252": {
+          "match_source": "HP:0001252",
+          "match_source_label": "Hypotonia",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 0.8,
+          "match_subsumer": "HP:0011804",
+          "match_subsumer_label": "Abnormal muscle physiology",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001252",
+            "object_label": "Hypotonia",
+            "object_source": null,
+            "ancestor_id": "HP:0011804",
+            "ancestor_label": "Abnormal muscle physiology",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 11.131853522571388,
+            "jaccard_similarity": 0.8,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 2.9842055589481618
+          }
+        }
+      },
+      "average_score": 0.95,
+      "best_score": 1.0,
+      "metric": "jaccard_similarity"
+    }
+  },
+  {
+    "subject": {
+      "id": "MONDO:0005971",
+      "name": "staphyloenterotoxemia",
+      "category": "biolink:Disease",
+      "subsets": [
+        "otar"
+      ]
+    },
+    "score": 0.95,
+    "similarity": {
+      "subject_termset": {
+        "HP:0001324": {
+          "id": "HP:0001324",
+          "label": "Muscle weakness"
+        }
+      },
+      "object_termset": {
+        "HP:0001324": {
+          "id": "HP:0001324",
+          "label": "Muscle weakness"
+        },
+        "HP:0001252": {
+          "id": "HP:0001252",
+          "label": "Hypotonia"
+        }
+      },
+      "subject_best_matches": {
+        "HP:0001324": {
+          "match_source": "HP:0001324",
+          "match_source_label": "Muscle weakness",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 1.0,
+          "match_subsumer": "HP:0001324",
+          "match_subsumer_label": "Muscle weakness",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001324",
+            "object_label": "Muscle weakness",
+            "object_source": null,
+            "ancestor_id": "HP:0001324",
+            "ancestor_label": "Muscle weakness",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 12.529000862954343,
+            "jaccard_similarity": 1.0,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 3.5396328712105642
+          }
+        }
+      },
+      "object_best_matches": {
+        "HP:0001324": {
+          "match_source": "HP:0001324",
+          "match_source_label": "Muscle weakness",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 1.0,
+          "match_subsumer": "HP:0001324",
+          "match_subsumer_label": "Muscle weakness",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001324",
+            "object_label": "Muscle weakness",
+            "object_source": null,
+            "ancestor_id": "HP:0001324",
+            "ancestor_label": "Muscle weakness",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 12.529000862954343,
+            "jaccard_similarity": 1.0,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 3.5396328712105642
+          }
+        },
+        "HP:0001252": {
+          "match_source": "HP:0001252",
+          "match_source_label": "Hypotonia",
+          "match_target": "HP:0001324",
+          "match_target_label": "Muscle weakness",
+          "score": 0.8,
+          "match_subsumer": "HP:0011804",
+          "match_subsumer_label": "Abnormal muscle physiology",
+          "similarity": {
+            "subject_id": "HP:0001324",
+            "subject_label": "Muscle weakness",
+            "subject_source": null,
+            "object_id": "HP:0001252",
+            "object_label": "Hypotonia",
+            "object_source": null,
+            "ancestor_id": "HP:0011804",
+            "ancestor_label": "Abnormal muscle physiology",
+            "ancestor_source": null,
+            "object_information_content": null,
+            "subject_information_content": null,
+            "ancestor_information_content": 11.131853522571388,
+            "jaccard_similarity": 0.8,
+            "cosine_similarity": null,
+            "dice_similarity": null,
+            "phenodigm_score": 2.9842055589481618
+          }
+        }
+      },
+      "average_score": 0.95,
+      "best_score": 1.0,
+      "metric": "jaccard_similarity"
+    }
+  }
+]

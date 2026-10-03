@@ -54,7 +54,10 @@ def upsert_disease(
         INSERT INTO disease (disease_key, primary_name, namespace, code)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(disease_key) DO UPDATE SET
-          primary_name = COALESCE(NULLIF(excluded.primary_name, ''), disease.primary_name)
+          primary_name = CASE
+            WHEN excluded.primary_name = excluded.disease_key THEN disease.primary_name
+            ELSE COALESCE(NULLIF(excluded.primary_name, ''), disease.primary_name)
+          END
         """,
         (disease_key, primary_name, namespace, code),
     )
@@ -176,7 +179,11 @@ def load_monarch_causal_gene_disease(conn: sqlite3.Connection) -> dict:
             gene_key = upsert_gene(conn, symbol=symbol, hgnc_id=hgnc)
             extra_aliases = [disease_name] if disease_name else []
             lower = (disease_name or "").lower()
-            if "pompe" in lower or "acid maltase" in lower or "glycogen storage disease ii" in lower:
+            if (
+                "pompe" in lower
+                or "acid maltase" in lower
+                or "glycogen storage disease ii" in lower
+            ):
                 extra_aliases.extend(["pompe disease", "pompe", "gsd ii", "gsd2"])
             upsert_disease(conn, disease_key, disease_name or disease_key, aliases=extra_aliases)
             conn.execute(
@@ -235,18 +242,33 @@ def load_hpo_disease_phenotype(conn: sqlite3.Connection) -> dict:
     with path.open(encoding="utf-8") as handle:
         header_seen = False
         for line in handle:
-            if line.startswith("#"):
-                continue
             if not header_seen:
-                if not line.startswith("database_id"):
+                header = line.lstrip("#").rstrip("\r\n")
+                if not header.startswith("database_id\t"):
                     continue
                 header_seen = True
-                headers = line.rstrip("\n").split("\t")
+                headers = header.split("\t")
+                if "hpo_id" not in headers:
+                    raise ValueError("HPO annotation file is missing hpo_id")
+                # Refresh this source inside the build transaction so a newly
+                # excluded or removed finding cannot survive a rebuild.
+                conn.execute("DELETE FROM edge_disease_phenotype WHERE source_id = ?", (source.id,))
                 continue
-            parts = line.rstrip("\n").split("\t")
+            if line.startswith("#"):
+                continue
+            parts = line.rstrip("\r\n").split("\t")
             if len(parts) < len(headers):
                 continue
             row = dict(zip(headers, parts, strict=False))
+            frequency = (row.get("frequency") or "").strip()
+            excluded_frequency = frequency == "HP:0040285" or bool(
+                re.fullmatch(r"0(?:\.0+)?%|0/[1-9]\d*", frequency)
+            )
+            if (row.get("qualifier") or "").strip().upper() == "NOT" or excluded_frequency:
+                # This table represents positive findings only. Never turn an
+                # excluded phenotype into positive similarity evidence.
+                stats["excluded_rows"] = stats.get("excluded_rows", 0) + 1
+                continue
             disease_id = (row.get("database_id") or "").strip()
             hpo_id = (row.get("hpo_id") or "").strip()
             if not disease_id or not hpo_id:
@@ -267,6 +289,8 @@ def load_hpo_disease_phenotype(conn: sqlite3.Connection) -> dict:
                 (disease_key, hpo_id, row.get("frequency") or "", source.id),
             )
             stats["rows"] += 1
+    if not header_seen:
+        raise ValueError("HPO annotation header was not found")
     stats["loaded"] = True
     return stats
 

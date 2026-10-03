@@ -16,8 +16,9 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 def _confidence(score: float, *, has_pathway: bool, has_phenotype: bool) -> str:
-    if has_pathway and score >= 0.15:
-        return "high"
+    # Overlap alone cannot establish a high-confidence biological mechanism.
+    if has_pathway and has_phenotype and score >= 0.2:
+        return "medium"
     if has_phenotype and score >= 0.2:
         return "medium"
     if score >= 0.25:
@@ -43,6 +44,14 @@ def similar_diseases(
                 "status": "not_found",
                 "message": f"No diseases linked to gene {gene_key}",
                 "neighbors": [],
+            }
+        unique_diseases = {d["disease_key"]: dict(d) for d in anchor_diseases}
+        if len(unique_diseases) > 1:
+            return {
+                "status": "ambiguous",
+                "neighbors": [],
+                "matches": list(unique_diseases.values()),
+                "message": "This gene is linked to multiple diseases. Select a disease_key to compare.",
             }
         disease_key = anchor_diseases[0]["disease_key"]
 
@@ -76,7 +85,7 @@ def similar_diseases(
         if not shared_genes and not shared_hpo and not shared_pathways:
             continue
 
-        warnings: list[str] = []
+        warnings: list[str] = ["UNVALIDATED_SIMILARITY", "MECHANISM_UNPROVEN"]
         reasons: list[str] = []
         if shared_pathways:
             reasons.append("shared_pathway")
@@ -87,21 +96,21 @@ def similar_diseases(
 
         if shared_genes and not shared_pathways and pheno_score < 0.15:
             warnings.append("SAME_GENE_SUBTYPE")
-        if pheno_score >= 0.2 and path_score < 0.05 and not shared_genes:
-            warnings.append("MECHANISM_UNPROVEN")
         if pheno_score > 0 and path_score == 0 and not shared_pathways:
             warnings.append("PHENOTYPE_ONLY")
 
-        assertion = "curated" if (shared_genes or shared_hpo) else "inferred"
-        if path_score > 0 and not shared_hpo:
-            assertion = "inferred"
+        # The derived disease connection is inferred even when source edges
+        # were curated; no direct disease-pair assertion is stored here.
+        assertion = "inferred"
 
         neighbors.append(
             {
                 "disease_key": other_key,
                 "name": row["primary_name"],
                 "score": round(score, 4),
-                "confidence": _confidence(score, has_pathway=bool(shared_pathways), has_phenotype=bool(shared_hpo)),
+                "confidence": _confidence(
+                    score, has_pathway=bool(shared_pathways), has_phenotype=bool(shared_hpo)
+                ),
                 "assertion": assertion,
                 "reasons": reasons,
                 "shared_genes": [genes_a.get(g, genes_b.get(g, g)) for g in shared_genes],
@@ -121,10 +130,16 @@ def similar_diseases(
     neighbors.sort(key=lambda item: item["score"], reverse=True)
     neighbors = neighbors[: max(1, min(limit, 25))]
 
-    anchor_name = next((d["primary_name"] for d in all_diseases if d["disease_key"] == disease_key), disease_key)
+    anchor_name = next(
+        (d["primary_name"] for d in all_diseases if d["disease_key"] == disease_key), disease_key
+    )
     return {
         "status": "ok" if neighbors else "not_found",
-        "anchor": {"disease_key": disease_key, "name": anchor_name, "genes": list(genes_a.values())},
+        "anchor": {
+            "disease_key": disease_key,
+            "name": anchor_name,
+            "genes": list(genes_a.values()),
+        },
         "neighbors": neighbors,
         "coverage": {
             "phenotype_edges": bool(pheno_a),

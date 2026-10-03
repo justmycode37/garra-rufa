@@ -10,16 +10,16 @@ from garra.sources.queries import search_clinicaltrials, search_pubmed, search_r
 
 
 def _search_terms(query: str, resolved: dict) -> list[str]:
-    terms = {query.strip()}
+    terms = [query.strip()]
     primary = resolved.get("primary") or {}
     if primary.get("kind") == "disease" and primary.get("name"):
-        terms.add(primary["name"])
+        terms.append(primary["name"])
     for match in resolved.get("matches") or []:
         if match.get("type") == "disease" and match.get("name"):
-            terms.add(match["name"])
+            terms.append(match["name"])
         if match.get("type") == "gene" and match.get("symbol"):
-            terms.add(match["symbol"])
-    return [t for t in terms if t]
+            terms.append(match["symbol"])
+    return list(dict.fromkeys(t for t in terms if t))
 
 
 def _condition_matches(record: dict, allow_tokens: set[str]) -> bool:
@@ -57,6 +57,15 @@ def build_journey(query: str, *, neighbor_limit: int = 5, live: bool = True) -> 
         similar = similar_diseases(gene_key=primary["gene_key"], limit=neighbor_limit)
     else:
         similar = similar_diseases(disease_key=primary["disease_key"], limit=neighbor_limit)
+
+    if similar.get("status") == "ambiguous":
+        return {
+            "status": "ambiguous",
+            "query": query,
+            "resolve": resolved,
+            "similar_diseases": similar,
+            "steps": [],
+        }
 
     terms = _search_terms(query, resolved)
     search_label = terms[0]

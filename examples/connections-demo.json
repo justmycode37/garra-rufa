@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "demo": true,
+  "anchor": {"id": "DEMO:A", "name": "Example disease A", "equivalent_ids": ["DEMO:A_ALIAS"]},
+  "papers": [{
+    "id": "P1", "title": "Synthetic example: assessing a shared cellular process",
+    "url": "https://example.org/papers/P1", "access": "unknown",
+    "study_type": "Illustrative laboratory study", "population": "Invented cell model; no patient cohort",
+    "limitations": "Demonstration content only; no actual publication or biological finding."
+  }],
+  "evidence": [
+    {"id": "E1", "source": "Synthetic paper record", "url": "https://example.org/papers/P1", "retrieved_at": "2026-10-03", "locator": "Illustrative results paragraph", "passage": "Invented example: both models showed a change in the measured cellular process.", "paper_ids": ["P1"]},
+    {"id": "E2", "source": "Synthetic counterevidence", "url": "https://example.org/papers/P1", "retrieved_at": "2026-10-03", "locator": "Illustrative limitations paragraph", "passage": "Invented example: responses differed between model systems, leaving compatibility unresolved.", "paper_ids": ["P1"]},
+    {"id": "E3", "source": "Synthetic asset catalog", "url": "https://example.org/assets/assay", "retrieved_at": "2026-10-03", "locator": "Illustrative access record", "paper_ids": []}
+  ],
+  "candidates": [{
+    "id": "DEMO:B", "name": "Example disease B",
+    "similarity": {"provider": "Synthetic fixture (not a Monarch response)", "metric": "jaccard_similarity", "value": 0.68, "release": "demo-v1", "retrieved_at": "2026-10-03", "source_url": "https://example.org/similarity"},
+    "coverage": {"phenotype": "available", "pathway": "available", "molecular_effect": "unknown"},
+    "claims": [
+      {"id": "C1", "relationship": "shared_pathway", "statement": "A shared cellular process offers a research lead.", "assessment": "supported", "reviewed": true, "supporting_evidence_ids": ["E1"], "contradicting_evidence_ids": [], "context": "Illustrative model-system pathway observation.", "limitations": "Does not establish an identical molecular effect or therapeutic response."},
+      {"id": "C2", "relationship": "shared_molecular_effect", "statement": "Compatibility of molecular effects remains unresolved.", "assessment": "hypothesis", "reviewed": false, "supporting_evidence_ids": ["E1"], "contradicting_evidence_ids": ["E2"], "context": "Different model systems.", "limitations": "Requires a disease-specific comparison."}
+    ],
+    "assets": [{"id": "A1", "name": "Example cellular assay protocol", "kind": "assay", "owner": "Example research group", "url": "https://example.org/assets/assay", "access_conditions": "Unknown; request protocol and permissions from owner.", "claim_ids": ["C1"], "evidence_ids": ["E3"], "reuse_checks": ["Confirm the assay measures the relevant process in the target disease.", "Check model compatibility, controls, licensing, and protocol availability."]}]
+  }]
+}

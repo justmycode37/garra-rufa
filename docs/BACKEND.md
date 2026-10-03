@@ -73,3 +73,7 @@ All responses are JSON-serifiable dicts with `status`, evidence fields, and `war
 | Orphadata products | Orpha ids, synonyms, richer resolve |
 
 No UI code lives here; import the functions above from Streamlit/React backend.
+
+## Ambiguous queries and local similarity
+
+Resolvers and gene-neighbor searches return `status: ambiguous` with candidate matches instead of silently choosing the first disease. Ask the user to select a stable identifier, then repeat the query. Local weighted overlap is an unvalidated discovery heuristic; derived connections are labeled inferred and cannot receive high biological confidence from pathway overlap alone. The body-map API uses the separate Monarch adapter described in `UI-BRIDGE.md`.
