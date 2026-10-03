@@ -16,12 +16,15 @@ uncertain_significance_for, oncogenic_for, ...). Trait nodes are MONDO when Clin
 knows the mapping, else ORPHA / OMIM / HP / MedGen, with the other ids as xrefs.
 A disease lookup only keeps variants that really list the queried id on a trait (TRID
 numbers are not prefix-specific, so "558" alone would also hit unrelated records).
+
+Extra data (Node.info of variant nodes): the ClinVar page url and the papers ClinVar
+links to the record (elink clinvar -> pubmed, one batched request per query; "refs").
 """
 import os
 import time
 
 from ._ols import interleave, slug
-from .base import TIMEOUT, Edge, Node, Source
+from .base import TIMEOUT, Edge, Node, Source, info
 
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 # NCBI allows 3 requests/s per IP without an API key, 10/s with one (env NCBI_API_KEY)
@@ -36,6 +39,8 @@ TRAIT_ORDER = ["MONDO", "ORPHA", "OMIM", "HP", "UMLS"]
 TRID = {"MONDO": ("MONDO", "MONDO_{}"), "ORPHA": ("ORPHA", "ORPHA{}"),
         "ORPHANET": ("ORPHA", "ORPHA{}"), "OMIM": ("OMIM", "{}"), "MIM": ("OMIM", "{}"),
         "HP": ("HP", "HP_{}"), "UMLS": ("UMLS", "{}"), "MEDGEN": ("UMLS", "{}")}
+PAGE = "https://www.ncbi.nlm.nih.gov/clinvar/variation/{}/"
+REFS_PER_VARIANT = 20
 CLASSIFICATIONS = ("germline_classification", "oncogenicity_classification",
                    "clinical_impact_classification")
 
@@ -82,7 +87,27 @@ class ClinVarSource(Source):
         if not ids:
             return []
         res = self._get("esummary", id=",".join(ids))["result"]
-        return [res[i] for i in res.get("uids", []) if i in res]
+        out = [res[i] for i in res.get("uids", []) if i in res]
+        cites = self._citations([v["uid"] for v in out])
+        for v in out:
+            v["_refs"] = cites.get(v["uid"], [])
+        return out
+
+    def _citations(self, uids: list[str]) -> dict[str, list[str]]:
+        """VariationID -> PMIDs ClinVar links to it (one elink, one linkset per id)."""
+        if not uids:
+            return {}
+        try:
+            d = self._get("elink", dbfrom="clinvar", db="pubmed", id=uids,
+                          linkname="clinvar_pubmed")
+        except Exception:
+            return {}
+        out = {}
+        for ls in d.get("linksets") or []:
+            pm = [f"PMID:{x}" for db in ls.get("linksetdbs") or [] for x in db.get("links") or []]
+            for uid in ls.get("ids") or []:
+                out[str(uid)] = pm[:REFS_PER_VARIANT]
+        return out
 
     # -- dispatch ----------------------------------------------------------
     def _query(self, node: Node, limit: int) -> list[Edge]:
@@ -125,7 +150,9 @@ class ClinVarSource(Source):
                 elif x["db_source"] == "ClinGen":
                     xr.append(f"ClinGen:{x['db_id']}")
         return Node(v.get("title") or v["uid"], f"ClinVar:{v['uid']}", "variant", self.name,
-                    tuple(dict.fromkeys(xr)))
+                    tuple(dict.fromkeys(xr)),
+                    info(url=PAGE.format(v["uid"]), refs=v.get("_refs"),
+                         genes=[g["symbol"] for g in v.get("genes") or [] if g.get("symbol")]))
 
     def _trait_ids(self, trait: dict) -> list[str]:
         ids = []
@@ -177,7 +204,7 @@ class ClinVarSource(Source):
                 groups.append([Edge(node, vn, "clinvar_record", self.name)])
             else:
                 src = Node(node.label, node.id, "variant", node.source,
-                           tuple(dict.fromkeys((*node.xrefs, *vn.xrefs))))
+                           tuple(dict.fromkeys((*node.xrefs, *vn.xrefs))), vn.info)
             groups.append([Edge(src, Node(g["symbol"], f"NCBIGene:{g['geneid']}", "gene",
                                           self.name), "in_gene", self.name)
                            for g in v.get("genes") or [] if g.get("geneid")])

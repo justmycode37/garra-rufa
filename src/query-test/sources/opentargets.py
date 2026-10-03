@@ -18,13 +18,20 @@ One GraphQL request per entity pulls every relation the platform has for it:
       parent_molecule / child_molecule
 Each record's cross-references (HGNC, UniProt, DrugBank, OMIM, Orphanet, ...) are put on
 the node so other sources' nodes merge with it. Free text: OT search ("matches").
+
+Extra data (Node.info): disease description + exact synonyms, target function
+descriptions, drug description, and the platform page url. Disease -> associated_target
+edges carry the PMIDs of OT's Europe PMC text-mining evidence for that pair
+(Edge.evidence; one extra request per disease, best-scored evidence first).
 """
 import re
 
 from ._ols import interleave, slug
-from .base import Edge, Node, Source
+from .base import Edge, Node, Source, info
 
 API = "https://api.platform.opentargets.org/api/v4/graphql"
+PAGE = "https://platform.opentargets.org/{}/{}"
+EVIDENCE_PER_TARGET = 10  # PMIDs kept per disease-target edge
 # OT disease id prefix <-> project CURIE prefix
 OT_TO_CURIE = {"Orphanet": "ORPHA", "MONDO": "MONDO", "EFO": "EFO", "HP": "HP",
                "OTAR": "OTAR", "GO": "GO", "UBERON": "UBERON", "CL": "CL", "MP": "MP",
@@ -38,6 +45,7 @@ GO_REL = {"F": "has_function", "P": "involved_in", "C": "located_in"}
 GO_KIND = {"F": "function", "P": "process", "C": "component"}
 
 TARGET_Q = """query($id:String!,$n:Int!){ target(ensemblId:$id){ id approvedSymbol
+ functionDescriptions
  dbXrefs{id source} proteinIds{id source}
  associatedDiseases(page:{index:0,size:$n}){rows{score disease{id name}}}
  drugAndClinicalCandidates{rows{maxClinicalStage drug{id name}}}
@@ -56,12 +64,13 @@ TARGET_Q = """query($id:String!,$n:Int!){ target(ensemblId:$id){ id approvedSymb
  tractability{label modality value}
 }}"""
 DISEASE_Q = """query($id:String!,$n:Int!){ disease(efoId:$id){ id name dbXRefs
+ description synonyms{relation terms}
  parents{id name} children{id name} therapeuticAreas{id name} directLocations{id name}
  associatedTargets(page:{index:0,size:$n}){rows{score target{id approvedSymbol}}}
  drugAndClinicalCandidates{rows{maxClinicalStage drug{id name}}}
  phenotypes(page:{index:0,size:$n}){rows{phenotypeHPO{id name} evidence{qualifierNot}}}
 }}"""
-DRUG_Q = """query($id:String!,$n:Int!){ drug(chemblId:$id){ id name
+DRUG_Q = """query($id:String!,$n:Int!){ drug(chemblId:$id){ id name description
  crossReferences{source ids} parentMolecule{id name} childMolecules{id name}
  mechanismsOfAction{rows{actionType targets{id approvedSymbol}}}
  indications{rows{maxClinicalStage disease{id name}}}
@@ -70,6 +79,8 @@ DRUG_Q = """query($id:String!,$n:Int!){ drug(chemblId:$id){ id name
 }}"""
 SEARCH_Q = """query($q:String!){ search(queryString:$q, entityNames:["target","disease","drug"],
  page:{index:0,size:25}){ hits{id name entity} } }"""
+LIT_Q = """query($id:String!,$t:[String!]!){ disease(efoId:$id){
+ evidences(ensemblIds:$t, datasourceIds:["europepmc"], size:500){ rows{ target{id} literature } } } }"""
 MAP_Q = """query($t:[String!]!,$e:[String!]!){ mapIds(queryTerms:$t, entityNames:$e){
  mappings{ term hits{id name entity} } } }"""
 
@@ -187,9 +198,26 @@ class OpenTargetsSource(Source):
             kind = "phenotype"
         return Node(name or cur, cur, kind, self.name)
 
-    def _src(self, node: Node, ot_curie: str, label: str, kind: str, xrefs) -> Node:
+    def _src(self, node: Node, ot_curie: str, label: str, kind: str, xrefs,
+             extra: dict | None = None) -> Node:
         return Node(node.label if node.id else label, node.id or ot_curie, kind, node.source,
-                    tuple(dict.fromkeys((*node.xrefs, ot_curie, *xrefs))))
+                    tuple(dict.fromkeys((*node.xrefs, ot_curie, *xrefs))), extra or {})
+
+    def _literature(self, ot_id: str, targets: list[str]) -> dict[str, tuple[str, ...]]:
+        """target ENSG -> PMIDs of the Europe PMC evidence for (disease, target)."""
+        if not targets:
+            return {}
+        try:
+            rows = (self._gql(LIT_Q, id=ot_id, t=targets).get("disease") or {})                 .get("evidences", {}).get("rows") or []
+        except Exception:
+            return {}
+        out: dict[str, list[str]] = {}
+        for r in rows:  # ordered by score
+            lst = out.setdefault((r.get("target") or {}).get("id"), [])
+            for pm in r.get("literature") or []:
+                if len(lst) < EVIDENCE_PER_TARGET and f"PMID:{pm}" not in lst:
+                    lst.append(f"PMID:{pm}")
+        return {k: tuple(v) for k, v in out.items()}
 
     # -- target --------------------------------------------------------------
     def _target(self, node: Node, ens: str, n: int, limit: int) -> list[Edge]:
@@ -199,7 +227,9 @@ class OpenTargetsSource(Source):
         xr = [f"HGNC:{x['id']}" for x in t.get("dbXrefs") or [] if x["source"] == "HGNC"]
         xr += [f"UniProtKB:{p['id']}" for p in t.get("proteinIds") or []
                if p["source"] == "uniprot_swissprot"]
-        src = self._src(node, f"ENSEMBL:{ens}", t["approvedSymbol"], "gene", xr)
+        src = self._src(node, f"ENSEMBL:{ens}", t["approvedSymbol"], "gene", xr,
+                        info(description=" ".join(t.get("functionDescriptions") or []),
+                             url=PAGE.format("target", ens)))
 
         def mk(rel, dst):
             return Edge(src, dst, rel, self.name)
@@ -279,10 +309,14 @@ class OpenTargetsSource(Source):
             return []
         xr = [_xref(x) for x in d.get("dbXRefs") or [] if re.match(r"^[\w.]+:\S+$", x)]
         kind = "phenotype" if ot_id.startswith("HP_") else "disease"
-        src = self._src(node, _curie(ot_id), d["name"], kind, xr)
+        syn = [x for s in d.get("synonyms") or [] if s.get("relation") == "hasExactSynonym"
+               for x in s.get("terms") or []]
+        src = self._src(node, _curie(ot_id), d["name"], kind, xr,
+                        info(description=d.get("description"), synonyms=syn,
+                             url=PAGE.format("disease", ot_id)))
 
-        def mk(rel, dst):
-            return Edge(src, dst, rel, self.name)
+        def mk(rel, dst, evidence=()):
+            return Edge(src, dst, rel, self.name, evidence)
 
         g: list[list[Edge]] = []
         for key, rel in (("parents", "subclass_of"), ("children", "has_subclass"),
@@ -290,9 +324,12 @@ class OpenTargetsSource(Source):
             g.append([mk(rel, self._dis(x["id"], x["name"], kind)) for x in d.get(key) or []])
         g.append([mk("located_in", self._dis(x["id"], x["name"], "anatomy"))
                   for x in d.get("directLocations") or []])
+        targets = (d.get("associatedTargets") or {}).get("rows") or []
+        lit = self._literature(ot_id, [r["target"]["id"] for r in targets])
         g.append([mk("associated_target", self._gene(r["target"]["id"],
-                                                     r["target"]["approvedSymbol"]))
-                  for r in (d.get("associatedTargets") or {}).get("rows") or []])
+                                                     r["target"]["approvedSymbol"]),
+                     lit.get(r["target"]["id"], ()))
+                  for r in targets])
         drugs = [r for r in (d.get("drugAndClinicalCandidates") or {}).get("rows") or []
                  if r.get("drug")]
         drugs.sort(key=lambda r: _stage_rank(r.get("maxClinicalStage")))
@@ -312,7 +349,9 @@ class OpenTargetsSource(Source):
             return []
         xr = [f"{XREF_PREFIX.get(x['source'], x['source'])}:{i}"
               for x in d.get("crossReferences") or [] for i in x.get("ids") or []]
-        src = self._src(node, f"ChEMBL:{chembl}", d["name"], "drug", xr)
+        src = self._src(node, f"ChEMBL:{chembl}", d["name"], "drug", xr,
+                        info(description=d.get("description"),
+                             url=PAGE.format("drug", chembl)))
 
         def mk(rel, dst):
             return Edge(src, dst, rel, self.name)

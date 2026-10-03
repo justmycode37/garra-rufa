@@ -9,9 +9,14 @@ has_subclass = narrower descriptor) and MeSH "see also" links (any tree; e.g. Ao
 Aortography). Descriptors outside tree A (diseases, drugs, ... which MONDO/Orphanet
 xref as MESH:*) return [] since only the anatomy tree is in scope. Free text: exact
 descriptor name, only when it is an anatomy descriptor.
+
+Extra data: every MESH:D* descriptor (any tree) gets its heading, tree numbers, scope note
+and MeSH browser url as Node.info (mesh_heading is what PubMed's [MeSH Terms] search
+needs). For a node that only carries a non-anatomy MeSH xref (a disease) this is the
+one edge returned: node --mesh_heading--> the labelled MESH:D* node.
 """
 from ._ols import interleave
-from .base import Edge, Node, Source
+from .base import Edge, Node, Source, info
 
 BASE = "https://id.nlm.nih.gov/mesh"
 # tree letter -> node kind (for "see also" targets outside anatomy)
@@ -31,6 +36,12 @@ SELECT ?rel ?d ?label ?tn WHERE {
   ?d rdfs:label ?label .
   OPTIONAL { ?d meshv:treeNumber ?t . BIND(STRAFTER(STR(?t), "mesh/") AS ?tn) }
 }"""
+
+
+NOTE_QUERY = """PREFIX meshv: <http://id.nlm.nih.gov/mesh/vocab#>
+PREFIX mesh: <http://id.nlm.nih.gov/mesh/>
+SELECT ?note WHERE { mesh:%(id)s meshv:preferredConcept ?c . ?c meshv:scopeNote ?note }"""
+PAGE = "https://meshb.nlm.nih.gov/record/ui?ui={}"
 
 
 class MeshSource(Source):
@@ -78,11 +89,31 @@ class MeshSource(Source):
                              "matches", self.name)]
         return []
 
+    def _info(self, did: str, rec: dict) -> dict:
+        try:
+            b = self.get_json(f"{BASE}/sparql", params={
+                "query": NOTE_QUERY % {"id": did}, "format": "JSON", "inference": "false"})
+            note = next((x["note"]["value"] for x in b["results"]["bindings"]), None)
+        except Exception:
+            note = None
+        return info(description=note, mesh_heading=rec["label"], mesh_trees=sorted(rec["trees"]),
+                    url=PAGE.format(did))
+
     def _relations(self, node: Node, did: str, limit: int) -> list[Edge]:
         recs = self._records(did)
         me = recs.get(("self", did))
-        if not me or not self._anatomy(me):
+        if not me:
             return []
+        if not self._anatomy(me):
+            if node.id == f"MESH:{did}":
+                return []
+            kind = TREE_KIND.get(min(me["trees"] or {"?"})[0], "term")
+            dst = Node(me["label"], f"MESH:{did}", kind, self.name, info=self._info(did, me))
+            src = Node(node.label, node.id, node.kind, node.source, node.xrefs,
+                       info(mesh_heading=me["label"]))
+            return [Edge(src, dst, "mesh_heading", self.name)]
+        node = Node(node.label, node.id, node.kind, node.source, node.xrefs,
+                    self._info(did, me))
         groups: dict[str, list[Edge]] = {}
         for (rel, other), rec in sorted(recs.items(), key=lambda kv: min(kv[1]["trees"] or {""})):
             if rel == "self" or other == did:

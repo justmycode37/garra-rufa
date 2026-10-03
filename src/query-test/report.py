@@ -168,7 +168,18 @@ def write_report(g: nx.MultiDiGraph, edges: list[Edge], ents, start, stats: Stat
         d = g.nodes[main]
         w(f"## Profile of focus entity: {d['label']} `{main}`\n")
         w(f"- sources: {', '.join(sorted(d['sources']))}")
-        w(f"- ids/xrefs: {', '.join(sorted(d['xrefs']))[:600]}\n")
+        w(f"- ids/xrefs: {', '.join(sorted(d['xrefs']))[:600]}")
+        info = d.get("info") or {}
+        descs = info.get("descriptions") or {}
+        if descs:
+            src, text = next(iter(descs.items()))
+            w(f"- description <{src}> (of {len(descs)}): {text[:400]}")
+        if info.get("synonyms"):
+            w(f"- synonyms: {'; '.join(info['synonyms'][:12])}")
+        cited = {r for *_, ev in g.edges(main, data="evidence") for r in ev or ()}
+        cited |= {r for _, _, ev in g.in_edges(main, data="evidence") for r in ev or ()}
+        w(f"- papers: {len(info.get('refs') or [])} cited for the entity, {len(cited)} as "
+          f"evidence of its edges (literature/main.py collects them)\n")
         groups: dict[str, dict] = defaultdict(lambda: defaultdict(lambda: (set(), set())))
         for u, v, ed in g.edges(data=True):
             if main not in (u, v):

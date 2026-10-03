@@ -12,6 +12,8 @@ Used for:
   - specificity of a phenotype (information content, ic): "Arachnodactyly" is informative,
     "Autosomal dominant inheritance" or "Failure to thrive" are not
   - frequency labels -> numbers (freq_value), also for JAX / Monarch frequency strings
+  - the papers behind each disease-phenotype annotation (references(): PMIDs of the
+    hpoa `reference` column), used as Edge.evidence by the hpo source
 
 Scoring (rank_diseases): for each query symptom q, a disease gets the information content
 of the most informative term it shares with q's ancestors (q itself, or one of q's
@@ -109,6 +111,8 @@ class HpoData:
         self.ann: dict[str, dict[str, float]] = d["ann"]  # disease -> {hp: freq}
         self.dname: dict[str, str] = d["dname"]
         self.count: dict[str, int] = d["count"]  # term -> diseases annotated (propagated)
+        # (disease, hp) -> PMIDs of the annotation
+        self.refs: dict[tuple[str, str], tuple[str, ...]] = d["refs"]
         self.n = len(self.ann)
         self.children: dict[str, set[str]] = {}
         for c, ps in self.parents.items():
@@ -149,6 +153,11 @@ class HpoData:
                         todo.append(c)
             self._desc[hp] = frozenset(out)
         return self._desc[hp]
+
+    def references(self, disease: str, hp: str) -> tuple[str, ...]:
+        """PMIDs cited for "disease has phenotype hp" (disease: OMIM:/ORPHA:/DECIPHER:)."""
+        disease = disease.replace("ORPHANET:", "ORPHA:").replace("Orphanet:", "ORPHA:")
+        return self.refs.get((disease, self.alt.get(hp, hp)), ())
 
     def is_inheritance(self, hp: str) -> bool:
         return INHERITANCE in self.ancestors(self.alt.get(hp, hp))
@@ -314,6 +323,7 @@ def _parse(session: requests.Session) -> dict:
 
     ann: dict[str, dict[str, float]] = {}
     dname: dict[str, str] = {}
+    refs: dict[tuple[str, str], tuple[str, ...]] = {}
     with open(hpoa, encoding="utf-8") as f:
         rows = (line for line in f if not line.startswith("#"))
         for r in csv.DictReader(rows, delimiter="\t"):
@@ -324,6 +334,9 @@ def _parse(session: requests.Session) -> dict:
                 continue
             dis = r["database_id"].replace("ORPHANET:", "ORPHA:")
             dname.setdefault(dis, r["disease_name"])
+            pm = [x for x in (r.get("reference") or "").split(";") if x.startswith("PMID:")]
+            if pm:
+                refs[(dis, hp)] = tuple(dict.fromkeys((*refs.get((dis, hp), ()), *pm)))
             fv = freq_value(r.get("frequency"))
             if fv <= 0:
                 continue
@@ -331,7 +344,7 @@ def _parse(session: requests.Session) -> dict:
             d[hp] = max(d.get(hp, 0), fv)
 
     data = {"name": name, "parents": parents, "alt": alt, "exact": exact, "related": related,
-            "ann": ann, "dname": dname, "count": {}}
+            "ann": ann, "dname": dname, "count": {}, "refs": refs}
     tmp = HpoData(data)
     count: dict[str, int] = {}
     for dis in ann:
@@ -353,9 +366,14 @@ def load(session: requests.Session | None = None) -> HpoData | None:
         if _data is not None or _failed:
             return _data
         try:
+            d = None
             if PICKLE.exists():
                 with open(PICKLE, "rb") as f:
-                    _data = HpoData(pickle.load(f))
+                    d = pickle.load(f)
+                if "refs" not in d:  # pickle from before references were kept: re-parse
+                    d = None
+            if d is not None:
+                _data = HpoData(d)
             else:
                 if session is None:
                     session = requests.Session()

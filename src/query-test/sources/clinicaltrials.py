@@ -18,9 +18,13 @@ Trials are ranked recruiting / active first, then by last update. Per trial: the
 and collaborators ("collaborator"), and the affiliations of its overall officials
 ("investigator_affiliation"). Organisations are CTGOV.ORG:<slug> ("organisation"), so
 a sponsor running several trials of the disease becomes a hub.
+
+Extra data (Node.info of trial nodes): brief summary, ClinicalTrials.gov url, status,
+and the study's literature references ("refs": PMIDs; "ref_types" PMID -> BACKGROUND /
+RESULT / DERIVED, RESULT/DERIVED being publications of the trial's own results).
 """
 from . import _groups
-from .base import Edge, Node, Source
+from .base import Edge, Node, Source, info
 
 API = "https://clinicaltrials.gov/api/v2/studies"
 FIELDS = ",".join([
@@ -31,6 +35,8 @@ FIELDS = ",".join([
     "protocolSection.sponsorCollaboratorsModule",
     "protocolSection.contactsLocationsModule.overallOfficials",
     "protocolSection.conditionsModule",
+    "protocolSection.descriptionModule.briefSummary",
+    "protocolSection.referencesModule.references",
     "derivedSection.conditionBrowseModule.meshes",
 ])
 STATUS_RANK = ["RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION",
@@ -103,8 +109,14 @@ class ClinicalTrialsSource(Source):
             nct = p["identificationModule"]["nctId"]
             status = p.get("statusModule", {}).get("overallStatus", "").replace("_", " ").lower()
             title = p["identificationModule"].get("briefTitle") or nct
+            refs = [r for r in (p.get("referencesModule") or {}).get("references") or []
+                    if str(r.get("pmid") or "").isdigit()]
             trial = Node(f"{title} [{status}]" if status else title, f"NCT:{nct}",
-                         "clinical_trial", self.name)
+                         "clinical_trial", self.name, info=info(
+                             description=(p.get("descriptionModule") or {}).get("briefSummary"),
+                             url=f"https://clinicaltrials.gov/study/{nct}", status=status,
+                             refs=[f"PMID:{int(r['pmid'])}" for r in refs],
+                             ref_types={f"PMID:{int(r['pmid'])}": r.get("type") for r in refs}))
             edges = [Edge(node, trial, "clinical_trial", self.name)]
             sc = p.get("sponsorCollaboratorsModule") or {}
             lead = (sc.get("leadSponsor") or {}).get("name")

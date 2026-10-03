@@ -23,7 +23,7 @@ their HPA id as xref, so a tissue / cell type / brain region node is looked up i
 reverse: genes enriched (then enhanced) in it.
 """
 from ._ols import exact_match, interleave
-from .base import Edge, Node, Source
+from .base import Edge, Node, Source, info
 
 BASE = "https://www.proteinatlas.org"
 SEARCH = f"{BASE}/api/search_download.php"
@@ -130,7 +130,10 @@ class HpaSource(Source):
         d = self.get_json(f"{BASE}/{ens}.json")
         xr = [f"ENSEMBL:{ens}", *(f"UniProtKB:{u}" for u in d.get("Uniprot") or [])]
         src = Node(node.label if node.id else d.get("Gene") or ens, node.id or f"ENSEMBL:{ens}",
-                   "gene", node.source, tuple(dict.fromkeys((*node.xrefs, *xr))))
+                   "gene", node.source, tuple(dict.fromkeys((*node.xrefs, *xr))),
+                   info(full_name=d.get("Gene description"),
+                        synonyms=d.get("Gene synonym"),
+                        url=f"https://www.proteinatlas.org/{ens}"))
 
         def mk(rel, dst):
             return Edge(src, dst, rel, self.name)

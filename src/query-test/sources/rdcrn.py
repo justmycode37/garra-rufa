@@ -23,6 +23,7 @@ import html
 import json
 import re
 import threading
+from urllib.parse import urljoin
 
 from . import _groups
 from .base import Edge, Node, Source
@@ -123,7 +124,8 @@ class RdcrnSource(Source):
             acr = _ACRONYM.search(name)
             key = (link.group(1) if link else acr.group(1) if acr else _groups.slug(name))
             consortium = Node(name, f"RDCRN:{key.lower()}", "research_consortium", self.name,
-                              (f"WEB:rdcrn.org/{key.lower()}",) if link else ())
+                              (f"WEB:rdcrn.org/{key.lower()}",) if link else (),
+                              {"url": f"https://www.rdcrn.org/{key.lower()}"} if link else {})
         s0, p0 = _STUDIES.search(block), _PAGS.search(block)
         studies = []
         if s0:
@@ -137,7 +139,8 @@ class RdcrnSource(Source):
                 num = title.split(":", 1)[0].strip()
                 sid = num if num.isdigit() else href.rstrip("/").rsplit("/", 1)[-1]
                 label = f"{title} [{status}]" if status else title
-                studies.append(Node(label, f"RDCRN.STUDY:{sid}", "research_study", self.name))
+                studies.append(Node(label, f"RDCRN.STUDY:{sid}", "research_study", self.name,
+                                    info={"url": urljoin(BASE, href)} if href else {}))
         pags = []
         if p0:
             for href, name in _PAG.findall(block[p0.start():]):

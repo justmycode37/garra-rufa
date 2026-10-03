@@ -9,11 +9,16 @@ variant/chemical/inheritance, gene-GO/interaction/homology/expression/phenotype,
 patient-level CaseTo* and GenotypeTo* associations are deliberately not used.
 Monarch's canonical IDs are MONDO (disease), HP (phenotype) and HGNC (human gene);
 other CURIEs (OMIM, ORPHA, ...) are resolved through xref search.
+
+Extra data: the queried entity gets its description, exact synonyms, full name (genes)
+and Monarch page url (Node.info); association edges carry the association's
+`publications` (PMIDs, DOIs) as Edge.evidence.
 """
 from ._hpoa import freq_value
-from .base import Edge, Node, Source
+from .base import Edge, Node, Source, info, refs
 
 API = "https://api-v3.monarchinitiative.org/v3/api"
+PAGE = "https://monarchinitiative.org/{}"
 DP = "biolink:DiseaseToPhenotypicFeatureAssociation"
 CAUSAL = "biolink:CausalGeneToDiseaseAssociation"
 CORREL = "biolink:CorrelatedGeneToDiseaseAssociation"
@@ -126,11 +131,17 @@ class MonarchSource(Source):
 
     def _relations(self, node: Node, mid: str, limit: int) -> list[Edge]:
         kind = CANONICAL[mid.split(":")[0]]
-        src = Node(node.label, id=mid, kind=kind, source=node.source, xrefs=node.xrefs)
+        try:
+            ent = self.get_json(f"{API}/entity/{mid}")
+        except Exception:
+            ent = {}
+        src = Node(node.label, id=mid, kind=kind, source=node.source, xrefs=node.xrefs,
+                   info=info(description=ent.get("description"),
+                             synonyms=ent.get("exact_synonym"), full_name=ent.get("full_name"),
+                             url=PAGE.format(mid)))
         groups: list[list[Edge]] = []
 
         if kind in ("disease", "phenotype"):
-            ent = self.get_json(f"{API}/entity/{mid}")
             hier = ent.get("node_hierarchy") or {}
             for rel, key in (("subclass_of", "super_classes"), ("has_subclass", "sub_classes")):
                 groups.append([Edge(src, self._mknode(h["id"], h.get("name"), h.get("category")),
@@ -153,7 +164,8 @@ class MonarchSource(Source):
                 items = sorted(items, key=lambda it: -_frequency(it))
             pre = "object" if direction == "obj" else "subject"
             groups.append([Edge(src, self._mknode(it[pre], it.get(pre + "_label"),
-                                                  it.get(pre + "_category")), rel, self.name)
+                                                  it.get(pre + "_category")), rel, self.name,
+                                tuple(refs(it.get("publications"))))
                            for it in items])
 
         # round-robin over relation groups so one big group cannot crowd out the rest

@@ -47,6 +47,28 @@ def _prefix(curie: str) -> str:
     return curie.split(":", 1)[0]
 
 
+PER_SOURCE = {"description": "descriptions", "url": "urls"}  # Node.info key -> entity key
+
+
+def merge_info(into: dict, info, source: str | None = None):
+    """Merge a node's info into an entity's: descriptions and urls are kept per source
+    (`descriptions` / `urls` {source: value}), lists are unioned, other values: first
+    wins."""
+    for k, v in list((info or {}).items()):
+        if k in PER_SOURCE:
+            into.setdefault(PER_SOURCE[k], {}).setdefault(source or "?", v)
+        elif k in PER_SOURCE.values():
+            for s, t in list(v.items()):
+                into.setdefault(k, {}).setdefault(s, t)
+        elif isinstance(v, (list, tuple)):
+            into[k] = list(dict.fromkeys([*into.get(k, []), *v]))
+        elif isinstance(v, dict):
+            for kk, vv in v.items():
+                into.setdefault(k, {}).setdefault(kk, vv)
+        else:
+            into.setdefault(k, v)
+
+
 def _is_placeholder(node: Node) -> bool:
     """Nodes built from a bare xref carry their CURIE as label (e.g. "OMIM:154700")."""
     return bool(CURIE.match(node.label))
@@ -68,7 +90,8 @@ class Entities:
     def _new(self, key: str) -> str:
         self._parent[key] = key
         self._ent[key] = {"ids": {key}, "xrefs": set(), "label": None, "kind": "unknown",
-                          "real": False, "sources": set(), "queried": set(), "id_labels": {}}
+                          "real": False, "sources": set(), "queried": set(), "id_labels": {},
+                          "info": {}}
         return key
 
     def union(self, a: str, b: str) -> bool:
@@ -90,6 +113,7 @@ class Entities:
         ea["queried"] |= eb["queried"]
         for i, lab in eb["id_labels"].items():
             ea["id_labels"].setdefault(i, lab)
+        merge_info(ea["info"], eb["info"])
         if eb["real"] and not ea["real"]:
             ea.update(label=eb["label"], kind=eb["kind"], real=True)
         elif ea["kind"] in ("unknown", "term"):
@@ -113,8 +137,10 @@ class Entities:
             keys.append(f"SYMBOL:{node.label.upper()}")  # HGNC symbols are unique ids
         return list(dict.fromkeys(keys))
 
-    def add(self, node: Node) -> str:
-        """Register a node, merging it into any entity it shares an identifier with."""
+    def add(self, node: Node, via: str | None = None) -> str:
+        """Register a node, merging it into any entity it shares an identifier with.
+        `via`: the source that returned it (its info is credited to that source; a
+        returned query node keeps the source name of whoever first found it)."""
         keys = self._identity_keys(node)
         for k in keys:
             if k not in self._parent:
@@ -124,6 +150,7 @@ class Entities:
         e = self._ent[self.find(keys[0])]
         e["xrefs"] |= {normalize(x) for x in node.xrefs if ":" in x}
         e["sources"].add(node.source)
+        merge_info(e["info"], node.info, via or node.source)
         real = not _is_placeholder(node)
         if real and node.id:
             e["id_labels"].setdefault(normalize(node.id), node.label)
@@ -148,7 +175,7 @@ class Entities:
         e = self.record(root)
         key = self.key(root)
         if key.startswith("term:"):
-            return Node(e["label"], kind=e["kind"])
+            return Node(e["label"], kind=e["kind"], info=e["info"])
         rank = {p: i for i, p in enumerate(PRIORITY)}
         # several ids of one prefix (MONDO maps Marfan syndrome to ORPHA:558 and to its
         # subtype ORPHA:284963): the id whose own label is the entity's label comes first,
@@ -161,7 +188,8 @@ class Entities:
                     0 if lab and lab.lower() == name else 1 if lab else 2, i)
         others = sorted(e["ids"] - {key}, key=order)
         xrefs = tuple(dict.fromkeys(others + sorted(e["xrefs"] - e["ids"])))
-        return Node(e["label"], id=key, kind=e["kind"], source=min(e["sources"]), xrefs=xrefs)
+        return Node(e["label"], id=key, kind=e["kind"], source=min(e["sources"]), xrefs=xrefs,
+                    info=e["info"])
 
     def mark_queried(self, root: str, source: str) -> bool:
         """True the first time `source` is asked about this entity, False afterwards."""

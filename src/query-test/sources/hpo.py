@@ -9,11 +9,18 @@ Base URL: https://ontology.jax.org/api
   /network/search/disease|gene?q=  disease / gene search (also maps MONDO/HGNC via label)
 Diseases are returned as MONDO CURIEs when HPO knows the mapping (original
 OMIM/ORPHA id kept in xrefs); genes use NCBIGene CURIEs.
+
+Extra data: phenotype terms carry their definition, synonyms and publication references
+(/hp/terms/{id}), diseases their description and HPO page url (Node.info). Disease <->
+phenotype edges carry the PMIDs of the HPO annotation (phenotype.hpoa, via _hpoa) as
+Edge.evidence.
 """
+from . import _hpoa
 from ._hpoa import freq_value
-from .base import Edge, Node, Source, similar
+from .base import Edge, Node, Source, info, refs, similar
 
 API = "https://ontology.jax.org/api"
+PAGE = "https://hpo.jax.org/browse/{}/{}"
 HPO_DISEASE_PREFIXES = {"OMIM", "ORPHA", "DECIPHER"}
 
 
@@ -95,8 +102,22 @@ class HpoSource(Source):
                     return self._from_gene(node, g["id"], limit)
         return []
 
+    @staticmethod
+    def _evidence(disease: str, hp: str) -> tuple[str, ...]:
+        h = _hpoa.load()
+        return h.references(disease, hp) if h else ()
+
+    def _term_info(self, hp: str) -> dict:
+        try:
+            t = self.get_json(f"{API}/hp/terms/{hp}")
+        except Exception:
+            return info(url=PAGE.format("term", hp))
+        return info(description=t.get("definition"), synonyms=t.get("synonyms"),
+                    refs=refs(t.get("publicationReferences")), url=PAGE.format("term", hp))
+
     def _from_term(self, node: Node, hp: str, limit: int) -> list[Edge]:
-        src = Node(node.label, id=hp, kind="phenotype", source=node.source, xrefs=node.xrefs)
+        src = Node(node.label, id=hp, kind="phenotype", source=node.source, xrefs=node.xrefs,
+                   info=self._term_info(hp))
         edges: list[Edge] = []
         n = max(1, limit // 4)
         for rel, path in (("subclass_of", "parents"), ("has_subclass", "children")):
@@ -108,15 +129,18 @@ class HpoSource(Source):
             room = limit - len(edges) if key == "diseases" else limit - len(edges)
             take = max(1, room // 2) if key == "diseases" else max(0, room)
             for d in (ann.get(key) or [])[:take]:
-                edges.append(Edge(src, maker(d), rel, self.name))
+                ev = self._evidence(d["id"], hp) if key == "diseases" else ()
+                edges.append(Edge(src, maker(d), rel, self.name, ev))
         return edges[:limit]
 
     def _from_disease(self, node: Node, did: str, limit: int) -> list[Edge]:
         ann = self.get_json(f"{API}/network/annotation/{did}")
-        info = ann.get("disease") or {}
-        src = Node(node.label, id=node.id or info.get("mondoId") or did,
+        dis = ann.get("disease") or {}
+        src = Node(node.label, id=node.id or dis.get("mondoId") or did,
                    kind="disease", source=node.source,
-                   xrefs=tuple(dict.fromkeys((*node.xrefs, did))))
+                   xrefs=tuple(dict.fromkeys((*node.xrefs, did))),
+                   info=info(description=dis.get("description"),
+                              url=PAGE.format("disease", did)))
         n_gene = max(1, limit // 4)
         edges = [Edge(src, self._gene(g), "gene_associated", self.name)
                  for g in (ann.get("genes") or [])[:n_gene]]
@@ -132,7 +156,8 @@ class HpoSource(Source):
                     f = freq_value((items[pos].get("metadata") or {}).get("frequency"))
                     ranked.append((f, len(ranked), items[pos]))
         ranked.sort(key=lambda r: (-r[0], r[1]))
-        edges += [Edge(src, self._phen(p), "has_phenotype", self.name)
+        edges += [Edge(src, self._phen(p), "has_phenotype", self.name,
+                       self._evidence(did, p["id"]))
                   for f, _, p in ranked[:max(0, limit - len(edges))] if f > 0]
         return edges[:limit]
 

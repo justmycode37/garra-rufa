@@ -24,6 +24,11 @@ Usage:
   python src/query-test/main.py "Marfan syndrome" -n 3 --limit 5 --sources mondo hpo
   python src/query-test/main.py MONDO:0007947 --label "Marfan syndrome" -o graph.png
   python src/query-test/main.py --symptoms "tall stature" arachnodactyly "ectopia lentis" -o run.md
+  python src/query-test/main.py "Marfan syndrome" -o runs/marfan.json   # -> literature/main.py
+
+Besides ids, sources attach what else they know to nodes (Node.info: descriptions,
+synonyms, urls, cited papers) and to edges (Edge.evidence: PMIDs backing the association).
+The .json output keeps all of it; the literature pipeline (literature/main.py) reads it.
 """
 import argparse
 import re
@@ -164,8 +169,8 @@ def run(start: Node, sources, iterations: int, limit: int, max_frontier: int,
                 found += got
         print(f"\n=== Iteration {i}: {len(frontier)} inputs -> {len(found)} edges ===")
         for e in found:
-            ents.add(e.src)  # sources may return the input with extra ids/xrefs
-            ents.add(e.dst)
+            ents.add(e.src, e.source)  # sources may return the input with extra ids/info
+            ents.add(e.dst, e.source)
             if e.relation == "xref":  # exact mapping: same entity
                 ents.merge_xref(e.src.key(), e.dst.key())
         kept = _filter(found, start, ents, stats, name_hits=free_text and i == 1)
@@ -243,11 +248,33 @@ def build_graph(edges: list[Edge], ents: Entities) -> nx.MultiDiGraph:
             if k not in g:
                 r = ents.record(k)
                 g.add_node(k, label=r["label"], kind=r["kind"], sources=set(r["sources"]),
-                           xrefs=(r["ids"] | r["xrefs"]) - {k})
+                           xrefs=(r["ids"] | r["xrefs"]) - {k}, info=r["info"])
         # keyed by relation+source: the same fact reported twice by one source is one edge,
         # the same fact from different sources stays visible as parallel edges
-        g.add_edge(u, v, key=f"{e.relation}|{e.source}", relation=e.relation, source=e.source)
+        key = f"{e.relation}|{e.source}"
+        old = g.get_edge_data(u, v, key)
+        evidence = list(dict.fromkeys([*(old["evidence"] if old else ()), *e.evidence]))
+        g.add_edge(u, v, key=key, relation=e.relation, source=e.source, evidence=evidence)
     return g
+
+
+def write_json(g: nx.MultiDiGraph, start_key: str, focus: list[str], args, path: Path):
+    """The whole graph with node info and edge evidence: input of literature/main.py."""
+    import json
+    data = {
+        "start": start_key,
+        "focus": focus,
+        "args": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
+        "nodes": [{"id": k, "label": d["label"], "kind": d["kind"],
+                   "sources": sorted(d["sources"]), "xrefs": sorted(d["xrefs"]),
+                   "info": d["info"]} for k, d in g.nodes(data=True)],
+        "edges": [{"from": u, "to": v, "relation": d["relation"], "source": d["source"],
+                   "evidence": d["evidence"]} for u, v, d in g.edges(data=True)],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1, default=sorted),
+                    encoding="utf-8")
+    print(f"graph json -> {path.resolve()}")
 
 
 def write_html(g: nx.MultiDiGraph, start_key: str, path: Path):
@@ -307,7 +334,9 @@ def main():
     ap.add_argument("--max-frontier", type=int, default=50, help="max inputs per iteration")
     ap.add_argument("--sources", nargs="*", help="only use these source modules")
     ap.add_argument("-o", "--out", type=Path, default=Path("graph.html"),
-                    help="output: .html (interactive viewer), .md (readable report), .png or .graphml")
+                    help="output: .html (interactive viewer), .md (readable report), .json (graph with "
+                         "node info + edge evidence, input of literature/main.py), .png "
+                         "or .graphml")
     args = ap.parse_args()
     # labels contain characters such as "≥"; a redirected stdout on Windows is cp1252
     for stream in (sys.stdout, sys.stderr):
@@ -349,9 +378,16 @@ def main():
         write_report(g, edges, ents, start, stats, args, args.out)
     elif args.out.suffix == ".html":
         write_html(g, ents.key(ents.find(start.key())), args.out)
+    elif args.out.suffix == ".json":
+        write_json(g, ents.key(ents.find(start.key())),
+                   [ents.key(ents.find(f)) for f in stats.focus], args, args.out)
     elif args.out.suffix == ".graphml":
-        for _, d in g.nodes(data=True):  # graphml can't store sets
+        import json
+        for _, d in g.nodes(data=True):  # graphml can't store sets / dicts
             d["sources"], d["xrefs"] = ",".join(sorted(d["sources"])), ",".join(sorted(d["xrefs"]))
+            d["info"] = json.dumps(d["info"], ensure_ascii=False)
+        for *_, d in g.edges(data=True):
+            d["evidence"] = ",".join(d["evidence"])
         nx.write_graphml(g, args.out)
         print(f"graph -> {args.out}")
     else:

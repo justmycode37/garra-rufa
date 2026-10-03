@@ -14,10 +14,15 @@ parents/children/phenotypes/genes/xrefs; OMIM:* -> Orphanet disorders mapped to 
 HP:* -> disorders showing that phenotype; HGNC:/SYMBOL:/ENSEMBL: genes -> disorders for
 the gene symbol; anything else -> nothing. Gene nodes carry Orphanet's gene xrefs
 (HGNC, Ensembl, OMIM, UniProt/SwissProt).
+
+Extra data: an ORPHA disorder gets its Orphanet definition (orphacode/{code}/Definition)
+and orpha.net page url (Node.info); disorder <-> gene edges carry the PMIDs of the
+association's SourceOfValidation ("22587682[PMID]_...") as Edge.evidence.
 """
+import re
 from urllib.parse import quote
 
-from .base import Edge, Node, Source
+from .base import Edge, Node, Source, info
 
 CODE_API = "https://api.orphacode.org/EN/ClinicalEntity"
 DATA_API = "https://api.orphadata.com"
@@ -45,6 +50,14 @@ GENE_RELATION = [
 ]
 # Orphanet gene ExternalReference source -> CURIE prefix kept as gene xref
 GENE_XREF = {"HGNC": "HGNC", "Ensembl": "ENSEMBL", "OMIM": "OMIM", "SwissProt": "UniProtKB"}
+PAGE = "https://www.orpha.net/en/disease/detail/{}"
+VALIDATION_PMID = re.compile(r"(\d+)\[PMID\]", re.I)
+
+
+def _validation(a: dict) -> tuple[str, ...]:
+    """PMIDs of a gene association's SourceOfValidation."""
+    return tuple(dict.fromkeys(f"PMID:{int(x)}" for x in
+                               VALIDATION_PMID.findall(a.get("SourceOfValidation") or "")))
 
 
 def _freq_rank(freq: str | None) -> int:
@@ -162,8 +175,13 @@ class OrphadataSource(Source):
 
     # -- ORPHA disorder -----------------------------------------------------
     def _disease(self, node: Node, code: str, limit: int) -> list[Edge]:
-        def mk(rel: str, dst: Node) -> Edge:
-            return Edge(node, dst, rel, self.name)
+        d = self._code_json(f"orphacode/{code}/Definition")
+        node = Node(node.label, node.id, node.kind, node.source, node.xrefs,
+                    info(description=d.get("Definition") if isinstance(d, dict) else None,
+                         url=PAGE.format(code)))
+
+        def mk(rel: str, dst: Node, evidence=()) -> Edge:
+            return Edge(node, dst, rel, self.name, evidence)
 
         groups: list[list[Edge]] = []
 
@@ -202,7 +220,8 @@ class OrphadataSource(Source):
             for a in genes.get("DisorderGeneAssociation") or []:
                 rank, rel, _ = _gene_relation(a.get("DisorderGeneAssociationType"))
                 assessed = (a.get("DisorderGeneAssociationStatus") or "").lower() == "assessed"
-                ranked.append(((rank, not assessed), mk(rel, self._gene_node(a["Gene"]))))
+                ranked.append(((rank, not assessed),
+                               mk(rel, self._gene_node(a["Gene"]), _validation(a))))
             groups.append([e for _, e in sorted(ranked, key=lambda t: t[0])])
 
         xrefs = self._data_results(f"rd-cross-referencing/orphacodes/{code}")
@@ -270,6 +289,7 @@ class OrphadataSource(Source):
                 rank, _, rel = _gene_relation(a.get("DisorderGeneAssociationType"))
                 assessed = (a.get("DisorderGeneAssociationStatus") or "").lower() == "assessed"
                 ranked.append(((rank, not assessed), rel,
-                               self._disease_node(r["ORPHAcode"], r["Preferred term"])))
+                               self._disease_node(r["ORPHAcode"], r["Preferred term"]),
+                               _validation(a)))
         ranked.sort(key=lambda t: t[0])
-        return [Edge(src, dst, rel, self.name) for _, rel, dst in ranked][:limit]
+        return [Edge(src, dst, rel, self.name, ev) for _, rel, dst, ev in ranked][:limit]

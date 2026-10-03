@@ -130,8 +130,9 @@ def web_xref(url: str | None) -> str | None:
 def org_node(label: str, cid: str, kind: str, source: str, website: str | None = None,
              xrefs: tuple[str, ...] = ()) -> Node:
     w = web_xref(website)
+    url = website.strip() if website and website.strip().startswith("http") else None
     return Node(html.unescape(label).strip(), cid, kind, source,
-                tuple(dict.fromkeys((*xrefs, *([w] if w else [])))))
+                tuple(dict.fromkeys((*xrefs, *([w] if w else [])))), {"url": url} if url else {})
 
 
 def slug(s: str) -> str:

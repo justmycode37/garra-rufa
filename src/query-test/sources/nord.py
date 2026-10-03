@@ -60,7 +60,8 @@ class NordSource(Source):
 
     def _mk(self, d: dict) -> Node:
         return Node(html.unescape(d["title"]["rendered"]), id=f"NORD:{d['id']}",
-                    kind="disease", source=self.name)
+                    kind="disease", source=self.name,
+                    info={"url": d["link"]} if d.get("link") else {})
 
     def _query(self, node: Node, limit: int) -> list[Edge]:
         for cand in self.ids_for(node):
@@ -104,5 +105,6 @@ class NordSource(Source):
             if slug not in seen:
                 seen.add(slug)
                 out.append(Node(html.unescape(re.sub(r"<[^>]+>", "", name)).strip(),
-                                f"NORD.ORG:{slug}", "patient_organisation", self.name))
+                                f"NORD.ORG:{slug}", "patient_organisation", self.name,
+                                info={"url": f"https://rarediseases.org/organizations/{slug}/"}))
         return out

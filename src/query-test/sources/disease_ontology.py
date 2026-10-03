@@ -12,6 +12,7 @@ lookup, so e.g. an OMIM-only node falls back to its label.
 """
 from urllib.parse import quote
 
+from ._ols import v1_info
 from .base import Edge, Node, Source
 
 OLS = "https://www.ebi.ac.uk/ols4/api"
@@ -87,6 +88,8 @@ class DiseaseOntologySource(Source):
     def _relations(self, node: Node, curie: str, limit: int) -> list[Edge]:
         url = self._term_url(curie)
         term = self.get_json(url)
+        node = Node(node.label, node.id, node.kind, node.source, node.xrefs,
+                    v1_info(term, ONTOLOGY))
         groups: list[list[Edge]] = []
 
         def add(rel: str, dst: Node):

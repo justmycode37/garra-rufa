@@ -17,6 +17,8 @@ import re
 from urllib.parse import quote
 
 from .base import Edge, Node, Source
+from .base import info as mkinfo
+from .base import refs as mkrefs
 
 OLS = "https://www.ebi.ac.uk/ols4/api"
 OBO = "http://purl.obolibrary.org/obo/"
@@ -69,6 +71,56 @@ def values(v) -> list[str]:
     if v is None:
         return []
     return [first(x) for x in (v if isinstance(v, list) else [v]) if first(x) is not None]
+
+
+DEFINITION = "http://purl.obolibrary.org/obo/IAO_0000115"
+EXACT_SYN = "http://www.geneontology.org/formats/oboInOwl#hasExactSynonym"
+OBO_URL = "https://www.ebi.ac.uk/ols4/ontologies/{ont}/classes?iri={iri}"
+
+
+def _def_refs(v) -> list[str]:
+    """Citations of OLS v2 definitions: reification axioms carry hasDbXref (PMID:, DOI:,
+    URLs; ORCIDs and Wikipedia are not papers and dropped by paper_ref)."""
+    out = []
+    for x in v if isinstance(v, list) else [v]:
+        if isinstance(x, dict):
+            for ax in x.get("axioms") or []:
+                out += values(ax.get(XREF_KEY))
+    return [r for r in mkrefs(out) if "orcid.org" not in r]
+
+
+def v2_info(d: dict, ontology: str) -> dict:
+    """Node.info from an OLS v2 class record: definition, exact synonyms, citations, url."""
+    defs = d.get(DEFINITION) or d.get("definition")
+    return mkinfo(description=first(defs if not isinstance(defs, list) else
+                                     [x for x in defs if isinstance(x, dict)] or defs),
+                  synonyms=values(d.get(EXACT_SYN)), refs=_def_refs(defs),
+                  url=OBO_URL.format(ont=ontology, iri=quote(d.get("iri", ""), safe="")))
+
+
+def v1_info(term: dict, ontology: str) -> dict:
+    """Node.info from an OLS v1 term record (mondo / disease_ontology): the definition,
+    exact synonyms (abbreviations separately: "MFS" is useless as a search term), the
+    definition citations and "seeAlso"/curated-resource links as refs, the OLS page."""
+    syn, abbr = [], []
+    for x in term.get("obo_synonym") or []:
+        if x.get("scope") == "hasExactSynonym":
+            (abbr if x.get("type") == "abbreviation" else syn).append(x["name"])
+    if not term.get("obo_synonym"):
+        syn = list(term.get("synonyms") or [])
+    defs = term.get("obo_definition_citation") or []
+    cites = [x.get("url") or x.get("id") for c in defs for x in c.get("oboXrefs") or []]
+    cites += [f"{x['database']}:{x['id']}" for c in defs for x in c.get("oboXrefs") or []
+              if x.get("database") and x.get("id")]
+    ann = term.get("annotation") or {}
+    links = [*ann.get("seeAlso", []), *ann.get("curated content resource", []), *cites]
+    # "description" also holds comments ("OMIM mapping confirmed by DO."): prefer the
+    # obo definition
+    desc = next((c["definition"] for c in defs if c.get("definition")), None)
+    return mkinfo(description=desc or first(term.get("description")), synonyms=syn,
+                  abbreviations=abbr, refs=mkrefs(cites),
+                  links=list(dict.fromkeys(u for u in links if "://" in str(u))),
+                  url=OBO_URL.format(ont=ontology, iri=quote(term.get("iri", ""), safe="")))
 
 
 def exact_match(session, label: str, ontology: str) -> tuple[str, str] | None:
@@ -182,7 +234,7 @@ class OlsOntologySource(Source):
         xrefs = [x for x in values(d.get(XREF_KEY)) if ":" in x and " " not in x]
         src = Node(node.label if node.id else first(d.get("label")) or curie, curie,
                    self.KIND, node.source if node.id else self.name,
-                   tuple(dict.fromkeys((*node.xrefs, *xrefs))))
+                   tuple(dict.fromkeys((*node.xrefs, *xrefs))), v2_info(d, self.ONTOLOGY))
         groups: list[list[Edge]] = []
 
         parents = [self._node(p, linked) for p in values(d.get("directParent"))]

@@ -151,7 +151,8 @@ class OrphanetGroupsSource(Source):
         label = card["names"][1] if len(card["names"]) > 1 else card["names"][0]
         if card["country"]:
             label = f"{label} ({card['country']})"
-        return Node(label, f"{prefix}:{card['id']}", kind, self.name)
+        return Node(label, f"{prefix}:{card['id']}", kind, self.name,
+                    info={"url": f"{BASE}{card['path']}/{card['id']}"})
 
     def _query(self, node: Node, code: str, limit: int) -> list[Edge]:
         # small limits (non-focus diseases) only look at the most useful categories

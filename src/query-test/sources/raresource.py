@@ -33,7 +33,7 @@ import sys
 import threading
 from pathlib import Path
 
-from .base import Edge, Node, Source
+from .base import Edge, Node, Source, info
 
 BASE = "https://raresource.nih.gov"
 PAGES = {"diseases.html": "/diseases/", "genes.html": "/genes/"}
@@ -157,7 +157,10 @@ class RareSourceSource(Source):
     def _disease(self, rid: str) -> Node:
         d = self._diseases[rid]
         return Node(d["name"], id=f"GARD:{rid}", kind="disease", source=self.name,
-                    xrefs=d["xrefs"])
+                    xrefs=d["xrefs"], info=info(
+                        aliases=d["aliases"],  # lower case, includes related conditions
+                        url=f"https://rarediseases.info.nih.gov/diseases/{int(rid)}"
+                        if rid.isdigit() else None))
 
     def _gene(self, sym: str) -> Node:
         g = self._genes.get(sym)
@@ -165,7 +168,8 @@ class RareSourceSource(Source):
         hgnc = next((x for x in xrefs if x.startswith("HGNC:")), None)
         rest = tuple(x for x in xrefs if x != hgnc) + (f"SYMBOL:{sym}",)
         return Node(sym, id=hgnc or f"SYMBOL:{sym}", kind="gene", source=self.name,
-                    xrefs=rest if hgnc else rest[:-1])
+                    xrefs=rest if hgnc else rest[:-1],
+                    info=info(full_name=g["desc"] if g and g["desc"] != "None" else None))
 
     # -- dispatch --------------------------------------------------------
     def _query(self, node: Node, limit: int) -> list[Edge]:

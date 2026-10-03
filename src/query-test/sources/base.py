@@ -5,6 +5,7 @@ Source. The main script only knows about Node, Edge and Source.query(); all
 dataset-specific logic (APIs, ID formats, downloads, parsing) stays in the module.
 """
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import requests
@@ -45,6 +46,10 @@ class Node:
     kind: str = "unknown"  # disease | phenotype | gene | drug | ... | term
     source: str = "input"  # name of the Source that produced this node
     xrefs: tuple[str, ...] = field(default=(), compare=False)  # equivalent CURIEs
+    # extra data that is not an id: description, synonyms (list), url, refs (list of
+    # PMID:/PMC/DOI:/URL: papers the source cites for the entity), mesh_heading, ...
+    # Merged per entity by entities.py and written to graph.json for the literature step.
+    info: Mapping = field(default_factory=dict, compare=False, hash=False)
 
     def key(self) -> str:
         return self.id or f"term:{self.label.lower()}"
@@ -59,6 +64,52 @@ class Edge:
     dst: Node
     relation: str  # e.g. "subclass_of", "has_phenotype", "gene_associated", "matches"
     source: str
+    # papers backing this association (PMID:<n>, DOI:<doi>), when the source names them
+    evidence: tuple[str, ...] = field(default=(), compare=False)
+
+
+PMID_RE = re.compile(r"^\s*(?:pmid|pubmed)?\s*:?\s*(\d{1,9})\s*(?:\[pmid\])?\s*$", re.I)
+DOI_RE = re.compile(r"(10\.\d{4,9}/\S+)")
+
+
+def pmid(x) -> str | None:
+    """"12345", "PMID:12345", "12345[PMID]", "pubmed:12345" -> "PMID:12345", else None."""
+    m = PMID_RE.match(str(x or ""))
+    return f"PMID:{int(m[1])}" if m else None
+
+
+def paper_ref(x) -> str | None:
+    """A citation string as PMID:<n> / PMC<n> / DOI:<doi> / URL:<url>, or None."""
+    s = str(x or "").strip()
+    if not s:
+        return None
+    p = pmid(s)
+    if p:
+        return p
+    low = s.lower()
+    if low.startswith("pmc") and s[3:].strip(":").isdigit():
+        return "PMC" + s[3:].strip(":")
+    if low.startswith(("doi:", "https://doi.org/", "http://doi.org/", "http://dx.doi.org/",
+                       "10.")):
+        m = DOI_RE.search(s)
+        return f"DOI:{m[1].rstrip('.,;')}" if m else None
+    if low.startswith(("http://", "https://")):
+        return "URL:" + s
+    if low.startswith("url:"):
+        return "URL:" + s[4:]
+    return None
+
+
+def refs(items) -> list[str]:
+    """The papers among citation strings (PMID:/PMC/DOI:), deduplicated; plain URLs and
+    unparseable entries are dropped (keep those as info["links"])."""
+    return list(dict.fromkeys(r for r in map(paper_ref, items or ())
+                              if r and not r.startswith("URL:")))
+
+
+def info(**kw) -> dict:
+    """Node.info without empty values."""
+    return {k: v for k, v in kw.items() if v not in (None, "", [], (), {})}
 
 
 class Source:
@@ -75,6 +126,11 @@ class Source:
     that has an id. Fuzzy label matches ("Marfan syndrome" -> "Sick sinus syndrome",
     "Loeys-Dietz syndrome 2" -> "Tietz syndrome") were the main source of off-topic
     nodes. If a lookup by id fails, return [] instead.
+
+    Besides ids, put whatever else the API returns for free on the nodes (Node.info:
+    description, synonyms, url, refs = cited papers, ...; return the queried node with
+    its info as the edges' src) and the papers behind an association on the edge
+    (Edge.evidence). The literature pipeline (literature/) reads both from the graph JSON.
     """
     name = "base"
     id_prefixes: frozenset[str] = frozenset()
