@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Query Graph</title>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+  :root { --bg:#fafafa; --panel:#fff; --fg:#222; --muted:#666; --line:#ddd; --accent:#2563eb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181d; --panel:#1f2229; --fg:#e6e6e6; --muted:#999; --line:#333; --accent:#60a5fa; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--fg);
+         display:grid; grid-template-columns:280px 1fr 320px; height:100vh; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:12px; overflow:auto; }
+  aside.right { border-right:0; border-left:1px solid var(--line); }
+  #net { height:100vh; }
+  h1 { font-size:15px; margin:0 0 4px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 6px; }
+  .muted { color:var(--muted); }
+  input[type=search] { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px;
+                       background:var(--bg); color:var(--fg); }
+  label.chk { display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
+  .count { margin-left:auto; color:var(--muted); }
+  button { padding:4px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg);
+           color:var(--fg); cursor:pointer; }
+  #results div, #neighbors div { padding:3px 4px; border-radius:4px; cursor:pointer; }
+  #results div:hover, #neighbors div:hover { background:var(--bg); }
+  code { font-size:12px; }
+  .rel { color:var(--accent); font-size:11px; }
+  table { border-collapse:collapse; width:100%; }
+  td { padding:2px 4px; vertical-align:top; }
+  td:first-child { color:var(--muted); width:70px; }
+  @media (max-width: 900px) {
+    body { grid-template-columns:1fr; grid-template-rows:auto 60vh auto; height:auto; }
+    #net { height:60vh; }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <h1 id="title">Query graph</h1>
+  <div class="muted" id="stats"></div>
+  <h2>Search</h2>
+  <input type="search" id="q" placeholder="label or ID…">
+  <div id="results"></div>
+  <h2>Kind</h2>
+  <div id="kinds"></div>
+  <h2>Source</h2>
+  <div id="sources"></div>
+  <h2>Options</h2>
+  <label class="chk"><input type="checkbox" id="edgeLabels"> Edge labels</label>
+  <label class="chk"><input type="checkbox" id="physics" checked> Physics</label>
+  <label class="chk"><input type="checkbox" id="hideLeaves"> Hide degree-1 nodes</label>
+  <div style="margin-top:8px"><button id="fit">Fit view</button></div>
+</aside>
+<div id="net"></div>
+<aside class="right">
+  <h2 style="margin-top:0">Selected</h2>
+  <div id="detail" class="muted">Click a node.</div>
+  <h2>Neighbors</h2>
+  <div id="neighbors"></div>
+</aside>
+<script>
+const DATA = /*__DATA__*/{"start":null,"nodes":[],"edges":[]}/*__END__*/;
+
+const PALETTE = ["#4e79a7","#f28e2b","#59a14f","#e15759","#b07aa1","#76b7b2","#edc948","#ff9da7","#9c755f","#bab0ac"];
+const kinds = [...new Set(DATA.nodes.map(n => n.kind))].sort();
+const sources = [...new Set(DATA.nodes.flatMap(n => n.sources))].sort();
+const color = k => PALETTE[kinds.indexOf(k) % PALETTE.length];
+const byId = Object.fromEntries(DATA.nodes.map(n => [n.id, n]));
+const degree = {};
+DATA.edges.forEach(e => { degree[e.from] = (degree[e.from]||0)+1; degree[e.to] = (degree[e.to]||0)+1; });
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+const fg = dark ? "#e6e6e6" : "#222";
+
+const nodes = new vis.DataSet(DATA.nodes.map(n => ({
+  id: n.id, label: n.label.length > 32 ? n.label.slice(0, 30) + "…" : n.label,
+  title: `${n.label}\n${n.id}\n${n.kind} · ${n.sources.join(", ")}`,
+  color: { background: color(n.kind), border: n.id === DATA.start ? fg : color(n.kind) },
+  borderWidth: n.id === DATA.start ? 3 : 1,
+  value: degree[n.id] || 1, font: { color: fg, size: 12 },
+})));
+const edges = new vis.DataSet(DATA.edges.map((e, i) => ({
+  id: i, from: e.from, to: e.to, rel: e.relation, src: e.source,
+  title: `${e.relation} (${e.source})`, arrows: "to",
+  color: { color: dark ? "#555" : "#bbb", highlight: "#2563eb" },
+  font: { size: 9, color: dark ? "#aaa" : "#666", strokeWidth: 0, align: "middle" },
+})));
+
+const state = { kinds: new Set(kinds), sources: new Set(sources), hideLeaves: false };
+const nodeView = new vis.DataView(nodes, { filter: n => {
+  const d = byId[n.id];
+  if (n.id === DATA.start) return true;
+  if (!state.kinds.has(d.kind)) return false;
+  if (!d.sources.some(s => state.sources.has(s))) return false;
+  if (state.hideLeaves && (degree[n.id] || 0) <= 1) return false;
+  return true;
+}});
+const edgeView = new vis.DataView(edges, { filter: e => state.sources.has(e.src) });
+
+const net = new vis.Network(document.getElementById("net"), { nodes: nodeView, edges: edgeView }, {
+  nodes: { shape: "dot", scaling: { min: 6, max: 30 } },
+  edges: { smooth: { type: "continuous" }, width: 0.8 },
+  physics: { solver: "forceAtlas2Based", forceAtlas2Based: { gravitationalConstant: -60, springLength: 90 },
+             stabilization: { iterations: 300 } },
+  interaction: { hover: true, tooltipDelay: 150 },
+});
+
+function refresh() { nodeView.refresh(); edgeView.refresh(); }
+
+function checklist(el, items, set, dotColor) {
+  const counts = {};
+  DATA.nodes.forEach(n => (el.id === "kinds" ? [n.kind] : n.sources).forEach(x => counts[x] = (counts[x]||0)+1));
+  el.innerHTML = items.map(x => `<label class="chk"><input type="checkbox" value="${x}" checked>
+    ${dotColor ? `<span class="dot" style="background:${dotColor(x)}"></span>` : ""}${x}
+    <span class="count">${counts[x]||0}</span></label>`).join("");
+  el.addEventListener("change", ev => { ev.target.checked ? set.add(ev.target.value) : set.delete(ev.target.value); refresh(); });
+}
+checklist(document.getElementById("kinds"), kinds, state.kinds, color);
+checklist(document.getElementById("sources"), sources, state.sources, null);
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function select(id) {
+  const n = byId[id]; if (!n) return;
+  net.selectNodes([id]); net.focus(id, { scale: 1.2, animation: true });
+  document.getElementById("detail").innerHTML = `<table>
+    <tr><td>Label</td><td><b>${esc(n.label)}</b></td></tr>
+    <tr><td>ID</td><td><code>${esc(n.id)}</code></td></tr>
+    <tr><td>Kind</td><td>${esc(n.kind)}</td></tr>
+    <tr><td>Sources</td><td>${esc(n.sources.join(", "))}</td></tr>
+    <tr><td>Degree</td><td>${degree[id]||0}</td></tr>
+    ${n.xrefs.length ? `<tr><td>Xrefs</td><td>${n.xrefs.map(x => `<code>${esc(x)}</code>`).join(" ")}</td></tr>` : ""}
+  </table>`;
+  const rows = DATA.edges.filter(e => e.from === id || e.to === id).map(e => {
+    const out = e.from === id, other = byId[out ? e.to : e.from];
+    return `<div data-id="${esc(other.id)}"><span class="rel">${out ? "→" : "←"} ${esc(e.relation)} · ${esc(e.source)}</span><br>${esc(other.label)} <span class="muted">${esc(other.id)}</span></div>`;
+  });
+  document.getElementById("neighbors").innerHTML = rows.join("") || '<span class="muted">none</span>';
+}
+
+net.on("click", p => p.nodes.length && select(p.nodes[0]));
+for (const id of ["neighbors", "results"])
+  document.getElementById(id).addEventListener("click", ev => {
+    const d = ev.target.closest("[data-id]"); if (d) select(d.dataset.id);
+  });
+
+document.getElementById("q").addEventListener("input", ev => {
+  const q = ev.target.value.trim().toLowerCase();
+  const hits = q ? DATA.nodes.filter(n => n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q)).slice(0, 30) : [];
+  document.getElementById("results").innerHTML = hits.map(n =>
+    `<div data-id="${esc(n.id)}"><span class="dot" style="background:${color(n.kind)}"></span> ${esc(n.label)} <span class="muted">${esc(n.id)}</span></div>`).join("");
+});
+document.getElementById("edgeLabels").addEventListener("change", ev =>
+  edges.update(edges.get().map(e => ({ id: e.id, label: ev.target.checked ? e.rel : undefined }))));
+document.getElementById("physics").addEventListener("change", ev => net.setOptions({ physics: { enabled: ev.target.checked } }));
+document.getElementById("hideLeaves").addEventListener("change", ev => { state.hideLeaves = ev.target.checked; refresh(); });
+document.getElementById("fit").addEventListener("click", () => net.fit({ animation: true }));
+
+const startNode = byId[DATA.start];
+document.getElementById("title").textContent = startNode ? startNode.label : "Query graph";
+document.title = (startNode ? startNode.label + " · " : "") + "Query Graph";
+document.getElementById("stats").textContent = `${DATA.nodes.length} nodes · ${DATA.edges.length} edges`;
+</script>
+</body>
+</html>

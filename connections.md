@@ -7,3 +7,4 @@ keyword search
 citations
 body location (needs dataset)
 involved gene/protein similarity (needs datasets)
+age of onset
