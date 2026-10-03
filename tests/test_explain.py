@@ -7,9 +7,8 @@ import unittest
 from unittest.mock import patch
 
 from garra.explain.context import build_evidence_packet
-from garra.explain.explain import explain_journey, fallback_explain
+from garra.explain.explain import explain_journey
 from garra.explain.fallback import fallback_narrative
-
 
 SAMPLE_JOURNEY = {
     "status": "ok",
@@ -23,7 +22,11 @@ SAMPLE_JOURNEY = {
         },
     },
     "similar_diseases": {
-        "anchor": {"disease_key": "MONDO:0009290", "name": "glycogen storage disease II", "genes": ["GAA"]},
+        "anchor": {
+            "disease_key": "MONDO:0009290",
+            "name": "glycogen storage disease II",
+            "genes": ["GAA"],
+        },
         "neighbors": [
             {
                 "disease_key": "MONDO:0018485",
@@ -71,7 +74,13 @@ SAMPLE_JOURNEY = {
         },
         "papers": None,
     },
-    "next_steps": [{"action": "open_trial", "detail": "Review NCT03694561 eligibility.", "url": "https://clinicaltrials.gov/study/NCT03694561"}],
+    "next_steps": [
+        {
+            "action": "open_trial",
+            "detail": "Review NCT03694561 eligibility.",
+            "url": "https://clinicaltrials.gov/study/NCT03694561",
+        }
+    ],
 }
 
 

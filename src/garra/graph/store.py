@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from garra.paths import ATLAS_DB
@@ -16,10 +18,14 @@ class AtlasStore:
                 f"Atlas database not found at {self.db_path}. Run: PYTHONPATH=src python -m garra.atlas build"
             )
 
-    def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path.resolve().as_uri() + "?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def genes_for_disease(self, disease_key: str) -> list[sqlite3.Row]:
         with self.connect() as conn:

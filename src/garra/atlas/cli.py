@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from garra.actions.journey import build_journey
+from garra.connections import build_connections, render_connections
 from garra.explain.explain import explain_query
 from garra.graph.resolve import resolve_query
 from garra.ingest.build import build_atlas, missing_sources
@@ -25,20 +27,53 @@ def main(argv: list[str] | None = None) -> int:
     resolve = sub.add_parser("resolve", help="Resolve a disease name, id, or gene symbol")
     resolve.add_argument("query")
 
-    similar = sub.add_parser("similar", help="Find similar diseases for a disease id or gene symbol")
+    similar = sub.add_parser(
+        "similar", help="Find similar diseases for a disease id or gene symbol"
+    )
     similar.add_argument("target", help="disease_key (MONDO:…) or gene symbol (GAA)")
     similar.add_argument("--limit", type=int, default=5)
 
     journey = sub.add_parser("journey", help="Full backend path for demo (no UI)")
     journey.add_argument("query")
-    journey.add_argument("--offline", action="store_true", help="Skip live trial/grant/paper queries")
+    journey.add_argument(
+        "--offline", action="store_true", help="Skip live trial/grant/paper queries"
+    )
 
-    explain = sub.add_parser("explain", help="Journey + family-readable explanation (OpenAI or fallback)")
+    explain = sub.add_parser(
+        "explain", help="Journey + family-readable explanation (OpenAI or fallback)"
+    )
     explain.add_argument("query")
-    explain.add_argument("--offline", action="store_true", help="Skip live trial/grant/paper queries")
+    explain.add_argument(
+        "--offline", action="store_true", help="Skip live trial/grant/paper queries"
+    )
     explain.add_argument("--no-openai", action="store_true", help="Use deterministic fallback only")
 
+    connections = sub.add_parser(
+        "connections", help="Build evidence-linked cards from a fetcher JSON packet (no network)"
+    )
+    connections.add_argument("packet", type=Path)
+    connections.add_argument(
+        "--min-score",
+        type=float,
+        default=50,
+        help="0–100 Jaccard display threshold; native metrics are not filtered",
+    )
+    connections.add_argument("--limit", type=int, default=5)
+    connections.add_argument("--html", type=Path, help="Write a standalone browser report")
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "connections":
+        try:
+            packet = json.loads(args.packet.read_text(encoding="utf-8"))
+            result = build_connections(packet, min_score=args.min_score, limit=args.limit)
+            if args.html:
+                args.html.write_text(render_connections(result), encoding="utf-8")
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0
+        except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
+            print(f"Invalid connection packet: {exc}", file=sys.stderr)
+            return 2
 
     if args.cmd == "missing":
         print(json.dumps(missing_sources(), indent=2))
@@ -67,7 +102,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from garra.ingest.loaders import GENE_SYMBOL_KEY
 
-            payload = similar_diseases(gene_key=GENE_SYMBOL_KEY.format(symbol=target.upper()), limit=args.limit)
+            payload = similar_diseases(
+                gene_key=GENE_SYMBOL_KEY.format(symbol=target.upper()), limit=args.limit
+            )
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return 0
 

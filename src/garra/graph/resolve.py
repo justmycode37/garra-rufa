@@ -36,6 +36,14 @@ def resolve_query(query: str, *, db_path=None) -> dict:
             "matches": [],
         }
 
+    identities = {(m["type"], m.get("disease_key") or m.get("gene_key")) for m in matches}
+    if len(identities) > 1:
+        return {
+            "status": "ambiguous",
+            "query": text,
+            "matches": matches,
+            "message": "Multiple entities match. Choose a stable disease or gene identifier before continuing.",
+        }
     primary = _pick_primary(matches)
     return {
         "status": "ok",
