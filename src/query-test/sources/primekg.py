@@ -49,6 +49,9 @@ def _curie(source: str, node_id: str) -> tuple[str, tuple[str, ...]]:
 
 class PrimeKGSource(Source):
     name = "primekg"
+    # the prefixes of _curie(); HGNC/SYMBOL genes are matched by exact gene symbol
+    id_prefixes = frozenset({p.upper() for p, _ in PREFIX.values()} | {"HGNC", "SYMBOL"})
+    by_name = True
 
     def __init__(self):
         super().__init__()
@@ -144,24 +147,22 @@ class PrimeKGSource(Source):
 
     def _query(self, db, node: Node, limit: int) -> list[Edge]:
         cols = "idx, curie, alt, type, name"
+        if node.id is None:
+            return self._search(db, node, limit)
         row = None
-        for cand in (node.id, *node.xrefs):
-            if cand:
+        for cand in self.ids_for(node):
+            if cand.split(":", 1)[0].upper() in ("HGNC", "SYMBOL"):
+                # PrimeKG has no HGNC ids; gene nodes are named by their (unique) symbol
+                symbol = node.label if cand.startswith("HGNC") else cand.split(":", 1)[1]
+                row = db.execute(f"SELECT {cols} FROM nodes WHERE name_lc=? AND type='gene'",
+                                 (symbol.lower(),)).fetchone()
+            else:
                 row = db.execute(f"SELECT {cols} FROM nodes WHERE curie=? OR (alt != '' AND "
                                  "(' '||alt||' ') LIKE ?) LIMIT 1",
                                  (cand, f"% {cand} %")).fetchone()
-                if row:
-                    break
-        if row is None and node.id is not None:
-            # unknown prefix (HGNC, OMIM, ...): try exact label match, same kind if known
-            q = f"SELECT {cols} FROM nodes WHERE name_lc=?"
-            rows = db.execute(q, (node.label.lower(),)).fetchall()
-            want = node.kind if node.kind != "unknown" else None
-            rows = [r for r in rows if want is None or r[3] == want] or ([] if want else rows)
-            row = rows[0] if rows else None
-        if row is not None:
-            return self._relations(db, node, row, limit)
-        return self._search(db, node, limit)
+            if row:
+                return self._relations(db, node, row, limit)
+        return []
 
     def _search(self, db, node: Node, limit: int) -> list[Edge]:
         q = node.label.lower()

@@ -1,8 +1,14 @@
-"""Registry of dataset sources. Each module defines one Source subclass."""
+"""Registry of dataset sources. Each module defines one Source subclass.
+
+When adding a source: register it in _MODULES and set `id_prefixes` / `by_name` on the
+class (see the NOTE in base.Source). They decide which nodes the source is queried with.
+"""
 from .base import Edge, Node, Source
 
 # module name -> Source subclass; import errors drop the source with a warning.
 # OMIM was dropped: api.omim.org and its bulk files require a registered key.
+# Orphanet gene associations live in orphadata (rd-associated-genes). FMA is read from
+# EBI OLS4 (BioPortal would need a key). Helper modules (_ols) are not sources.
 _MODULES = {
     "mondo": "MondoSource",
     "orphadata": "OrphadataSource",
@@ -11,6 +17,14 @@ _MODULES = {
     "monarch": "MonarchSource",
     "hpo": "HpoSource",
     "primekg": "PrimeKGSource",
+    "uberon": "UberonSource",
+    "fma": "FmaSource",
+    "mesh": "MeshSource",
+    "hpa": "HpaSource",
+    "gtex": "GtexSource",
+    "opentargets": "OpenTargetsSource",
+    "clinvar": "ClinVarSource",
+    "raresource": "RareSourceSource",
 }
 
 

@@ -62,6 +62,9 @@ SPECS = {
 
 class MonarchSource(Source):
     name = "monarch"
+    # canonical ids, plus disease ids that Monarch's search resolves through its xrefs
+    id_prefixes = frozenset({*CANONICAL, "OMIM", "ORPHA", "ORPHANET", "DOID", "NORD"})
+    by_name = True
 
     def query(self, node: Node, limit: int = 10) -> list[Edge]:
         try:
@@ -75,11 +78,11 @@ class MonarchSource(Source):
             return []  # no Monarch relations for these; a label search would only add noise
         if node.id is None:
             return self._search(node, node.label, limit)
-        for cand in (node.id, *node.xrefs):
+        for cand in self.ids_for(node):
             mid = self._resolve(cand)
             if mid:
                 return self._relations(node, mid, limit)
-        return self._search(node, node.label, limit)
+        return []
 
     # -- helpers ---------------------------------------------------------
     def _resolve(self, curie: str) -> str | None:

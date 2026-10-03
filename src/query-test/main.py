@@ -2,8 +2,12 @@
 """Expand one medical input term into a graph of related nodes across datasets.
 
 Each iteration runs every node from the previous iteration (the frontier) through
-every source in sources/, collecting the connected nodes as the next frontier.
-No deduping yet: nodes may appear multiple times.
+the sources in sources/ that accept it (Source.id_prefixes / Source.by_name: ID nodes
+go only to sources that understand one of their ids, only the free-text input is
+name-searched), collecting the connected nodes as the next frontier.
+
+Nodes are deduplicated as they arrive (entities.py): nodes sharing an id/xref are one
+entity, each source is queried at most once per entity, and repeated edges collapse.
 
 Usage:
   python src/query-test/main.py "Marfan syndrome"
@@ -23,6 +27,7 @@ try:  # use the OS trust store; the certifi bundle fails on this machine
 except ImportError:
     pass
 
+from entities import Entities
 from sources import Edge, Node, load_sources
 
 CURIE = re.compile(r"^[A-Za-z][A-Za-z0-9_.]*:\S+$")
@@ -34,52 +39,66 @@ def parse_input(text: str, label: str | None) -> Node:
     return Node(label=text, kind="term")
 
 
-def run(start: Node, sources, iterations: int, limit: int, max_frontier: int) -> list[Edge]:
+def run(start: Node, sources, iterations: int, limit: int, max_frontier: int,
+        ents: Entities) -> list[Edge]:
     edges: list[Edge] = []
-    frontier = [start]
+    frontier = [ents.add(start)]
     for i in range(1, iterations + 1):
         if len(frontier) > max_frontier:
             print(f"(frontier of {len(frontier)} capped to {max_frontier})")
             frontier = frontier[:max_frontier]
         found: list[Edge] = []
-        for node in frontier:
+        for root in frontier:
+            node = ents.node(root)  # merged view: all ids/xrefs known for this entity
             for src in sources:
+                if not src.accepts(node) or not ents.mark_queried(root, src.name):
+                    continue
                 try:
                     found += src.query(node, limit=limit)
                 except Exception as e:  # sources shouldn't raise, but don't let one kill the run
                     print(f"  ! {src.name} failed on {node.label}: {e}", file=sys.stderr)
-        print(f"\n=== Iteration {i}: {len(frontier)} inputs -> {len(found)} nodes ===")
+        print(f"\n=== Iteration {i}: {len(frontier)} inputs -> {len(found)} edges ===")
         for e in found:
             print(f"  {e.src.label}  --{e.relation}-->  {e.dst}")
+            ents.add(e.src)  # sources may return the input with extra ids/xrefs
+            ents.add(e.dst)
+            if e.relation == "xref":  # exact mapping: same entity
+                ents.merge_xref(e.src.key(), e.dst.key())
         edges += found
-        frontier = [e.dst for e in found]
+        # next: entities reached this iteration that some source has not been asked about
+        # yet (an entity seen before is re-queried only if a merge gave it new usable ids)
+        frontier = []
+        for root in dict.fromkeys(ents.find(e.dst.key()) for e in found):
+            node = ents.node(root)
+            if any(s.accepts(node) and s.name not in ents.queried(root) for s in sources):
+                frontier.append(root)
         if not frontier:
             break
     return edges
 
 
-def build_graph(edges: list[Edge]) -> nx.MultiDiGraph:
+def build_graph(edges: list[Edge], ents: Entities) -> nx.MultiDiGraph:
     g = nx.MultiDiGraph()
     for e in edges:
-        for n in (e.src, e.dst):
-            if n.key() in g:  # same node reported by several sources: keep all of them
-                d = g.nodes[n.key()]
-                d["sources"] |= {n.source}
-                d["xrefs"] |= set(n.xrefs)
-                if d["kind"] in ("unknown", "term"):
-                    d["kind"] = n.kind
-            else:
-                g.add_node(n.key(), label=n.label, kind=n.kind, source=n.source,
-                           sources={n.source}, xrefs=set(n.xrefs))
-        g.add_edge(e.src.key(), e.dst.key(), relation=e.relation, source=e.source)
+        u, v = (ents.key(ents.find(n.key())) for n in (e.src, e.dst))
+        if u == v:  # e.g. an xref edge between two ids of one merged entity
+            continue
+        for k in (u, v):
+            if k not in g:
+                r = ents.record(k)
+                g.add_node(k, label=r["label"], kind=r["kind"], sources=set(r["sources"]),
+                           xrefs=(r["ids"] | r["xrefs"]) - {k})
+        # keyed by relation+source: the same fact reported twice by one source is one edge,
+        # the same fact from different sources stays visible as parallel edges
+        g.add_edge(u, v, key=f"{e.relation}|{e.source}", relation=e.relation, source=e.source)
     return g
 
 
-def write_html(g: nx.MultiDiGraph, start: Node, path: Path):
+def write_html(g: nx.MultiDiGraph, start_key: str, path: Path):
     """Embed the graph as JSON into viewer.html (interactive vis-network page)."""
     import json
     data = {
-        "start": start.key(),
+        "start": start_key,
         "nodes": [{"id": k, "label": d["label"], "kind": d["kind"],
                    "sources": sorted(d["sources"]), "xrefs": sorted(d["xrefs"])}
                   for k, d in g.nodes(data=True)],
@@ -133,16 +152,17 @@ def main():
     print("sources:", ", ".join(s.name for s in sources) or "(none)")
 
     start = parse_input(args.input, args.label)
-    edges = run(start, sources, args.iterations, args.limit, args.max_frontier)
+    ents = Entities()
+    edges = run(start, sources, args.iterations, args.limit, args.max_frontier, ents)
 
-    g = build_graph(edges)
+    g = build_graph(edges, ents)
     print(f"\n=== Graph: {g.number_of_nodes()} nodes, {g.number_of_edges()} edges ===")
     for key, d in g.nodes(data=True):
         print(f"  [{d['kind']}] {d['label']} ({key}) <{', '.join(sorted(d['sources']))}>  degree={g.degree(key)}")
     if not g.number_of_nodes():
         return
     if args.out.suffix == ".html":
-        write_html(g, start, args.out)
+        write_html(g, ents.key(ents.find(start.key())), args.out)
     elif args.out.suffix == ".graphml":
         for _, d in g.nodes(data=True):  # graphml can't store sets
             d["sources"], d["xrefs"] = ",".join(sorted(d["sources"])), ",".join(sorted(d["xrefs"]))

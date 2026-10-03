@@ -4,14 +4,16 @@
       PreferentialParent / PreferentialChildren. It wants an `apiKey` header, but any
       non-empty value is accepted.
   api.orphadata.com/rd-phenotypes/...       HPO phenotypes per disorder / disorders per HPO term
-  api.orphadata.com/rd-associated-genes/... genes per disorder / disorders per gene symbol
+  api.orphadata.com/rd-associated-genes/... genes per disorder / disorders per gene symbol,
+      typed by Orphanet's DisorderGeneAssociationType (see GENE_RELATION)
   api.orphadata.com/rd-classification/..    parents/children in every Orphanet classification
   api.orphadata.com/rd-cross-referencing/.. OMIM, MONDO, ICD-10/11, MeSH, UMLS, ... mappings
 
 Node handling: free text -> name search ("matches"); ORPHA:* (or an ORPHA:* xref) ->
 parents/children/phenotypes/genes/xrefs; OMIM:* -> Orphanet disorders mapped to it;
-HP:* -> disorders showing that phenotype; gene nodes -> disorders for the gene symbol;
-otherwise label search.
+HP:* -> disorders showing that phenotype; HGNC:/SYMBOL:/ENSEMBL: genes -> disorders for
+the gene symbol; anything else -> nothing. Gene nodes carry Orphanet's gene xrefs
+(HGNC, Ensembl, OMIM, UniProt/SwissProt).
 """
 from urllib.parse import quote
 
@@ -23,6 +25,26 @@ HEADERS = {"apiKey": "orphadata"}
 
 FREQ_RANK = ["obligate", "very frequent", "frequent", "occasional", "very rare", "excluded"]
 XREF_PREFIX = {"ICD-10": "ICD10", "ICD-11": "ICD11", "MeSH": "MESH", "MedDRA": "MEDDRA"}
+# DisorderMappingRelation code -> edge relation; NTBT = the ORPHA term is narrower than the target
+XREF_RELATION = {"E": "xref", "NTBT": "xref_broader", "BTNT": "xref_narrower"}
+# DisorderGeneAssociationType prefix -> (relation from the disorder, relation from the gene),
+# first match wins; disease-causing types sort first
+GENE_RELATION = [
+    ("disease-causing germline mutation(s) (loss of function)",
+     ("caused_by_gene_loss_of_function", "causes_disease_loss_of_function")),
+    ("disease-causing germline mutation(s) (gain of function)",
+     ("caused_by_gene_gain_of_function", "causes_disease_gain_of_function")),
+    ("disease-causing germline", ("caused_by_gene", "causes_disease")),
+    ("disease-causing somatic", ("caused_by_somatic_mutation_in", "somatic_cause_of")),
+    ("major susceptibility factor", ("susceptibility_gene", "susceptibility_factor_for")),
+    ("modifying germline", ("modifier_gene", "modifies_disease")),
+    ("part of a fusion gene", ("fusion_gene", "fusion_gene_in")),
+    ("role in the phenotype", ("phenotype_role_gene", "role_in_phenotype_of")),
+    ("candidate gene", ("candidate_gene", "candidate_gene_for")),
+    ("biomarker", ("biomarker_gene", "biomarker_for")),
+]
+# Orphanet gene ExternalReference source -> CURIE prefix kept as gene xref
+GENE_XREF = {"HGNC": "HGNC", "Ensembl": "ENSEMBL", "OMIM": "OMIM", "SwissProt": "UniProtKB"}
 
 
 def _freq_rank(freq: str | None) -> int:
@@ -31,6 +53,15 @@ def _freq_rank(freq: str | None) -> int:
         if f.startswith(k):
             return i
     return len(FREQ_RANK)
+
+
+def _gene_relation(assoc_type: str | None) -> tuple[int, str, str]:
+    """(sort rank, disorder->gene relation, gene->disorder relation)"""
+    t = (assoc_type or "").lower()
+    for i, (prefix, rels) in enumerate(GENE_RELATION):
+        if t.startswith(prefix):
+            return i, *rels
+    return len(GENE_RELATION), "gene_associated", "gene_associated"
 
 
 def _interleave(groups: list[list[Edge]], limit: int) -> list[Edge]:
@@ -45,6 +76,10 @@ def _interleave(groups: list[list[Edge]], limit: int) -> list[Edge]:
 
 class OrphadataSource(Source):
     name = "orphadata"
+    # HGNC/ENSEMBL/SYMBOL genes are looked up by their symbol (the node label / SYMBOL: id)
+    id_prefixes = frozenset({"ORPHA", "ORPHANET", "OMIM", "MIM", "HP", "HGNC", "SYMBOL",
+                             "ENSEMBL"})
+    by_name = True
 
     def query(self, node: Node, limit: int = 10) -> list[Edge]:
         try:
@@ -54,7 +89,9 @@ class OrphadataSource(Source):
 
     # -- dispatch -----------------------------------------------------------
     def _query(self, node: Node, limit: int) -> list[Edge]:
-        curies = ([node.id] if node.id else []) + list(node.xrefs)
+        if node.id is None:
+            return self._search(node, limit)
+        curies = self.ids_for(node)
         for c in curies:
             if c.split(":", 1)[0].upper() in ("ORPHA", "ORPHANET"):
                 return self._disease(node, c.split(":", 1)[1], limit)
@@ -65,13 +102,13 @@ class OrphadataSource(Source):
                 edges = self._by_omim(node, i, limit)
             elif p.upper() == "HP":
                 edges = self._by_hpo(node, c, limit)
+            elif p.upper() == "SYMBOL":
+                edges = self._by_gene(node, i, limit)
+            elif p.upper() in ("HGNC", "ENSEMBL") and node.kind == "gene":
+                edges = self._by_gene(node, node.label, limit)
             if edges:
                 return edges
-        if node.kind == "gene" or (node.id or "").startswith("HGNC:"):
-            return self._by_gene(node, limit)
-        if node.kind not in ("disease", "unknown", "term"):
-            return []  # a label search for these would only produce spurious diseases
-        return self._search(node, limit)
+        return []
 
     # -- helpers ------------------------------------------------------------
     def _code_json(self, path: str):
@@ -91,6 +128,13 @@ class OrphadataSource(Source):
 
     def _disease_node(self, code, label: str) -> Node:
         return Node(label, f"ORPHA:{code}", "disease", self.name)
+
+    def _gene_node(self, g: dict) -> Node:
+        refs = {x["Source"]: x["Reference"] for x in g.get("ExternalReference") or []}
+        gid = f"HGNC:{refs['HGNC']}" if "HGNC" in refs else f"SYMBOL:{g['Symbol']}"
+        xr = tuple(f"{GENE_XREF[s]}:{v}" for s, v in refs.items()
+                   if s in GENE_XREF and s != "HGNC")
+        return Node(g["Symbol"], gid, "gene", self.name, xr)
 
     # -- free text ----------------------------------------------------------
     def _search(self, node: Node, limit: int) -> list[Edge]:
@@ -150,17 +194,12 @@ class OrphadataSource(Source):
 
         genes = self._data_results(f"rd-associated-genes/orphacodes/{code}")
         if isinstance(genes, dict):
-            ges = []
+            ranked = []
             for a in genes.get("DisorderGeneAssociation") or []:
-                g = a["Gene"]
-                refs = {x["Source"]: x["Reference"] for x in g.get("ExternalReference") or []}
-                gid = f"HGNC:{refs['HGNC']}" if "HGNC" in refs else f"SYMBOL:{g['Symbol']}"
-                xr = tuple(f"{s}:{v}" for s, v in refs.items() if s in ("OMIM", "Ensembl"))
-                causal = "disease-causing" in (a.get("DisorderGeneAssociationType") or "").lower()
-                ges.append(mk("caused_by_gene" if causal else "gene_associated",
-                              Node(g["Symbol"], gid, "gene", self.name, xr)))
-            ges.sort(key=lambda e: e.relation != "caused_by_gene")
-            groups.append(ges)
+                rank, rel, _ = _gene_relation(a.get("DisorderGeneAssociationType"))
+                assessed = (a.get("DisorderGeneAssociationStatus") or "").lower() == "assessed"
+                ranked.append(((rank, not assessed), mk(rel, self._gene_node(a["Gene"]))))
+            groups.append([e for _, e in sorted(ranked, key=lambda t: t[0])])
 
         xrefs = self._data_results(f"rd-cross-referencing/orphacodes/{code}")
         if isinstance(xrefs, dict):
@@ -168,7 +207,10 @@ class OrphadataSource(Source):
             for r in xrefs.get("ExternalReference") or []:
                 src = XREF_PREFIX.get(r["Source"], r["Source"].upper())
                 c = f"{src}:{r['Reference']}"
-                xs.append(mk("xref", Node(c, c, "disease", self.name)))
+                # only exact mappings are "xref" (main.py merges those into one entity)
+                code = (r.get("DisorderMappingRelation") or "-").split()[0]
+                rel = XREF_RELATION.get(code, "xref_related")
+                xs.append(mk(rel, Node(c, c, "disease", self.name)))
             xs.sort(key=lambda e: not e.dst.id.startswith(("OMIM:", "MONDO:")))
             groups.append(xs)
         return _interleave(groups, limit)
@@ -194,10 +236,22 @@ class OrphadataSource(Source):
         ranked.sort(key=lambda t: t[0])
         return [e for _, e in ranked][:limit]
 
-    def _by_gene(self, node: Node, limit: int) -> list[Edge]:
+    def _by_gene(self, node: Node, symbol: str, limit: int) -> list[Edge]:
         # the API only matches lower-case symbols
         res = self._data_results(
-            f"rd-associated-genes/genes/symbols/{quote(node.label.lower(), safe='')}")
-        return [Edge(node, self._disease_node(r["ORPHAcode"], r["Preferred term"]),
-                     "gene_associated", self.name)
-                for r in (res if isinstance(res, list) else [])][:limit]
+            f"rd-associated-genes/genes/symbols/{quote(symbol.lower(), safe='')}")
+        src, ranked = node, []
+        for r in res if isinstance(res, list) else []:
+            for a in r.get("DisorderGeneAssociation") or []:
+                if a["Gene"]["Symbol"].upper() != symbol.upper():
+                    continue
+                g = self._gene_node(a["Gene"])  # carries Orphanet's xrefs for this gene
+                src = Node(node.label, node.id, "gene", node.source,
+                           tuple(dict.fromkeys((*node.xrefs, *([g.id] if g.id != node.id
+                                                               else []), *g.xrefs))))
+                rank, _, rel = _gene_relation(a.get("DisorderGeneAssociationType"))
+                assessed = (a.get("DisorderGeneAssociationStatus") or "").lower() == "assessed"
+                ranked.append(((rank, not assessed), rel,
+                               self._disease_node(r["ORPHAcode"], r["Preferred term"])))
+        ranked.sort(key=lambda t: t[0])
+        return [Edge(src, dst, rel, self.name) for _, rel, dst in ranked][:limit]

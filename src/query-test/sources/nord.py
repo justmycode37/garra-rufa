@@ -22,6 +22,8 @@ MIN_INTERVAL = 1.0  # seconds between requests
 
 class NordSource(Source):
     name = "nord"
+    id_prefixes = frozenset({"NORD"})
+    by_name = True
 
     def __init__(self):
         super().__init__()
@@ -49,9 +51,10 @@ class NordSource(Source):
                     kind="disease", source=self.name)
 
     def _query(self, node: Node, limit: int) -> list[Edge]:
-        for cand in (node.id, *node.xrefs):
-            if cand and cand.upper().startswith("NORD:"):
-                d = self._get(f"{API}/{cand.split(':', 1)[1]}")
-                return [Edge(node, self._mk(d), "matches", self.name)]
+        for cand in self.ids_for(node):
+            d = self._get(f"{API}/{cand.split(':', 1)[1]}")
+            return [Edge(node, self._mk(d), "matches", self.name)]
+        if node.id is not None:
+            return []
         items = self._get(API, search=node.label, per_page=min(max(limit, 1), 100))
         return [Edge(node, self._mk(d), "matches", self.name) for d in items[:limit]]

@@ -38,20 +38,43 @@ class Edge:
 
 
 class Source:
-    """Base class for a dataset. Subclasses set `name` and implement `query`."""
+    """Base class for a dataset. Subclasses set `name`, `id_prefixes`, `by_name` and
+    implement `query`.
+
+    NOTE FOR FUTURE AGENTS: every Source must declare how it can be queried, and
+    main.run() only sends it nodes that match:
+      id_prefixes  CURIE prefixes (upper case) this source looks up directly. A node is
+                   sent here when its id or any xref has one of these prefixes.
+      by_name      True if the source can free-text search a label. Only nodes with no
+                   id at all (the raw input term) are ever name-searched.
+    query() must follow the same rule: never fall back to a label search for a node
+    that has an id. Fuzzy label matches ("Marfan syndrome" -> "Sick sinus syndrome",
+    "Loeys-Dietz syndrome 2" -> "Tietz syndrome") were the main source of off-topic
+    nodes. If a lookup by id fails, return [] instead.
+    """
     name = "base"
+    id_prefixes: frozenset[str] = frozenset()
+    by_name: bool = False
 
     def __init__(self):
         self.session = requests.Session()
         self.session.headers["User-Agent"] = USER_AGENT
 
+    def ids_for(self, node: Node) -> list[str]:
+        """The node's id/xrefs this source understands, in order of preference."""
+        return [c for c in (node.id, *node.xrefs)
+                if c and c.split(":", 1)[0].upper() in self.id_prefixes]
+
+    def accepts(self, node: Node) -> bool:
+        """Whether main.run() should send `node` to this source (see class docstring)."""
+        return self.by_name if node.id is None else bool(self.ids_for(node))
+
     def query(self, node: Node, limit: int = 10) -> list[Edge]:
         """Return edges from `node` to related nodes found in this dataset.
 
-        Must accept both free-text nodes (id None -> search by label) and CURIE
-        nodes (look up directly if the prefix/xrefs are understood, else fall back
-        to label search or return []). Return at most ~`limit` edges. Never raise
-        on network/data errors; return [] instead.
+        Free-text node (id None): search by label. CURIE node: look up through
+        ids_for(node), or return [] (no label fallback). Return at most ~`limit`
+        edges. Never raise on network/data errors; return [] instead.
         """
         raise NotImplementedError
 

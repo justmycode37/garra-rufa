@@ -18,6 +18,10 @@ HPO_DISEASE_PREFIXES = {"OMIM", "ORPHA", "DECIPHER"}
 
 class HpoSource(Source):
     name = "hpo"
+    # MONDO/HGNC have no direct endpoint: they are resolved by a label search whose hit
+    # must carry the same MONDO id / xref (or the exact gene symbol), so still id-based
+    id_prefixes = frozenset({"HP", *HPO_DISEASE_PREFIXES, "NCBIGENE", "MONDO", "HGNC"})
+    by_name = True
 
     def query(self, node: Node, limit: int = 10) -> list[Edge]:
         try:
@@ -28,7 +32,7 @@ class HpoSource(Source):
     def _query(self, node: Node, limit: int) -> list[Edge]:
         if node.id is None:
             return self._search(node, limit)
-        for cand in (node.id, *node.xrefs):
+        for cand in self.ids_for(node):
             prefix = cand.split(":", 1)[0].upper()
             if prefix == "HP":
                 return self._from_term(node, cand, limit)

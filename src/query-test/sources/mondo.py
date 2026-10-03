@@ -42,6 +42,8 @@ def _target_kind(curie: str) -> str:
 
 class MondoSource(Source):
     name = "mondo"
+    id_prefixes = frozenset({PREFIX})
+    by_name = True
 
     def query(self, node: Node, limit: int = 10) -> list[Edge]:
         if node.kind not in ("disease", "unknown", "term"):
@@ -52,14 +54,12 @@ class MondoSource(Source):
             return []
 
     def _query(self, node: Node, limit: int) -> list[Edge]:
-        curie = None
-        for c in ([node.id] if node.id else []) + list(node.xrefs):
-            if c and c.upper().startswith(PREFIX + ":"):
-                curie = PREFIX + ":" + c.split(":", 1)[1]
-                break
-        if curie:
-            return self._relations(node, curie, limit)
-        return self._search(node, limit)
+        if node.id is None:
+            return self._search(node, limit)
+        ids = self.ids_for(node)
+        if not ids:
+            return []
+        return self._relations(node, PREFIX + ":" + ids[0].split(":", 1)[1], limit)
 
     def _search(self, node: Node, limit: int) -> list[Edge]:
         d = self.get_json(f"{OLS}/search", params={
