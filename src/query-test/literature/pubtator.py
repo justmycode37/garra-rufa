@@ -18,8 +18,6 @@ enrich() exports the annotations of every PMID in the collection: per paper the 
 concepts (type, PubTator id, database id, name, mentions) and the relations PubTator
 extracted (type|concept|concept), the input for linking papers later.
 """
-from sources.base import similar
-
 from . import ncbi
 from .base import Collection, Concept, Paper, Provider, Query
 
@@ -61,13 +59,13 @@ class PubtatorProvider(Provider):
                     ok = name.upper() == (c.symbol or "").upper() or (
                         c.ncbigene and str(r.get("db_id")) == c.ncbigene)
                 else:
-                    # "Multiple matches": the full query text is a synonym of the concept
-                    # ("cystathionine beta-synthase deficiency" -> @DISEASE_Homocystinuria)
-                    match = r.get("match") or ""
-                    ok = (c.mesh_id and r.get("db_id") == c.mesh_id) or name.lower() in {
-                        n.lower() for n in [*c.names, c.mesh or ""]} or (
-                        match.startswith("Matched on name") and similar(t, name)) or (
-                        match == "Multiple matches" and r is rows[0])
+                    # A broader MeSH mapping and autocomplete rank are not identity evidence.
+                    names = [*c.names, *([c.mesh] if c.mesh and c.mesh_exact else [])]
+                    ok = (c.mesh_exact and c.mesh_id and r.get("db_id") == c.mesh_id) or (
+                        " ".join(name.casefold().split()) in {
+                            " ".join(n.casefold().split()) for n in names if n
+                        }
+                    )
                 if ok:
                     found = r["_id"]
                     break

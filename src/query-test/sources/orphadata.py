@@ -22,6 +22,8 @@ association's SourceOfValidation ("22587682[PMID]_...") as Edge.evidence.
 import re
 from urllib.parse import quote
 
+import requests
+
 from .base import Edge, Node, Source, info
 
 CODE_API = "https://api.orphacode.org/EN/ClinicalEntity"
@@ -175,7 +177,11 @@ class OrphadataSource(Source):
 
     # -- ORPHA disorder -----------------------------------------------------
     def _disease(self, node: Node, code: str, limit: int) -> list[Edge]:
-        d = self._code_json(f"orphacode/{code}/Definition")
+        try:
+            d = self._code_json(f"orphacode/{code}/Definition")
+        except (requests.RequestException, TimeoutError):
+            # Optional descriptive text must not prevent association retrieval.
+            d = None
         node = Node(node.label, node.id, node.kind, node.source, node.xrefs,
                     info(description=d.get("Definition") if isinstance(d, dict) else None,
                          url=PAGE.format(code)))

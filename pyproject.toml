@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+research = ["requests>=2.32", "networkx>=3"]
+
 [project.scripts]
 fetch-sources = "garra.sources.cli:main"
 atlas = "garra.atlas.cli:main"

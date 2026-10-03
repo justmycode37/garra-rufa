@@ -17,6 +17,7 @@ Queries (plan.py):
                  variants per gene, often recent ClinVar submissions nobody has cited yet)
 """
 import ast
+import re
 from urllib.parse import quote
 
 import requests
@@ -27,6 +28,24 @@ from .base import Paper, Provider, Query
 API = "https://www.ncbi.nlm.nih.gov/research/litvar2-api"
 TOP_VARIANTS = 10  # gene_variants: variants per gene
 PER_VARIANT = 30  # gene_variants: papers per variant
+
+
+AMINO_ACIDS = dict(zip(
+    "ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL TER".split(),
+    "ARNDCQEGHILKMFPSTWYV*",
+    strict=True,
+))
+
+
+def _protein_key(value: str) -> str:
+    """Normalize substitution spelling only; do not infer transcript equivalence."""
+    text = value.strip().upper()
+    match = re.fullmatch(r"P\.\(?([A-Z]{3}|[A-Z*])(\d+)([A-Z]{3}|[A-Z*=])\)?", text)
+    if match:
+        ref, position, alt = match.groups()
+        if (len(ref) == 1 or ref in AMINO_ACIDS) and (len(alt) == 1 or alt in AMINO_ACIDS):
+            return f"P.{AMINO_ACIDS.get(ref, ref)}{position}{AMINO_ACIDS.get(alt, alt)}"
+    return text
 
 
 class LitVarProvider(Provider):
@@ -40,9 +59,22 @@ class LitVarProvider(Provider):
             return f"litvar@{v.rsid}##", v.rsid
         if v.gene and v.hgvs:
             text = f"{v.gene} {v.hgvs}"
+            matches = set()
             for r in self.fetch_json(f"{API}/variant/autocomplete/", {"query": text}) or []:
-                if v.gene in (r.get("gene") or []):
-                    return r["_id"], text
+                genes = r.get("gene") or []
+                if isinstance(genes, str):
+                    genes = [genes]
+                hgvs = r.get("hgvs") or r.get("name")
+                if (
+                    v.gene.casefold() in {g.casefold() for g in genes if isinstance(g, str)}
+                    and isinstance(hgvs, str)
+                    and _protein_key(hgvs) == _protein_key(v.hgvs)
+                    and r.get("_id")
+                ):
+                    matches.add(r["_id"])
+            # Multiple identifiers for a protein change are unresolved, not interchangeable.
+            if len(matches) == 1:
+                return matches.pop(), text
         return None
 
     def _publications(self, lid: str) -> list[str]:
