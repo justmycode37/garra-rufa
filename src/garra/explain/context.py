@@ -133,3 +133,62 @@ def build_evidence_packet(journey: dict) -> dict:
             "Write for a patient group leader, not a physician.",
         ],
     }
+
+
+def augment_evidence_with_connections(packet: dict, connections: dict) -> None:
+    """Append Monarch/Orphadata/Open Targets connection cards to an explain evidence packet."""
+    if connections.get("status") not in ("ok", "no_matches"):
+        return
+    citations = packet.setdefault("citations", [])
+    facts = packet.setdefault("facts", [])
+
+    anchor = connections.get("anchor") or {}
+    if anchor.get("name"):
+        cite_id = f"E{len(citations) + 1}"
+        citations.append(
+            {
+                "id": cite_id,
+                "kind": "connections_anchor",
+                "label": f"Live API anchor: {anchor.get('name')} ({anchor.get('id')})",
+                "source": "garra.packet (Monarch semsim profile)",
+                "url": "https://api.monarchinitiative.org/v3/docs",
+                "detail": {"equivalent_ids": anchor.get("equivalent_ids")},
+            }
+        )
+        facts.append({"cite_id": cite_id, "kind": "connections_anchor", "label": anchor.get("name")})
+
+    for card in (connections.get("cards") or [])[:5]:
+        sim = card.get("similarity") or {}
+        label = (
+            f"{card.get('name')} — {sim.get('provider')} {sim.get('metric')} "
+            f"{sim.get('display_label') or sim.get('value')}; status {card.get('biological_status')}"
+        )
+        cite_id = f"E{len(citations) + 1}"
+        citations.append(
+            {
+                "id": cite_id,
+                "kind": "connection_card",
+                "label": label,
+                "source": "garra.connections",
+                "url": sim.get("source_url") or "",
+                "detail": {
+                    "disease_id": card.get("id"),
+                    "warnings": card.get("warnings"),
+                    "claims": [
+                        {
+                            "relationship": c.get("relationship"),
+                            "statement": c.get("statement"),
+                            "status": c.get("status"),
+                        }
+                        for c in (card.get("claims") or [])
+                    ],
+                },
+            }
+        )
+        facts.append({"cite_id": cite_id, "kind": "connection_card", "label": card.get("name")})
+
+    rules = packet.setdefault("rules", [])
+    rules.append(
+        "Connection cards use live Monarch phenotype similarity plus sourced pathway/gene claims; "
+        "they do not replace local atlas neighbors or prove treatment response."
+    )

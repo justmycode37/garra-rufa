@@ -12,6 +12,16 @@ from garra.connections import build_connections, render_connections
 from garra.explain.explain import explain_query
 from garra.graph.resolve import resolve_query
 from garra.ingest.build import build_atlas, missing_sources
+from garra.packet import cache as packet_cache
+from garra.packet.build import build_connections_packet, run_pipeline
+from garra.packet.prefetch import (
+    DEFAULT_ANCHORS_FILE,
+    JSONL_HARD_MAX,
+    JSONL_MAX_DEFAULT,
+    load_jobs_from_raresource,
+    load_queries_from_file,
+    prefetch_packets,
+)
 from garra.similarity import similar_diseases
 
 
@@ -61,7 +71,195 @@ def main(argv: list[str] | None = None) -> int:
     connections.add_argument("--limit", type=int, default=5)
     connections.add_argument("--html", type=Path, help="Write a standalone browser report")
 
+    packet_cmd = sub.add_parser(
+        "packet",
+        help="Fetch Monarch/Orphadata/Open Targets for one anchor and write connections packet v1",
+    )
+    packet_cmd.add_argument("query")
+    packet_cmd.add_argument("--no-cache", action="store_true", help="Refetch all API steps")
+    packet_cmd.add_argument("--candidate-limit", type=int, default=5)
+    packet_cmd.add_argument(
+        "--out",
+        type=Path,
+        help="Copy packet JSON here (also stored under data/cache/connections/)",
+    )
+
+    pipeline = sub.add_parser(
+        "pipeline",
+        help="packet → build_connections → explain_query (single anchor, no bulk disease loop)",
+    )
+    pipeline.add_argument("query")
+    pipeline.add_argument("--no-cache", action="store_true")
+    pipeline.add_argument("--candidate-limit", type=int, default=5)
+    pipeline.add_argument("--min-score", type=float, default=50)
+    pipeline.add_argument("--offline", action="store_true", help="Offline explain/journey actions")
+    pipeline.add_argument("--no-openai", action="store_true")
+    pipeline.add_argument("--html", type=Path, help="Write connections HTML report")
+    pipeline.add_argument(
+        "--packet-only",
+        action="store_true",
+        help="Print only the connections packet JSON",
+    )
+    pipeline.add_argument(
+        "--out",
+        type=Path,
+        help="Write full pipeline JSON (large; includes packet) to this path",
+    )
+
+    prefetch = sub.add_parser(
+        "prefetch-packets",
+        help="Batch-fetch connection packets for a curated anchor list (not all 7200 diseases)",
+    )
+    src = prefetch.add_mutually_exclusive_group()
+    src.add_argument(
+        "--file",
+        type=Path,
+        help=f"Text file: one disease query per line (default: {DEFAULT_ANCHORS_FILE.name})",
+    )
+    src.add_argument(
+        "--raresource-jsonl",
+        type=Path,
+        help="RARe-SOURCE diseases.jsonl (requires --limit; capped for safety)",
+    )
+    prefetch.add_argument(
+        "--limit",
+        type=int,
+        help=f"Max rows from JSONL (default {JSONL_MAX_DEFAULT} when using --raresource-jsonl)",
+    )
+    prefetch.add_argument("--offset", type=int, default=0, help="JSONL row offset")
+    prefetch.add_argument("--no-cache", action="store_true", help="Refetch API steps per anchor")
+    prefetch.add_argument(
+        "--refetch",
+        action="store_true",
+        help="Rebuild even when packet.json already exists in cache",
+    )
+    prefetch.add_argument("--candidate-limit", type=int, default=5)
+    prefetch.add_argument(
+        "--sleep",
+        type=float,
+        default=1.0,
+        help="Seconds between anchors (rate limit courtesy)",
+    )
+    prefetch.add_argument("--dry-run", action="store_true", help="List anchors only")
+    prefetch.add_argument(
+        "--reset-index",
+        action="store_true",
+        help="Truncate data/cache/connections/prefetch_index.jsonl before this run",
+    )
+    prefetch.add_argument(
+        "--rebuild-registry",
+        action="store_true",
+        help="Rescan data/cache/connections/*/packet.json into query_registry.json",
+    )
+    prefetch.add_argument(
+        "--full-catalog",
+        action="store_true",
+        help=f"With --raresource-jsonl: prefetch all rows (max {JSONL_HARD_MAX})",
+    )
+
+    sub.add_parser(
+        "cache-status",
+        help="Show connections packet disk cache and query registry stats",
+    )
+    sub.add_parser(
+        "cache-rebuild-registry",
+        help="Rebuild query_registry.json from cached packet.json files",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "cache-status":
+        print(json.dumps(packet_cache.cache_stats(), indent=2))
+        return 0
+
+    if args.cmd == "cache-rebuild-registry":
+        report = packet_cache.rebuild_registry_from_disk()
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "prefetch-packets":
+        try:
+            if args.rebuild_registry:
+                packet_cache.rebuild_registry_from_disk()
+            if args.raresource_jsonl:
+                jsonl_path = args.raresource_jsonl
+                jobs = load_jobs_from_raresource(
+                    jsonl_path,
+                    limit=args.limit,
+                    offset=args.offset,
+                    full_catalog=args.full_catalog,
+                )
+            else:
+                path = args.file or DEFAULT_ANCHORS_FILE
+                jobs = load_queries_from_file(path)
+                if args.limit is not None:
+                    jobs = jobs[: args.limit]
+            if args.reset_index:
+                idx = packet_cache.CACHE_ROOT / "prefetch_index.jsonl"
+                idx.parent.mkdir(parents=True, exist_ok=True)
+                idx.write_text("", encoding="utf-8")
+            report = prefetch_packets(
+                jobs,
+                use_cache=not args.no_cache,
+                skip_cached=not args.refetch,
+                candidate_limit=args.candidate_limit,
+                sleep_seconds=args.sleep,
+                dry_run=args.dry_run,
+            )
+            print(json.dumps(report, indent=2, ensure_ascii=False))
+            return 0 if report.get("status") in ("ok", "partial") else 1
+        except (OSError, ValueError, FileNotFoundError) as exc:
+            print(f"Prefetch failed: {exc}", file=sys.stderr)
+            return 2
+
+    if args.cmd == "packet":
+        try:
+            payload = build_connections_packet(
+                args.query,
+                use_cache=not args.no_cache,
+                candidate_limit=args.candidate_limit,
+            )
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(
+                    json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+            return 0
+        except (OSError, ValueError, LookupError) as exc:
+            print(f"Packet fetch failed: {exc}", file=sys.stderr)
+            return 2
+
+    if args.cmd == "pipeline":
+        result = run_pipeline(
+            args.query,
+            use_cache=not args.no_cache,
+            candidate_limit=args.candidate_limit,
+            min_score=args.min_score,
+            live=not args.offline,
+            use_openai=not args.no_openai,
+        )
+        if args.out:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(
+                json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+        if args.packet_only:
+            print(json.dumps(result.get("packet") or result, indent=2, ensure_ascii=False))
+        else:
+            if args.html and result.get("connections"):
+                args.html.write_text(
+                    render_connections(result["connections"]), encoding="utf-8"
+                )
+            slim = {k: v for k, v in result.items() if k != "packet"}
+            slim["packet_summary"] = {
+                "anchor": (result.get("packet") or {}).get("anchor"),
+                "candidate_count": len((result.get("packet") or {}).get("candidates") or []),
+                "cache_dir": result.get("cache_dir"),
+            }
+            print(json.dumps(slim, indent=2, ensure_ascii=False))
+        return 0 if result.get("status") == "ok" else 1
 
     if args.cmd == "connections":
         try:

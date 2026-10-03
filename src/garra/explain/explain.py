@@ -5,7 +5,7 @@ from __future__ import annotations
 from garra.actions.journey import build_journey
 from garra.sources.envelope import envelope, now_iso
 
-from .context import build_evidence_packet
+from .context import augment_evidence_with_connections, build_evidence_packet
 from .fallback import fallback_narrative
 from .openai_client import call_openai
 
@@ -30,6 +30,7 @@ def explain_journey(
     *,
     use_openai: bool = True,
     model: str | None = None,
+    connections: dict | None = None,
 ) -> dict:
     if journey.get("status") != "ok":
         return envelope(
@@ -42,6 +43,8 @@ def explain_journey(
         )
 
     packet = build_evidence_packet(journey)
+    if connections:
+        augment_evidence_with_connections(packet, connections)
     if use_openai:
         try:
             narrative = call_openai(packet, model=model)

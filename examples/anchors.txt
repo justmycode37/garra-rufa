@@ -1,0 +1,11 @@
+# Curated demo anchors (one disease query per line). Not a full RARe-SOURCE crawl.
+Pompe disease
+Fabry disease
+Marfan syndrome
+Cystic fibrosis
+Duchenne muscular dystrophy
+Huntington disease
+Gaucher disease
+Wilson disease
+Tay-Sachs disease
+Niemann-Pick disease type C

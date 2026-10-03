@@ -4,9 +4,29 @@ This layer consumes a normalized JSON packet supplied by the data-fetch team. It
 
 ## Run the prototype
 
+Synthetic fixture:
+
 ```sh
 PYTHONPATH=src python3 -m garra.atlas connections examples/connections-demo.json --min-score 50 --limit 5 --html connections.html
 ```
+
+Live anchor (Monarch + Orphadata + Open Targets, disk cache per MONDO id):
+
+```sh
+PYTHONPATH=src python3 -m garra.atlas packet "Pompe disease" --candidate-limit 5
+PYTHONPATH=src python3 -m garra.atlas pipeline "Pompe disease" --offline --no-openai --html connections.html
+```
+
+Cached steps and `packet.json` land in `data/cache/connections/<MONDO_id>/` (gitignored). Re-run with `--no-cache` on `packet` or `pipeline` to refresh upstream data.
+
+Batch prefetch for a curated list (default `examples/anchors.txt`):
+
+```sh
+PYTHONPATH=src python3 -m garra.atlas prefetch-packets --sleep 1.2
+PYTHONPATH=src python3 -m garra.atlas prefetch-packets --raresource-jsonl data/raw/raresource/diseases.jsonl --limit 30
+```
+
+Summary: `data/cache/connections/prefetch_report.json`. Per-anchor log: `prefetch_index.jsonl`. Skips anchors that already have `packet.json` unless `--refetch`.
 
 Open `connections.html` in a browser. The example is explicitly synthetic and uses example.org links, not real disease findings. Replace the packet with verified data before a real demonstration. JSON cards are also printed to stdout.
 
