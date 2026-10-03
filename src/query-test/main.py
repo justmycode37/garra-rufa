@@ -309,6 +309,9 @@ def main():
     ap.add_argument("-o", "--out", type=Path, default=Path("graph.html"),
                     help="output: .html (interactive viewer), .md (readable report), .png or .graphml")
     args = ap.parse_args()
+    # labels contain characters such as "≥"; a redirected stdout on Windows is cp1252
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
     if not args.input and not args.symptoms:
         ap.error("give an input term/CURIE or --symptoms")
 

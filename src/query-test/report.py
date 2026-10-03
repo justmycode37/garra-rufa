@@ -171,9 +171,13 @@ def write_report(g: nx.MultiDiGraph, edges: list[Edge], ents, start, stats: Stat
         w(f"- ids/xrefs: {', '.join(sorted(d['xrefs']))[:600]}\n")
         groups: dict[str, dict] = defaultdict(lambda: defaultdict(lambda: (set(), set())))
         for u, v, ed in g.edges(data=True):
-            if main not in (u, v) or start_key in (u, v):
+            if main not in (u, v):
                 continue
             other = v if u == main else u
+            # the synthetic query node (free-text term / symptom list) is not a fact about
+            # the entity; with a CURIE input the start *is* the entity, so nothing is skipped
+            if other == start_key:
+                continue
             rel = ed["relation"] if u == main else f"(inverse) {ed['relation']}"
             rels, srcs = groups[_group(ed["relation"], g.nodes[other]["kind"])][other]
             rels.add(rel)
