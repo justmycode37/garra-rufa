@@ -173,6 +173,33 @@ class PrimeKGSource(Source):
             "length(name_lc) LIMIT ?", (f"%{q}%", q, f"{q}%", limit)).fetchall()
         return [Edge(node, self._mk(r), "matches", self.name) for r in rows]
 
+    @staticmethod
+    def _rank(db, idx: int, rows, groups: dict[str, list]):
+        """Order a disease's neighbours so that truncation to `limit` keeps the useful ones
+        (rows come in file order, which put genes with the lowest NCBI ids first, e.g.
+        SERPINA3 for Fabry disease).
+          genes:      most phenotypes shared with the disease first (a gene whose own
+                      phenotypes match the disease is a consistent association; Rett ->
+                      MECP2, CDKL5, FOXG1), then the most disease links
+          phenotypes: most specific first (fewest diseases with that phenotype)
+        PrimeKG's disease-gene links are noisy for rare diseases (GLA is not linked to Fabry
+        disease at all), so prefer the curated sources for causal genes."""
+        phen = [n[0] for _, *n in rows if n[3] == "phenotype"]
+        q = ",".join("?" * len(phen)) or "NULL"
+        for rel, g in groups.items():
+            if all(n[3] == "gene" for n in g):
+                score = {n[0]: db.execute(
+                    f"SELECT (SELECT count(*) FROM edges WHERE x=? AND y IN ({q})), "
+                    "(SELECT count(*) FROM edges e JOIN nodes d ON d.idx=e.y "
+                    " WHERE e.x=? AND d.type='disease')", (n[0], *phen, n[0])).fetchone()
+                    for n in g}
+                g.sort(key=lambda n: (-score[n[0]][0], -score[n[0]][1], n[0]))
+            elif all(n[3] == "phenotype" for n in g):
+                deg = {n[0]: db.execute(
+                    "SELECT count(*) FROM edges e JOIN nodes d ON d.idx=e.y "
+                    "WHERE e.x=? AND d.type='disease'", (n[0],)).fetchone()[0] for n in g}
+                g.sort(key=lambda n: (deg[n[0]], n[0]))
+
     def _relations(self, db, node: Node, row, limit: int) -> list[Edge]:
         src = Node(node.label if node.id else row[4], id=row[1], kind=row[3],
                    source=node.source, xrefs=tuple(dict.fromkeys((*node.xrefs, *self._mk(row).xrefs))))
@@ -182,6 +209,8 @@ class PrimeKGSource(Source):
         groups: dict[str, list] = {}
         for rel, *n in rows:
             groups.setdefault(rel, []).append(n)
+        if src.kind == "disease":
+            self._rank(db, row[0], rows, groups)
         # round-robin across relation types so one huge group (e.g. ppi) can't crowd out others
         edges: list[Edge] = []
         i = 0

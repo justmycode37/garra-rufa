@@ -10,6 +10,7 @@ patient-level CaseTo* and GenotypeTo* associations are deliberately not used.
 Monarch's canonical IDs are MONDO (disease), HP (phenotype) and HGNC (human gene);
 other CURIEs (OMIM, ORPHA, ...) are resolved through xref search.
 """
+from ._hpoa import freq_value
 from .base import Edge, Node, Source
 
 API = "https://api-v3.monarchinitiative.org/v3/api"
@@ -58,6 +59,16 @@ SPECS = {
              ("subject", HOMOLOG, "ortholog_of", "obj"),
              ("subject", EXPR, "expressed_in", "obj")],
 }
+
+
+def _frequency(it: dict) -> float:
+    """0..1 frequency of a disease-phenotype association (percentage, n/m count or the
+    HPO frequency qualifier)."""
+    if it.get("has_percentage") is not None:
+        return float(it["has_percentage"]) / 100
+    if it.get("has_count") is not None and it.get("has_total"):
+        return it["has_count"] / it["has_total"]
+    return freq_value(it.get("frequency_qualifier_label") or it.get("frequency_qualifier"))
 
 
 class MonarchSource(Source):
@@ -126,16 +137,24 @@ class MonarchSource(Source):
                                     rel, self.name) for h in (hier.get(key) or [])[:limit]])
 
         for side, cat, rel, direction in SPECS[kind]:
+            disease_phen = side == "subject" and cat == DP
             try:
                 data = self.get_json(f"{API}/association", params={
-                    side: mid, "category": cat, "limit": limit * 3,
-                    **({"direct": "true"} if side == "subject" and cat == DP else {})})
+                    side: mid, "category": cat,
+                    # all of a disease's phenotypes, so they can be ranked by frequency
+                    "limit": 500 if disease_phen else limit * 3,
+                    **({"direct": "true"} if disease_phen else {})})
             except Exception:
                 continue
+            items = data.get("items", [])
+            if cat == VARIANT:  # dozens per disease; ClinVar covers variants in depth
+                items = items[:5]
+            if disease_phen:  # most frequent first (stable: API order among equals)
+                items = sorted(items, key=lambda it: -_frequency(it))
             pre = "object" if direction == "obj" else "subject"
             groups.append([Edge(src, self._mknode(it[pre], it.get(pre + "_label"),
                                                   it.get(pre + "_category")), rel, self.name)
-                           for it in data.get("items", [])])
+                           for it in items])
 
         # round-robin over relation groups so one big group cannot crowd out the rest
         edges: list[Edge] = []

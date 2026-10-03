@@ -25,6 +25,17 @@ _MODULES = {
     "opentargets": "OpenTargetsSource",
     "clinvar": "ClinVarSource",
     "raresource": "RareSourceSource",
+    # groups working on a disease: patient organisations, expert centres, networks,
+    # research projects/consortia, trials and their sponsors (shared helpers in _groups).
+    # Global Genes (globalgenes.org) is missing: it sits behind a Cloudflare challenge;
+    # _brightdata can fetch it once BRIGHTDATA_API_KEY / BRIGHTDATA_ZONE are set.
+    "orphanet_groups": "OrphanetGroupsSource",
+    "ern": "ErnSource",
+    "eurordis": "EurordisSource",
+    "rdcrn": "RdcrnSource",
+    "clinicaltrials": "ClinicalTrialsSource",
+    "genetic_alliance_uk": "GeneticAllianceUkSource",
+    "genetic_alliance_us": "GeneticAllianceUsSource",
 }
 
 

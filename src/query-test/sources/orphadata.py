@@ -81,6 +81,10 @@ class OrphadataSource(Source):
                              "ENSEMBL"})
     by_name = True
 
+    def __init__(self):
+        super().__init__()
+        self._names: dict[str, str | None] = {}  # ORPHAcode -> preferred term
+
     def query(self, node: Node, limit: int = 10) -> list[Edge]:
         try:
             return self._query(node, limit)
@@ -208,12 +212,26 @@ class OrphadataSource(Source):
                 src = XREF_PREFIX.get(r["Source"], r["Source"].upper())
                 c = f"{src}:{r['Reference']}"
                 # only exact mappings are "xref" (main.py merges those into one entity)
-                code = (r.get("DisorderMappingRelation") or "-").split()[0]
-                rel = XREF_RELATION.get(code, "xref_related")
+                mapping = (r.get("DisorderMappingRelation") or "-").split()[0]
+                rel = XREF_RELATION.get(mapping, "xref_related")
                 xs.append(mk(rel, Node(c, c, "disease", self.name)))
             xs.sort(key=lambda e: not e.dst.id.startswith(("OMIM:", "MONDO:")))
             groups.append(xs)
-        return _interleave(groups, limit)
+        return [self._named(e) for e in _interleave(groups, limit)]
+
+    def _named(self, e: Edge) -> Edge:
+        """Classification parents/children come without names (ORPHA:285014): look the
+        name up, only for edges that made it into the result."""
+        d = e.dst
+        if d.id and d.id.startswith("ORPHA:") and d.label == d.id:
+            code = d.id.split(":", 1)[1]
+            if code not in self._names:
+                r = self._code_json(f"orphacode/{code}/Name")
+                self._names[code] = r.get("Preferred term") if isinstance(r, dict) else None
+            if self._names[code]:
+                return Edge(e.src, self._disease_node(code, self._names[code]), e.relation,
+                            e.source)
+        return e
 
     # -- other identifiers ---------------------------------------------------
     def _by_omim(self, node: Node, omim: str, limit: int) -> list[Edge]:

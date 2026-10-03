@@ -10,7 +10,8 @@ Base URL: https://ontology.jax.org/api
 Diseases are returned as MONDO CURIEs when HPO knows the mapping (original
 OMIM/ORPHA id kept in xrefs); genes use NCBIGene CURIEs.
 """
-from .base import Edge, Node, Source
+from ._hpoa import freq_value
+from .base import Edge, Node, Source, similar
 
 API = "https://ontology.jax.org/api"
 HPO_DISEASE_PREFIXES = {"OMIM", "ORPHA", "DECIPHER"}
@@ -62,12 +63,16 @@ class HpoSource(Source):
     def _search(self, node: Node, limit: int) -> list[Edge]:
         q = node.label
         n_dis = limit // 3
-        terms = self.get_json(f"{API}/hp/search", params={"q": q, "max": limit}).get("terms", [])
+        # the term search matches any word ("Rett syndrome" -> "Sick sinus syndrome"), so
+        # fetch extra and keep only terms sharing a meaningful word with the query
+        terms = self.get_json(f"{API}/hp/search", params={"q": q, "max": limit * 4}).get("terms", [])
+        terms = [t for t in terms if similar(q, t["name"])]
         edges = [Edge(node, Node(t["name"], id=t["id"], kind="phenotype", source=self.name,
                                  xrefs=tuple(t.get("xrefs") or ())), "matches", self.name)
                  for t in terms[:limit - n_dis]]
         dis = self.get_json(f"{API}/network/search/disease",
-                            params={"q": q, "limit": max(n_dis, limit - len(edges))}).get("results", [])
+                            params={"q": q, "limit": max(n_dis, limit - len(edges)) * 2}).get("results", [])
+        dis = [d for d in dis if similar(q, d.get("name") or "")]
         edges += [Edge(node, self._dis(d), "matches", self.name)
                   for d in dis[:max(n_dis, limit - len(edges))]]
         seen: set[str] = set()
@@ -115,16 +120,20 @@ class HpoSource(Source):
         n_gene = max(1, limit // 4)
         edges = [Edge(src, self._gene(g), "gene_associated", self.name)
                  for g in (ann.get("genes") or [])[:n_gene]]
-        # round-robin over body-system categories so the first one can't crowd out the rest
+        # most frequent phenotypes first (Orphanet/OMIM frequency); among equally frequent
+        # ones, round-robin over body-system categories so one system can't crowd out the rest
         cats = [c for c in (ann.get("categories") or {}).values()]
+        ranked: list[tuple[float, int, dict]] = []
         seen: set[str] = set()
-        i = 0
-        while len(edges) < limit and any(i < len(c) for c in cats):
+        for pos in range(max(map(len, cats), default=0)):
             for items in cats:
-                if i < len(items) and len(edges) < limit and items[i]["id"] not in seen:
-                    seen.add(items[i]["id"])
-                    edges.append(Edge(src, self._phen(items[i]), "has_phenotype", self.name))
-            i += 1
+                if pos < len(items) and items[pos]["id"] not in seen:
+                    seen.add(items[pos]["id"])
+                    f = freq_value((items[pos].get("metadata") or {}).get("frequency"))
+                    ranked.append((f, len(ranked), items[pos]))
+        ranked.sort(key=lambda r: (-r[0], r[1]))
+        edges += [Edge(src, self._phen(p), "has_phenotype", self.name)
+                  for f, _, p in ranked[:max(0, limit - len(edges))] if f > 0]
         return edges[:limit]
 
     def _from_gene(self, node: Node, gid: str, limit: int) -> list[Edge]:

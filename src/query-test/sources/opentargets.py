@@ -74,6 +74,26 @@ MAP_Q = """query($t:[String!]!,$e:[String!]!){ mapIds(queryTerms:$t, entityNames
  mappings{ term hits{id name entity} } } }"""
 
 
+# maxClinicalStage, most advanced first; anything else (UNKNOWN, ...) sorts last
+STAGES = ["APPROVAL", "PHASE_4", "PHASE_3", "PHASE_2_3", "PHASE_2", "PHASE_1_2", "PHASE_1",
+          "EARLY_PHASE_1"]
+
+
+def _stage_rank(stage: str | None) -> int:
+    return STAGES.index(stage) if stage in STAGES else len(STAGES)
+
+
+def _stage_relation(stage: str | None) -> str:
+    """approved_drug for drugs approved for the disease, else trial_drug_phase_<n> (or
+    trial_drug when the stage is unknown): OpenTargets' list includes every clinical
+    candidate, so "treated_by" overstated it (lenograstim for stiff person syndrome)."""
+    if stage == "APPROVAL":
+        return "approved_drug"
+    if stage in STAGES:
+        return "trial_drug_" + stage.lower()
+    return "trial_drug"
+
+
 def _curie(ot_id: str) -> str:
     """MONDO_0007947 -> MONDO:0007947, Orphanet_558 -> ORPHA:558, UBERON_0000007 -> ..."""
     p, sep, local = ot_id.partition("_")
@@ -273,9 +293,11 @@ class OpenTargetsSource(Source):
         g.append([mk("associated_target", self._gene(r["target"]["id"],
                                                      r["target"]["approvedSymbol"]))
                   for r in (d.get("associatedTargets") or {}).get("rows") or []])
-        g.append([mk("treated_by", self._chem(r["drug"]["id"], r["drug"]["name"]))
-                  for r in (d.get("drugAndClinicalCandidates") or {}).get("rows") or []
-                  if r.get("drug")])
+        drugs = [r for r in (d.get("drugAndClinicalCandidates") or {}).get("rows") or []
+                 if r.get("drug")]
+        drugs.sort(key=lambda r: _stage_rank(r.get("maxClinicalStage")))
+        g.append([mk(_stage_relation(r.get("maxClinicalStage")),
+                     self._chem(r["drug"]["id"], r["drug"]["name"])) for r in drugs])
         g.append([mk("has_phenotype", self._dis(r["phenotypeHPO"]["id"],
                                                 r["phenotypeHPO"]["name"], "phenotype"))
                   for r in (d.get("phenotypes") or {}).get("rows") or []

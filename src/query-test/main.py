@@ -9,10 +9,21 @@ name-searched), collecting the connected nodes as the next frontier.
 Nodes are deduplicated as they arrive (entities.py): nodes sharing an id/xref are one
 entity, each source is queried at most once per entity, and repeated edges collapse.
 
+Symptom mode (--symptoms) starts from symptoms instead of a name: they are resolved to
+HPO terms and diseases are ranked by how well their HPO annotations cover them
+(sources/_hpoa.py); the top --candidates diseases are then expanded as above.
+
+Besides biomedical relations, the group sources (orphanet_groups, ern, eurordis, rdcrn,
+clinicaltrials, genetic_alliance_uk/_us, nord) link a disease to who works on it: patient
+organisations, expert centres, ERNs, research networks/consortia/projects, registries,
+trials and their sponsors. ERN nodes are expanded to their member hospitals and ePAG
+patient organisations in the next iteration (use -n 3 to get those for a free-text input).
+
 Usage:
   python src/query-test/main.py "Marfan syndrome"
   python src/query-test/main.py "Marfan syndrome" -n 3 --limit 5 --sources mondo hpo
   python src/query-test/main.py MONDO:0007947 --label "Marfan syndrome" -o graph.png
+  python src/query-test/main.py --symptoms "tall stature" arachnodactyly "ectopia lentis" -o run.md
 """
 import argparse
 import re
@@ -27,8 +38,10 @@ try:  # use the OS trust store; the certifi bundle fails on this machine
 except ImportError:
     pass
 
+import quality
 from entities import Entities
-from sources import Edge, Node, load_sources
+from report import Stats, write_report
+from sources import Edge, Node, _hpoa, load_sources
 
 CURIE = re.compile(r"^[A-Za-z][A-Za-z0-9_.]*:\S+$")
 
@@ -39,42 +52,185 @@ def parse_input(text: str, label: str | None) -> Node:
     return Node(label=text, kind="term")
 
 
+def symptom_seed(symptoms: list[str], top: int, stats: Stats) -> tuple[Node, list[Edge]]:
+    """Resolve symptoms to HP terms and rank diseases (sources/_hpoa.py). Returns the
+    query node and seed edges: query -> symptoms, symptom -> disease (full matches) and
+    query -> each ranked candidate disease."""
+    hpo = _hpoa.load()
+    texts = [t.strip() for s in symptoms for t in s.split(",") if t.strip()]
+    start = Node("symptoms: " + "; ".join(texts), kind="query")
+    if hpo is None:
+        print("symptom search needs the local HPO files (download failed)", file=sys.stderr)
+        return start, []
+    resolved = []
+    print("symptoms:")
+    for t in texts:
+        r = hpo.resolve(t)
+        sugg = [] if r else hpo.suggest(t)
+        print(f"  {t!r} -> " + (f"{r[1]} ({r[0]}, {r[2]})" if r else "NOT FOUND; closest: "
+                                + "; ".join(f"{name} ({hp})" for hp, name, _ in sugg)))
+        resolved.append((t, r, sugg))
+    hps = [r[0] for _, r, _ in resolved if r]
+    ranking = hpo.rank_diseases(hps, top=top) if hps else []
+    stats.symptoms = (resolved, ranking)
+    seed: list[Edge] = []
+    phen = {hp: Node(hpo.name[hp], id=hp, kind="phenotype", source="hpoa") for hp in hps}
+    seed += [Edge(start, n, "has_symptom", "hpoa") for n in phen.values()]
+    print("ranked diseases:")
+    for r in ranking:
+        dis = Node(r["name"], id=r["id"], kind="disease", source="hpoa", xrefs=tuple(r["xrefs"]))
+        seed.append(Edge(start, dis, "candidate_disease", "hpoa"))
+        seed += [Edge(phen[q], dis, "phenotype_of", "hpoa") for q, _, full, _ in r["matches"]
+                 if full]
+        full = sum(m[2] for m in r["matches"])
+        print(f"  {r['score']:5.1f}  {r['name']} ({r['id']})  {full}/{len(hps)} full matches")
+    return start, seed
+
+
 def run(start: Node, sources, iterations: int, limit: int, max_frontier: int,
-        ents: Entities) -> list[Edge]:
+        ents: Entities, stats: Stats | None = None, focus_limit: int = 40,
+        seed: list[Edge] | None = None) -> list[Edge]:
+    """Expand `start` (or, in symptom mode, the candidate diseases of the `seed` edges).
+
+    The focus entities (the CURIE input, the best name match of a free-text input, or
+    the top symptom-ranked diseases) are queried with `focus_limit` instead of `limit`,
+    so their profile is complete enough to read. Noise (animal diseases, taxa, lab codes,
+    model-organism phenotypes) and off-topic name matches are dropped and recorded in
+    stats.dropped; the frontier is ordered by how many sources reached an entity, and
+    generic nodes (inheritance modes, ...) are not expanded.
+    """
+    import time
+    stats = stats or Stats()
     edges: list[Edge] = []
-    frontier = [ents.add(start)]
+    if seed:
+        ents.add(start)
+        for e in seed:
+            ents.add(e.src)
+            ents.add(e.dst)
+            stats.depth[id(e)] = 0
+        edges += seed
+        frontier = list(dict.fromkeys(ents.find(e.dst.key()) for e in seed
+                                      if e.dst.kind == "disease"))
+        stats.focus = frontier[:3]
+    else:
+        frontier = [ents.add(start)]
+        stats.focus = frontier[:] if start.id else []
+    free_text = start.id is None and not seed
+    # ids each source was asked with / that gave results: a source that found nothing for
+    # an entity is asked again once a merge gives the entity ids it has not tried (symptom
+    # candidates start with ORPHA/OMIM ids only; OpenTargets needs the MONDO id that
+    # Monarch's answer merges in)
+    tried: dict[str, set[str]] = {s.name: set() for s in sources}
+    productive: dict[str, set[str]] = {s.name: set() for s in sources}
+
+    def wanted(root: str, node: Node, src) -> bool:
+        if not src.accepts(node):
+            return False
+        if src.name not in ents.queried(root):
+            return True
+        ids = set(src.ids_for(node))
+        return not ids & productive[src.name] and bool(ids - tried[src.name])
+
     for i in range(1, iterations + 1):
         if len(frontier) > max_frontier:
             print(f"(frontier of {len(frontier)} capped to {max_frontier})")
             frontier = frontier[:max_frontier]
+        focus = {ents.find(f) for f in stats.focus}
         found: list[Edge] = []
         for root in frontier:
             node = ents.node(root)  # merged view: all ids/xrefs known for this entity
+            is_focus = ents.find(root) in focus
             for src in sources:
-                if not src.accepts(node) or not ents.mark_queried(root, src.name):
+                if not wanted(root, node, src):
                     continue
+                ents.mark_queried(root, src.name)
+                lim = min(focus_limit, src.focus_cap or focus_limit) if is_focus else limit
+                rec, t0 = stats.src[src.name], time.time()
+                rec["calls"] += 1
                 try:
-                    found += src.query(node, limit=limit)
+                    got = src.query(node, limit=lim)
                 except Exception as e:  # sources shouldn't raise, but don't let one kill the run
                     print(f"  ! {src.name} failed on {node.label}: {e}", file=sys.stderr)
+                    rec["raised"] += 1
+                    got = []
+                rec["seconds"] += time.time() - t0
+                rec["edges"] += len(got)
+                rec["empty"] += not got
+                stats.depth.update((id(e), i) for e in got)
+                ids = set(src.ids_for(node))
+                tried[src.name] |= ids
+                if got:
+                    productive[src.name] |= ids
+                found += got
         print(f"\n=== Iteration {i}: {len(frontier)} inputs -> {len(found)} edges ===")
         for e in found:
-            print(f"  {e.src.label}  --{e.relation}-->  {e.dst}")
             ents.add(e.src)  # sources may return the input with extra ids/xrefs
             ents.add(e.dst)
             if e.relation == "xref":  # exact mapping: same entity
                 ents.merge_xref(e.src.key(), e.dst.key())
-        edges += found
-        # next: entities reached this iteration that some source has not been asked about
-        # yet (an entity seen before is re-queried only if a merge gave it new usable ids)
+        kept = _filter(found, start, ents, stats, name_hits=free_text and i == 1)
+        for e in kept:
+            print(f"  {e.src.label}  --{e.relation}-->  {e.dst}")
+        edges += kept
+        if free_text and i == 1:
+            stats.focus = _best_match(kept, start, ents)
+        # next: entities reached (or queried) this iteration that a source still wants to
+        # see (not asked yet, or asked without result and since given new ids), focus
+        # first, then most-corroborated; generic hubs are never expanded
+        support: dict[str, set[str]] = {}
+        for e in kept:
+            support.setdefault(ents.find(e.dst.key()), set()).add(e.source)
+        focus = {ents.find(f) for f in stats.focus}
         frontier = []
-        for root in dict.fromkeys(ents.find(e.dst.key()) for e in found):
+        for root in dict.fromkeys([*support, *(ents.find(r) for r in frontier)]):
             node = ents.node(root)
-            if any(s.accepts(node) and s.name not in ents.queried(root) for s in sources):
+            if quality.is_generic(node) or quality.is_noise(node):
+                continue
+            if any(wanted(root, node, s) for s in sources):
                 frontier.append(root)
+        frontier.sort(key=lambda r: (r not in focus, -len(support.get(r, ()))))
         if not frontier:
             break
     return edges
+
+
+def _filter(found: list[Edge], start: Node, ents: Entities, stats: Stats,
+            name_hits: bool) -> list[Edge]:
+    """Drop noise everywhere and, for the free-text input, name-search hits that share no
+    word with it unless at least two sources agree on them (keeps true synonyms such as
+    "Lou Gehrig disease" -> "amyotrophic lateral sclerosis")."""
+    agree: dict[str, set[str]] = {}
+    if name_hits:
+        for e in found:
+            if e.relation == "matches" and e.src.key() == start.key():
+                agree.setdefault(ents.find(e.dst.key()), set()).add(e.source)
+    kept = []
+    for e in found:
+        if quality.is_noise(e.dst):
+            stats.dropped.append((e, "non-human / taxon / lab code / model organism"))
+        elif (name_hits and e.relation == "matches" and e.src.key() == start.key()
+              and not quality.similar(start.label, e.dst.label)
+              and len(agree[ents.find(e.dst.key())]) < 2):
+            stats.dropped.append((e, "off-topic name match"))
+        else:
+            kept.append(e)
+    return kept
+
+
+def _best_match(kept: list[Edge], start: Node, ents: Entities) -> list[str]:
+    """The entity the free-text input means: a hit whose label equals the input, the
+    one most sources returned; else the hit most sources agree on."""
+    agree: dict[str, set[str]] = {}
+    for e in kept:
+        if e.relation == "matches" and e.src.key() == start.key():
+            agree.setdefault(ents.find(e.dst.key()), set()).add(e.source)
+    if not agree:
+        return []
+    want = start.label.strip().lower()
+    exact = {e_root for e_root in agree
+             if (ents.record(e_root)["label"] or "").strip().lower() == want}
+    best = max(agree, key=lambda r: (r in exact, len(agree[r])))
+    return [best]
 
 
 def build_graph(edges: list[Edge], ents: Entities) -> nx.MultiDiGraph:
@@ -136,24 +292,49 @@ def draw(g: nx.MultiDiGraph, path: Path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("input", help="free-text term or CURIE (e.g. MONDO:0007947)")
+    ap.add_argument("input", nargs="?", help="free-text term or CURIE (e.g. MONDO:0007947)")
+    ap.add_argument("--symptoms", nargs="+", metavar="SYMPTOM",
+                    help="symptom search instead of an input term: free-text symptoms or HP "
+                         "ids (comma-separated or separate args); diseases are ranked by "
+                         "how well their HPO annotations cover them, then expanded")
+    ap.add_argument("--candidates", type=int, default=10,
+                    help="symptom mode: how many ranked diseases to expand")
     ap.add_argument("--label", help="label for a CURIE input")
     ap.add_argument("-n", "--iterations", type=int, default=2)
     ap.add_argument("--limit", type=int, default=5, help="max edges per source per node")
+    ap.add_argument("--focus-limit", type=int, default=40,
+                    help="max edges per source for the focus entity (the disease the query is about)")
     ap.add_argument("--max-frontier", type=int, default=50, help="max inputs per iteration")
     ap.add_argument("--sources", nargs="*", help="only use these source modules")
     ap.add_argument("-o", "--out", type=Path, default=Path("graph.html"),
-                    help="output: .html (interactive viewer), .png or .graphml")
+                    help="output: .html (interactive viewer), .md (readable report), .png or .graphml")
     args = ap.parse_args()
+    if not args.input and not args.symptoms:
+        ap.error("give an input term/CURIE or --symptoms")
 
     sources = load_sources()
     if args.sources:
         sources = [s for s in sources if s.name in args.sources]
     print("sources:", ", ".join(s.name for s in sources) or "(none)")
 
-    start = parse_input(args.input, args.label)
     ents = Entities()
-    edges = run(start, sources, args.iterations, args.limit, args.max_frontier, ents)
+    stats = Stats()
+    for s in sources:
+        stats.instrument(s)
+    seed = None
+    if args.symptoms:
+        start, seed = symptom_seed(args.symptoms, args.candidates, stats)
+        if not seed:
+            return
+    else:
+        start = parse_input(args.input, args.label)
+        hpo = _hpoa.load()
+        hit = hpo.resolve(start.label) if hpo and start.id is None else None
+        if hit and hit[2] in ("exact", "synonym") and                 hit[0] in hpo.descendants(_hpoa.PHENOTYPE_ROOT):
+            print(f"hint: '{start.label}' is the HPO phenotype {hit[1]} ({hit[0]}); to find "
+                  f"diseases that have it, use --symptoms")
+    edges = run(start, sources, args.iterations, args.limit, args.max_frontier, ents, stats,
+                focus_limit=args.focus_limit, seed=seed)
 
     g = build_graph(edges, ents)
     print(f"\n=== Graph: {g.number_of_nodes()} nodes, {g.number_of_edges()} edges ===")
@@ -161,7 +342,9 @@ def main():
         print(f"  [{d['kind']}] {d['label']} ({key}) <{', '.join(sorted(d['sources']))}>  degree={g.degree(key)}")
     if not g.number_of_nodes():
         return
-    if args.out.suffix == ".html":
+    if args.out.suffix == ".md":
+        write_report(g, edges, ents, start, stats, args, args.out)
+    elif args.out.suffix == ".html":
         write_html(g, ents.key(ents.find(start.key())), args.out)
     elif args.out.suffix == ".graphml":
         for _, d in g.nodes(data=True):  # graphml can't store sets

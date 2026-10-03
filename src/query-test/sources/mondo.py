@@ -107,8 +107,13 @@ class MondoSource(Source):
             for t in self._embedded(f"{url}/{link}", limit):
                 cur = _iri_to_curie(t.get("iri", ""))
                 if cur:
-                    es.append(add(rel, Node(t.get("label") or cur, cur, kind or _target_kind(cur),
-                                            self.name)))
+                    # the gene-basis link also points at taxa for animal diseases
+                    # ("Marfan syndrome, pig" -> Sus scrofa): only HGNC ids are genes
+                    k = kind or _target_kind(cur)
+                    if k == "gene" and not cur.startswith("HGNC:"):
+                        k = _target_kind(cur)
+                    r = "in_taxon" if cur.startswith("NCBITaxon:") else rel
+                    es.append(add(r, Node(t.get("label") or cur, cur, k, self.name)))
             groups.append(es)
 
         xr = []

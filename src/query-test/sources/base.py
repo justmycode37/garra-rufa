@@ -4,12 +4,36 @@ Every dataset lives in its own module in this package and exposes a subclass of
 Source. The main script only knows about Node, Edge and Source.query(); all
 dataset-specific logic (APIs, ID formats, downloads, parsing) stays in the module.
 """
+import re
 from dataclasses import dataclass, field
 
 import requests
 
 TIMEOUT = 30
 USER_AGENT = "garra-rufa-query-test/0.1"
+WORD = re.compile(r"[a-z0-9]+")
+STOP = {"syndrome", "disease", "disorder", "type", "of", "the", "and", "with", "to", "due",
+        "a", "an", "in", "or", "form", "deficiency", "related"}
+
+
+def words(s: str) -> set[str]:
+    return set(WORD.findall(s.lower())) - STOP
+
+
+def similar(query: str, label: str) -> bool:
+    """True when a name-search hit shares a meaningful word with the query ("syndrome",
+    "disease", ... do not count; "Rett syndrome" is not similar to "Sick sinus syndrome").
+    Abbreviation-style queries such as "PMM2-CDG" also pass when one string contains the
+    other."""
+    a, b = words(query), words(label)
+    if a & b:
+        return True
+    # same stem: "marfan" ~ "marfanoid", "glycosylation" ~ "glycosylations"
+    if any(len(x) >= 5 and len(y) >= 5 and (x.startswith(y[:5]) and y.startswith(x[:5]))
+           and (x.startswith(y) or y.startswith(x)) for x in a for y in b):
+        return True
+    q, lab = query.lower(), label.lower()
+    return q in lab or lab in q
 
 
 @dataclass(frozen=True)
@@ -55,6 +79,9 @@ class Source:
     name = "base"
     id_prefixes: frozenset[str] = frozenset()
     by_name: bool = False
+    # max edges per query even for the focus entity (main.py --focus-limit); variant
+    # sources set it so dozens of variants don't drown the profile
+    focus_cap: int | None = None
 
     def __init__(self):
         self.session = requests.Session()

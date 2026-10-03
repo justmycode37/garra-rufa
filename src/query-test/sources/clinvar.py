@@ -1,4 +1,5 @@
-"""ClinVar via NCBI E-utilities (no key needed at <= 3 requests/s; throttled here).
+"""ClinVar via NCBI E-utilities (no key needed at <= 3 requests/s, 10/s with NCBI_API_KEY;
+throttled here, HTTP 429 retried with backoff).
 
   esearch.fcgi?db=clinvar&term=..     variation ids for a gene ([GID], [HGNC], [gene]),
                                       a trait ([TRID]: MONDO_x, ORPHAx, HP_x, MedGen CUI,
@@ -16,13 +17,17 @@ knows the mapping, else ORPHA / OMIM / HP / MedGen, with the other ids as xrefs.
 A disease lookup only keeps variants that really list the queried id on a trait (TRID
 numbers are not prefix-specific, so "558" alone would also hit unrelated records).
 """
+import os
 import time
 
 from ._ols import interleave, slug
-from .base import Edge, Node, Source
+from .base import TIMEOUT, Edge, Node, Source
 
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-MIN_INTERVAL = 0.35  # seconds between requests (NCBI: max 3/s without an API key)
+# NCBI allows 3 requests/s per IP without an API key, 10/s with one (env NCBI_API_KEY)
+API_KEY = os.environ.get("NCBI_API_KEY")
+MIN_INTERVAL = 0.11 if API_KEY else 0.35  # seconds between requests
+RETRIES = 3  # on HTTP 429, with 1/2/4 s backoff
 PATHOGENIC = '("clinsig pathogenic"[Properties] OR "clinsig likely pathogenic"[Properties])'
 TRAIT_PREFIX = {"MONDO": "MONDO", "Orphanet": "ORPHA", "OMIM": "OMIM",
                 "Human Phenotype Ontology": "HP", "MedGen": "UMLS"}
@@ -40,6 +45,7 @@ class ClinVarSource(Source):
     id_prefixes = frozenset({"CLINVAR", "DBSNP", "HGNC", "NCBIGENE", "SYMBOL", "MONDO",
                              "ORPHA", "ORPHANET", "OMIM", "MIM", "HP", "UMLS", "MEDGEN"})
     by_name = False
+    focus_cap = 10
 
     def __init__(self):
         super().__init__()
@@ -55,11 +61,19 @@ class ClinVarSource(Source):
         wait = MIN_INTERVAL - (time.monotonic() - self._last)
         if wait > 0:
             time.sleep(wait)
-        try:
-            return self.get_json(f"{EUTILS}/{util}.fcgi", params={
-                "db": "clinvar", "retmode": "json", "tool": "garra-rufa-query-test", **params})
-        finally:
-            self._last = time.monotonic()
+        params = {"db": "clinvar", "retmode": "json", "tool": "garra-rufa-query-test", **params,
+                  **({"api_key": API_KEY} if API_KEY else {})}
+        for attempt in range(RETRIES + 1):
+            try:
+                r = self.session.get(f"{EUTILS}/{util}.fcgi", params=params, timeout=TIMEOUT)
+            finally:
+                self._last = time.monotonic()
+            # 429: NCBI's per-IP limit is shared with every other client on this address
+            if r.status_code == 429 and attempt < RETRIES:
+                time.sleep(float(r.headers.get("Retry-After") or 0) or 1.0 * 2 ** attempt)
+                continue
+            r.raise_for_status()
+            return r.json()
 
     def _search(self, term: str, n: int) -> list[str]:
         return self._get("esearch", term=term, retmax=n)["esearchresult"].get("idlist") or []

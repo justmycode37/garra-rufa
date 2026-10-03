@@ -19,7 +19,10 @@ PREFIXES = {"ORPHANET": "ORPHA", "ORPHA": "ORPHA", "MIM": "OMIM", "OMIM": "OMIM"
             "MONDO": "MONDO", "HP": "HP", "HGNC": "HGNC", "NCBIGENE": "NCBIGene",
             "DOID": "DOID", "NORD": "NORD", "GARD": "GARD", "DRUGBANK": "DrugBank",
             "SYMBOL": "SYMBOL", "ENSEMBL": "ENSEMBL", "CHEMBL": "ChEMBL", "EFO": "EFO",
-            "UBERON": "UBERON", "FMA": "FMA", "CL": "CL", "GO": "GO", "CLINVAR": "ClinVar"}
+            "UBERON": "UBERON", "FMA": "FMA", "CL": "CL", "GO": "GO", "CLINVAR": "ClinVar",
+            # groups (sources/_groups.py): ERN:<code>, trials, organisation websites
+            # (WEB:<domain> is what the same patient organisation shares across sites)
+            "ERN": "ERN", "NCT": "NCT", "WEB": "WEB"}
 PAD = {"MONDO": 7, "GARD": 7, "HP": 7, "UBERON": 7, "EFO": 7, "CL": 7, "GO": 7}
 IDENTITY = set(PREFIXES.values())
 # one Orphanet/OMIM entry often maps to a MONDO term together with its subtypes
@@ -65,7 +68,7 @@ class Entities:
     def _new(self, key: str) -> str:
         self._parent[key] = key
         self._ent[key] = {"ids": {key}, "xrefs": set(), "label": None, "kind": "unknown",
-                          "real": False, "sources": set(), "queried": set()}
+                          "real": False, "sources": set(), "queried": set(), "id_labels": {}}
         return key
 
     def union(self, a: str, b: str) -> bool:
@@ -85,6 +88,8 @@ class Entities:
         ea["xrefs"] |= eb["xrefs"]
         ea["sources"] |= eb["sources"]
         ea["queried"] |= eb["queried"]
+        for i, lab in eb["id_labels"].items():
+            ea["id_labels"].setdefault(i, lab)
         if eb["real"] and not ea["real"]:
             ea.update(label=eb["label"], kind=eb["kind"], real=True)
         elif ea["kind"] in ("unknown", "term"):
@@ -120,6 +125,8 @@ class Entities:
         e["xrefs"] |= {normalize(x) for x in node.xrefs if ":" in x}
         e["sources"].add(node.source)
         real = not _is_placeholder(node)
+        if real and node.id:
+            e["id_labels"].setdefault(normalize(node.id), node.label)
         if e["label"] is None or (real and not e["real"]):
             e.update(label=node.label, kind=node.kind, real=real)
         elif e["kind"] in ("unknown", "term"):
@@ -143,7 +150,16 @@ class Entities:
         if key.startswith("term:"):
             return Node(e["label"], kind=e["kind"])
         rank = {p: i for i, p in enumerate(PRIORITY)}
-        others = sorted(e["ids"] - {key}, key=lambda i: (rank.get(_prefix(i), len(PRIORITY)), i))
+        # several ids of one prefix (MONDO maps Marfan syndrome to ORPHA:558 and to its
+        # subtype ORPHA:284963): the id whose own label is the entity's label comes first,
+        # then ids seen with a real label, so sources look up the entity, not a subtype
+        name = (e["label"] or "").lower()
+
+        def order(i):
+            lab = e["id_labels"].get(i)
+            return (rank.get(_prefix(i), len(PRIORITY)),
+                    0 if lab and lab.lower() == name else 1 if lab else 2, i)
+        others = sorted(e["ids"] - {key}, key=order)
         xrefs = tuple(dict.fromkeys(others + sorted(e["xrefs"] - e["ids"])))
         return Node(e["label"], id=key, kind=e["kind"], source=min(e["sources"]), xrefs=xrefs)
 
