@@ -1,10 +1,12 @@
 'use client';
-import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Search } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { ArrowUpRight, LoaderCircle, Search, Sparkles } from 'lucide-react';
 import type { GraphLink, GraphNode, GraphRegion } from '@/lib/force-canvas';
 import { familyOf, human, KIND_FAMILIES, LEVEL_COLOR, LEVELS, NEGATIVE, OTHER_FAMILY, PAPER_COLOR, paperUrl, type CandidatePath, type Evidence, type EvidenceEdge, type EvidenceView } from '@/lib/graph-views';
-import { BackToOverview, GraphMessage, loadView, useGraphRun } from './GraphsShell';
+import { BackToOverview, GraphMessage, loadView, useGraphRun, type GraphRun } from './GraphsShell';
 import { useForceCanvas, ZoomControls } from './useForceCanvas';
+import { EvidenceNodeFacts, PaperFacts, ScreeningFunnel } from './NodeFacts';
 import styles from './Graphs.module.css';
 
 type Edge = EvidenceEdge & { id: string; type: 'evidence' } | { id: string; type: 'reports'; from: string; to: string; relation: string }
@@ -28,11 +30,40 @@ export default function EvidenceGraph() {
   if (!run.evidenceUrl) {
     const building = run.build?.evidence && (run.build.state === 'running' || run.build.state === 'queued');
     return <GraphMessage busy={building}>{building ? `The evidence graph of ${run.label} is being built: papers are searched and read, which can take a while.`
-      : `There is no evidence graph for ${run.label}. Build the graph again with “Also build the evidence graph” to read the literature.`}<BackToOverview/></GraphMessage>;
+      : <AddEvidence run={run}/>}<BackToOverview/></GraphMessage>;
   }
   if (error) return <GraphMessage>{error}</GraphMessage>;
   if (!data) return <GraphMessage busy>Loading the evidence graph of {run.label}…</GraphMessage>;
   return <EvidenceExplorer key={run.id} data={data}/>;
+}
+
+/** A graph built without its evidence graph gets it from here, on top of the cached overview. */
+function AddEvidence({ run }: { run: GraphRun }) {
+  const { canBuild, addEvidence } = useGraphRun();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => { setBusy(false); setMessage(''); }, [run.id]);
+  const failed = run.build?.state === 'failed' && run.build.evidence;
+  const intro = failed ? `Building the evidence graph of ${run.label} failed: ${run.build?.error ?? 'unknown error'}`
+    : `There is no evidence graph for ${run.label} yet.`;
+  const blocked = !run.build ? 'Evidence graphs can be generated for graphs built from a query.'
+    : !run.presentUrl ? 'The evidence graph can be generated once the overview is ready.'
+    : canBuild.signedIn === false ? <><Link href="/?entry=signup&role=researcher">Sign in</Link> to generate the evidence graph.</>
+    : canBuild.signedIn !== null && !canBuild.enabled ? canBuild.notice || 'Building graphs is unavailable right now.'
+    : canBuild.signedIn !== null && !canBuild.evidence ? 'Generating evidence graphs needs an LLM key on the research service.'
+    : null;
+  return <div className={styles.evidenceAction}>
+    <span>{intro}</span>
+    {blocked ? <span className="fineprint">{blocked}</span> : <>
+      <span className="fineprint">The papers on this graph are searched and read with an LLM, on top of the overview already built. This can take up to an hour.</span>
+      <button className="primary" disabled={busy || canBuild.signedIn === null} onClick={async () => {
+        setBusy(true); setMessage('');
+        const error = await addEvidence(run.id);
+        if (error) { setMessage(error); setBusy(false); }
+      }}>{busy ? <LoaderCircle size={15} className={styles.spin}/> : <Sparkles size={15}/>}{failed ? 'Try again' : 'Generate evidence graph'}</button>
+    </>}
+    {message && <span className="fineprint" role="alert">{message}</span>}
+  </div>;
 }
 
 function EvidenceExplorer({ data }: { data: EvidenceView }) {
@@ -73,6 +104,8 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
   const [selection, setSelection] = useState<Selection>(null);
   const [cat, setCat] = useState<'direct' | 'transfer' | 'gaps'>('direct');
   const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const groupOf = useRef<Record<string, string>>({});
   const selectedNode = selection && 'node' in selection ? selection.node : selection && 'paper' in selection ? pid(selection.paper) : null;
 
   const neighbourOf = onlyNeighbours ? selectedNode : null;
@@ -90,7 +123,8 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
     chargeStrength: -110, collidePadding: 3, labelZoom: 2.2, linkHits: true, insets: { left: 350, right: 380 },
     showLinkLabels: () => edgeLabels,
     onClick: hit => {
-      if (hit?.node) setSelection(hit.node.id.startsWith('paper:') ? { paper: hit.node.id.slice(6) } : { node: hit.node.id });
+      if (hit?.node?.id.startsWith('grp:')) { const g = hit.node.id; setExpanded(x => { const n = new Set(x); if (!n.delete(g)) n.add(g); return n; }); }
+      else if (hit?.node) setSelection(hit.node.id.startsWith('paper:') ? { paper: hit.node.id.slice(6) } : { node: hit.node.id });
       else if (hit?.link) { const e = edgeBy[hit.link.id]; setSelection(e && e.type !== 'evidence' ? { paper: e.from.slice(6) } : { edge: hit.link.id }); }
       else setSelection(null);
     },
@@ -121,7 +155,37 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
       regions[f.id] = { label: f.label, color: f.color };
       at += span;
     }
+    // leaves that hang off the same entity with the same relation and the same kind (so the same colour)
+    // collapse under one shared node; clicking that node spreads them out again
+    const uses: Record<string, number> = {};
+    for (const e of visible.edges) { uses[e.from] = (uses[e.from] ?? 0) + 1; uses[e.to] = (uses[e.to] ?? 0) + 1; }
+    const buckets = new Map<string, { hub: string; out: boolean; kind: string; rel: string; members: string[]; edges: Edge[] }>();
+    for (const e of visible.edges) {
+      if (e.type !== 'evidence') continue;
+      const toLeaf = uses[e.to] === 1 && e.to !== data.start, fromLeaf = uses[e.from] === 1 && e.from !== data.start;
+      if (toLeaf === fromLeaf) continue;
+      const leaf = toLeaf ? e.to : e.from, hub = toLeaf ? e.from : e.to, kind = byId[leaf]?.kind;
+      if (!kind || hub.startsWith('paper:')) continue;
+      const key = `grp:${hub}|${toLeaf ? 'o' : 'i'}|${kind}|${e.relation}`;
+      const b = buckets.get(key) ?? { hub, out: toLeaf, kind, rel: e.relation, members: [], edges: [] };
+      b.members.push(leaf); b.edges.push(e); buckets.set(key, b);
+    }
+    const hidden = new Set<string>(), replaced = new Set<string>(), extra: GraphLink[] = [];
+    groupOf.current = {};
+    for (const [gid, b] of buckets) {
+      if (b.members.length < 3) continue;
+      const open = expanded.has(gid), fam = familyOf(b.kind), home = anchor[b.kind];
+      const best = b.edges.reduce((m, e) => (e.type === 'evidence' && (e.confidence || 0) > m ? e.confidence || 0 : m), 0);
+      const neg = b.edges.every(e => e.type === 'evidence' && e.mostly_negative);
+      const col = neg ? NEGATIVE : LEVEL_COLOR[(b.edges[0] as EvidenceEdge).level] ?? LEVEL_COLOR.review;
+      nodes.push({ id: gid, label: `${b.members.length} ${human(b.kind)}${b.members.length === 1 ? '' : 's'}`, r: 8 + Math.sqrt(b.members.length) * 2,
+        fill: open ? '#fffdfe' : color(b.kind), stroke: color(b.kind), strokeWidth: open ? 2 : 1, pinLabel: true, group: fam.id, tx: home?.x, ty: home?.y, priority: 0.9, pull: 0.06 });
+      const link = (id: string, source: string, target: string, o: Partial<GraphLink>): GraphLink => ({ id, source, target, color: col, width: 0.6 + 2.6 * best, opacity: 0.55, distance: 40, strength: 0.3, ...o });
+      extra.push(link(`${gid}#hub`, b.out ? b.hub : gid, b.out ? gid : b.hub, { arrow: true, label: human(b.rel), distance: 60 }));
+      for (const e of b.edges) { replaced.add(e.id); const m = b.out ? e.to : e.from; groupOf.current[m] = gid; if (!open) hidden.add(m); else extra.push(link(`${gid}#${m}`, gid, m, { width: 0.5, opacity: 0.4, distance: 34, strength: 0.4 })); }
+    }
     for (const id of visible.nodes) {
+      if (hidden.has(id)) continue;
       if (id.startsWith('paper:')) {
         const p = paperBy[id.slice(6)];
         if (p) nodes.push({ id, label: p.key, shape: 'square', r: 5, fill: PAPER_COLOR, priority: 0.2 });
@@ -132,13 +196,13 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
       const start = id === data.start, cand = candBy[id];
       const home = anchor[n.kind];
       nodes.push({ id, label: n.label, r: start ? 24 : 4 + Math.sqrt(degree[id] ?? 1) * 2.1,
-        fill: start ? '#141314' : color(n.kind), stroke: start ? '#fffdfe' : cand ? '#141314' : '#fffdfe', strokeWidth: start ? 4 : cand ? 1.8 : 1,
+        fill: start ? '#2d2c30' : color(n.kind), stroke: start ? '#fffdfe' : cand ? '#2d2c30' : '#fffdfe', strokeWidth: start ? 4 : cand ? 1.8 : 1,
         pinLabel: start, fixed: start, x: start ? 0 : undefined, y: start ? 0 : undefined, fx: start ? 0 : undefined, fy: start ? 0 : undefined,
         group: start ? undefined : familyOf(n.kind).id, tx: home?.x, ty: home?.y,
         priority: start ? 10 : cand ? 0.6 + cand.score : Math.min(0.8, (degree[id] ?? 1) / 12), charge: start ? -800 : undefined, pull: start ? undefined : 0.06 });
     }
     const pairs = new Map<string, number>();
-    const links: GraphLink[] = visible.edges.map(e => {
+    const links: GraphLink[] = visible.edges.filter(e => !replaced.has(e.id)).map(e => {
       const key = e.from < e.to ? `${e.from}|${e.to}` : `${e.to}|${e.from}`;
       const k = pairs.get(key) ?? 0; pairs.set(key, k + 1);
       const curve = k ? (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.12 : 0;
@@ -147,18 +211,21 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
       const c = e.mostly_negative ? NEGATIVE : LEVEL_COLOR[e.level] ?? LEVEL_COLOR.review;
       // links across families are long and soft, so they bridge territories without dissolving them
       const across = familyOf(byId[e.from]?.kind ?? '') !== familyOf(byId[e.to]?.kind ?? '');
-      return { id: e.id, source: e.from, target: e.to, color: c, width: 0.6 + 2.6 * (e.confidence || 0), opacity: 0.7, arrow: true, curve: curve || (across ? 0.08 : 0),
+      return { id: e.id, source: e.from, target: e.to, color: c, width: 0.5 + 2.2 * (e.confidence || 0), opacity: 0.55, arrow: true, curve: curve || (across ? 0.08 : 0),
         dash: e.level === 'inferred' || e.mostly_negative ? [6, 4] : undefined, label: human(e.relation), distance: across ? 120 : 55, strength: across ? 0.08 : 0.3 };
     });
+    links.push(...extra);
     engine.setGraph(nodes, links, { energy: 0.45, regions });
-  }, [engine, visible, byId, paperBy, candBy, degree, color, data.start]);
+  }, [engine, visible, expanded, byId, paperBy, candBy, degree, color, data.start]);
   useEffect(() => { engine?.fitWhenSettled(); }, [engine]);
   useEffect(() => { engine?.setSelected(selectedNode); }, [engine, selectedNode]);
   useEffect(() => { engine?.reheat(0.02); }, [engine, edgeLabels]);
 
   function select(id: string) {
     setSelection(id.startsWith('paper:') ? { paper: id.slice(6) } : { node: id });
-    if (engine?.has(id)) engine.focus(id, 1.8);
+    const g = groupOf.current[id];
+    if (g && !expanded.has(g)) setExpanded(x => new Set(x).add(g));
+    else if (engine?.has(id)) engine.focus(id, 1.8);
   }
   const nodeName = (id: string) => (id.startsWith('paper:') ? id.slice(6) : byId[id]?.label ?? id);
   const q = query.trim().toLowerCase();
@@ -177,6 +244,7 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
       <span className="eyebrow">EVIDENCE GRAPH</span>
       <h1 className={styles.panelTitle}>Existing solutions for {data.disease}</h1>
       <p className="fineprint">{data.settings.model && `${data.settings.model} · `}screened {data.stats.screened ?? '?'} · read {data.stats.read ?? data.papers.length} papers<br/>{nNodes}/{data.nodes.length} entities · {nEvidence}/{data.edges.length} edges shown · {data.candidates.length} candidates</p>
+      <ScreeningFunnel data={data}/>
       <label className={styles.search}><Search size={14}/><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Entity, paper title or ID…" aria-label="Search entities and papers"/></label>
       {hits.length > 0 && <div className={styles.list}>{hits.map(h => <button key={h.id} onClick={() => select(h.id)}><span className={styles.swatch} style={{ background: h.color }}/><span>{h.label}<small>{h.sub}</small></span></button>)}</div>}
       <h2 className={styles.h2}>Candidate solutions</h2>
@@ -243,7 +311,7 @@ function PaperRef({ k, paperBy, select }: { k: string } & Pick<Ctx, 'paperBy' | 
 function Quote({ ev, paperBy, select }: { ev: Evidence } & Pick<Ctx, 'paperBy' | 'select'>) {
   const neg = ev.effect === 'negative' || ev.effect === 'null';
   return <blockquote className={styles.quote}>“{ev.quote}”
-    <small><PaperRef k={ev.paper} paperBy={paperBy} select={select}/> {ev.passage} · <span className={neg ? styles.neg : undefined}>{[ev.level && human(ev.level), ev.effect !== 'na' && ev.effect, ev.organism, ev.section].filter(Boolean).join(' · ')}</span></small>
+    <small><PaperRef k={ev.paper} paperBy={paperBy} select={select}/> {ev.passage} · <span className={neg ? styles.neg : undefined}>{[ev.level && human(ev.level), ev.effect !== 'na' && ev.effect, ev.organism, ev.section, ev.year].filter(Boolean).join(' · ')}</span></small>
   </blockquote>;
 }
 
@@ -275,6 +343,7 @@ function NodeDetail({ id, ...ctx }: { id: string } & Ctx) {
       {n.names.length > 0 && <div><dt>Names in papers</dt><dd>{n.names.map(x => <span key={x} className={styles.tag}>{x}</span>)}</dd></div>}
       {n.xrefs.length > 0 && <div><dt>Xrefs</dt><dd>{n.xrefs.map(x => <code key={x}>{x} </code>)}</dd></div>}
     </dl>
+    <EvidenceNodeFacts node={n} edges={ctx.data.edges}/>
     {c && <>
       <h3 className={styles.h2}>Candidate solution · {c.category} · score {c.score}</h3>
       {c.n_papers != null && <p className="fineprint">{c.n_papers} supporting paper(s) · best evidence {c.best_level ? human(c.best_level) : 'none'} · tier {c.tier}/3{c.n_papers === 1 && <span className={styles.neg}> · single paper</span>}{c.generic && ' · generic technique (down-weighted)'}{c.other_disease_endpoint && ' · endpoint of another disease (down-weighted)'}</p>}
@@ -301,6 +370,7 @@ function PaperDetail({ paperKey, ...ctx }: { paperKey: string } & Ctx) {
     <p className="fineprint">{p.journal} {p.year} · text: {p.text_source}{p.cited_by != null ? ` · cited by ${p.cited_by}` : ''}{p.origin === 'transfer' ? ' · transfer search' : ''}</p>
     {links.length > 0 && <div className={styles.links}>{links.map(([l, u]) => <a key={l} href={u} target="_blank" rel="noreferrer">{l}<ArrowUpRight size={11}/></a>)}</div>}
     {p.summary && <p className={styles.body}>{p.summary}</p>}
+    <PaperFacts p={p}/>
     <h3 className={styles.h2}>Related papers ({rel.length})</h3>
     {rel.length ? rel.map(r => <p key={r.key} className={styles.paperLine}><PaperRef k={r.key} paperBy={paperBy} select={select}/> <small>{r.shared_edges} shared edges · {r.shared_entities} shared entities<br/>{paperBy[r.key]?.title}</small></p>) : <p className="muted">none</p>}
     <h3 className={styles.h2}>Edges it supports ({es.length})</h3>

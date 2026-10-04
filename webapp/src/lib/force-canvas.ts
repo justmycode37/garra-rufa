@@ -604,13 +604,13 @@ export class ForceCanvas {
     const dx = b.x! - c.x, dy = b.y! - c.y, len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
     const tipX = b.x! - ux * r, tipY = b.y! - uy * r;
-    const size = Math.max(4, l.width * 2.5) / Math.sqrt(k);
+    const size = Math.max(3, l.width * 1.5) / Math.sqrt(k);
     ctx.setLineDash([]);
     ctx.fillStyle = l.colors ? l.colors[1] : l.color ?? '#999';
     ctx.beginPath();
     ctx.moveTo(tipX, tipY);
-    ctx.lineTo(tipX - ux * size - uy * size * 0.55, tipY - uy * size + ux * size * 0.55);
-    ctx.lineTo(tipX - ux * size + uy * size * 0.55, tipY - uy * size - ux * size * 0.55);
+    ctx.lineTo(tipX - ux * size - uy * size * 0.4, tipY - uy * size + ux * size * 0.4);
+    ctx.lineTo(tipX - ux * size + uy * size * 0.4, tipY - uy * size - ux * size * 0.4);
     ctx.closePath();
     ctx.fill();
     void a;

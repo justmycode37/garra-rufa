@@ -1,21 +1,43 @@
 [
  {
+  "id": "pompe",
+  "label": "glycogen storage disease II",
+  "present": "pompe.present.json",
+  "evidence": "pompe.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0009290",
+   "ORPHA:365"
+  ],
+  "names": [
+   "glycogen storage disease II",
+   "acid maltase deficiency",
+   "Alpha-1,4-glucosidase acid deficiency",
+   "GAA glycogen storage disease",
+   "generalised glycogenosis",
+   "glycogen storage disease caused by mutation in GAA",
+   "glycogen storage disease type 2",
+   "glycogen storage disease type II",
+   "glycogenosis due to acid maltase deficiency"
+  ],
+  "presentStats": {
+   "items": 142,
+   "groups": 29,
+   "links": 192
+  },
+  "evidenceStats": {
+   "nodes": 945,
+   "edges": 1417,
+   "candidates": 350,
+   "papers": 120
+  }
+ },
+ {
   "id": "marfan",
   "label": "Marfan syndrome",
   "present": "marfan.present.json",
   "evidence": "marfan.evidence.json",
   "exported": "2026-10-04",
-  "presentStats": {
-   "items": 164,
-   "groups": 33,
-   "links": 260
-  },
-  "evidenceStats": {
-   "nodes": 814,
-   "edges": 1262,
-   "candidates": 331,
-   "papers": 50
-  },
   "ids": [
    "MONDO:0007947",
    "ORPHA:558"
@@ -27,7 +49,18 @@
    "Marfan's syndrome",
    "MFS",
    "MFS1"
-  ]
+  ],
+  "presentStats": {
+   "items": 164,
+   "groups": 33,
+   "links": 260
+  },
+  "evidenceStats": {
+   "nodes": 814,
+   "edges": 1262,
+   "candidates": 331,
+   "papers": 50
+  }
  },
  {
   "id": "pmm2",
@@ -35,17 +68,6 @@
   "present": "pmm2.present.json",
   "evidence": "pmm2.evidence.json",
   "exported": "2026-10-04",
-  "presentStats": {
-   "items": 136,
-   "groups": 25,
-   "links": 163
-  },
-  "evidenceStats": {
-   "nodes": 886,
-   "edges": 1227,
-   "candidates": 349,
-   "papers": 50
-  },
   "ids": [
    "MONDO:0008907",
    "ORPHA:79318"
@@ -60,33 +82,17 @@
    "congenital disorder of glycosylation type Ia",
    "phosphomannomutase 2 deficiency",
    "congenital disorder of glycosylation 1a"
-  ]
- },
- {
-  "id": "pompe",
-  "label": "Pompe Disease",
-  "present": "pompe.present.json",
-  "evidence": "pompe.evidence.json",
-  "exported": "2026-10-04",
+  ],
   "presentStats": {
-   "items": 32,
-   "groups": 2,
-   "links": 0
+   "items": 136,
+   "groups": 25,
+   "links": 163
   },
   "evidenceStats": {
-   "nodes": 945,
-   "edges": 1417,
-   "candidates": 350,
-   "papers": 120
-  },
-  "ids": [
-   "NORD:1595",
-   "ORPHA:365",
-   "OMIM:232300"
-  ],
-  "names": [
-   "Pompe Disease",
-   "Glycogen storage disease II"
-  ]
+   "nodes": 886,
+   "edges": 1227,
+   "candidates": 349,
+   "papers": 50
+  }
  }
 ]

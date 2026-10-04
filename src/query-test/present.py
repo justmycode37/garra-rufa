@@ -189,6 +189,29 @@ PRIMEKG_RELATIONS = {  # PrimeKG relation (display name) -> connection label
 
 
 # -- helpers ---------------------------------------------------------------------------
+def node_links(nid: str, n: dict) -> list[dict]:
+    """Source pages of a node: its urls, then pages built from its ids."""
+    out, seen = [], set()
+    urls = (n.get("info") or {}).get("urls") or {}
+    for src, url in urls.items():
+        if isinstance(url, str) and url not in seen:
+            seen.add(url)
+            out.append({"label": SOURCE_NAMES.get(src, src), "url": url})
+    names = {x["label"] for x in out}
+    for cid in (nid, *n.get("xrefs", ())):
+        p = _prefix(cid)
+        if p in URL_PATTERNS and URL_PATTERNS[p][0] not in names:
+            lab, pat = URL_PATTERNS[p]
+            out.append({"label": lab, "url": pat.format(_local(cid))})
+            names.add(lab)
+    for url in (n.get("info") or {}).get("links") or ():
+        if isinstance(url, str) and url.startswith("http") and url not in seen:
+            seen.add(url)
+            out.append({"label": re.sub(r"^https?://(www\.)?([^/]+).*", r"\2", url),
+                        "url": url})
+    return out[:6]
+
+
 def _prefix(curie: str) -> str:
     return curie.split(":", 1)[0]
 
@@ -591,6 +614,7 @@ class Present:
             f = self.freq.get(nid)
             if f is not None:
                 item["frequency"] = freq_label(f)
+                item["freq"] = round(f, 2)
                 item["score"] += f
             elif self.hpo_ids:
                 item["score"] -= 0.3  # not in the curated HPO annotation of the disease
@@ -628,25 +652,7 @@ class Present:
         self.items[nid] = item
 
     def _links(self, nid, n) -> list[dict]:
-        out, seen = [], set()
-        urls = (n.get("info") or {}).get("urls") or {}
-        for src, url in urls.items():
-            if isinstance(url, str) and url not in seen:
-                seen.add(url)
-                out.append({"label": SOURCE_NAMES.get(src, src), "url": url})
-        names = {x["label"] for x in out}
-        for cid in (nid, *n.get("xrefs", ())):
-            p = _prefix(cid)
-            if p in URL_PATTERNS and URL_PATTERNS[p][0] not in names:
-                lab, pat = URL_PATTERNS[p]
-                out.append({"label": lab, "url": pat.format(_local(cid))})
-                names.add(lab)
-        for url in (n.get("info") or {}).get("links") or ():
-            if isinstance(url, str) and url.startswith("http") and url not in seen:
-                seen.add(url)
-                out.append({"label": re.sub(r"^https?://(www\.)?([^/]+).*", r"\2", url),
-                            "url": url})
-        return out[:6]
+        return node_links(nid, n)
 
     def _attach_variants(self, variants):
         """Variants become counts on the gene items ("12 disease-causing variants")."""
@@ -729,6 +735,7 @@ class Present:
                       and self.items[hp]["section"] == "symptoms"]
             if hit:  # already shown (subtype, related): just note the similarity
                 self.items[hit]["notes"].append(f"symptom similarity {sim:.0%}")
+                self.items[hit]["similarity"] = round(sim, 3)
                 nid = hit
             else:
                 nid = sorted(ids)[0]
@@ -737,7 +744,7 @@ class Present:
                     "group": "Diseases with similar symptoms",
                     "notes": [f"symptom similarity {sim:.0%} (HPO annotations), "
                               f"{len(shared)} shared symptoms listed here"],
-                    "sources": ["HPO"], "score": sim,
+                    "sources": ["HPO"], "score": sim, "similarity": round(sim, 3),
                     "links": self._links(nid, {"xrefs": sorted(ids - {nid}), "info": {}})}
                 added += 1
             for hp in shared:
@@ -1205,6 +1212,165 @@ def write_overview(g: Graph, query: dict, profiles: dict[str, Path], path: Path,
                 "briefly (raise --focus-candidates there, or present.py --top for a thinner "
                 "profile)."]
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+# -- query-centred view ----------------------------------------------------------------
+QUERY_SECTIONS = [  # id, label, colour (viewer)
+    ("candidates", "Candidate diseases", "#b07aa1"),
+    ("searched", "Searched terms", "#e15759"),
+    ("symptoms", "Telling them apart", "#d59683"),
+    ("shared", "Shared by many candidates", "#c4a0a6"),
+    ("genetics", "Genetics", "#4e79a7"),
+]
+
+
+def query_view(g: Graph, top: int = 12, apart: int = 3, shared: int = 10) -> dict:
+    """The overview of a symptom / gene search (main.py "HP:0001627, chest pain") in the
+    format of Present.build(): the search in the centre, around it the ranked candidate
+    diseases (grouped by how many searched terms they match), the searched terms, the
+    findings that tell the candidates apart (distinguishing()), findings many of them
+    share and their disease-causing genes. A broad search fits many diseases about equally;
+    this shows them side by side instead of the profile of whichever ranked first."""
+    query = g.data["query"]
+    h = _hpoa.load()
+    parts = [p for p in query["parts"] if p.get("kind") in ("phenotype", "gene", "disease")]
+    by_node: dict[str, dict] = {}  # entries merged into one entity: the best-ranked one
+    for r in query.get("ranking") or ():
+        by_node.setdefault(r["node"], r)
+    ranked = list(by_node.values())[:top]
+    n_terms = len({m["query"] for r in ranked for m in r["matches"]}) or len(parts)
+    items: dict[str, dict] = {}
+    links: list[dict] = []
+
+    def item(iid, label, kind, section, group, score, **extra):
+        items[iid] = {"id": iid, "label": label, "kind": kind, "section": section,
+                      "group": group, "notes": [], "sources": ["HPO"], "links": [],
+                      "score": round(score, 3), **extra}
+
+    def link(a, b, label):
+        links.append({"a": a, "b": b, "label": label, "origin": "hpo"})
+
+    for p in parts:
+        pid = p.get("id") or p["text"]
+        kind = {"phenotype": "phenotype", "gene": "gene"}.get(p["kind"], "disease")
+        item(pid, p.get("label") or p["text"], kind, "searched",
+             {"phenotype": "Symptoms & findings", "gene": "Genes"}.get(p["kind"], "Diseases"),
+             1.0, description=f"You searched for “{p['text']}”.",
+             links=[{"label": URL_PATTERNS["HP"][0], "url": URL_PATTERNS["HP"][1].format(_local(pid))}]
+             if _prefix(pid) == "HP" else [])
+
+    for rank, r in enumerate(ranked, 1):
+        node = g.nodes.get(r["node"], {"label": r["name"], "kind": "disease", "xrefs": r["xrefs"]})
+        full = [m for m in r["matches"] if m.get("full")]
+        matched = len({m["query"] for m in r["matches"]})
+        group = (f"Match all {n_terms} terms" if matched >= n_terms and n_terms > 1
+                 else f"Match {matched} of {n_terms} terms" if n_terms > 1 else "Matches")
+        found = "; ".join(
+            f"{m['query_label']}" + ("" if m.get("full") else f" (as {m['matched_label']})")
+            + (f", {freq_label(m['frequency'])}" if freq_label(m.get("frequency")) else "")
+            for m in r["matches"])
+        desc = _description(node.get("info") or {})
+        item(r["node"], r["name"], "disease", "candidates", group, r["score"],
+             description=f"Rank {rank}, score {r['score']:.1f}. Matches: {found or 'none'}."
+             + (f"\n{desc}" if desc else ""),
+             links=node_links(r["node"], node))
+        for m in r["matches"]:
+            if m["query"] in items:
+                link(m["query"], r["node"], "matches" if m.get("full") else "partly matches")
+
+    if h and ranked:
+        anns = {r["node"]: _disease_ann(h, [r["id"], *r["xrefs"]]) for r in ranked}
+        searched = {m["query"] for r in ranked for m in r["matches"]}
+        searched_anc = set().union(*(h.ancestors(s) for s in searched if s in h.name))
+        # findings that tell the candidates apart
+        apart_of = distinguishing(h, ranked, n=apart)
+        for r in ranked:
+            for hp, name, f in apart_of[r["id"]]:
+                if hp not in items:
+                    item(hp, name, "phenotype", "symptoms", "", h.specificity(hp),
+                         description="Recorded for only one of the candidates.",
+                         links=[{"label": "HPO", "url": URL_PATTERNS["HP"][1].format(_local(hp))}])
+                link(r["node"], hp, f"has ({freq_label(f)})" if freq_label(f) else "has")
+        # findings most candidates share (besides the searched ones)
+        props = {k: _propagate(h, a) for k, a in anns.items()}
+        counts = Counter(t for a in anns.values() for t in a
+                         if t in h.name and t not in searched_anc and not h.is_inheritance(t)
+                         and _hpoa.PHENOTYPE_ROOT in h.ancestors(t) and h.specificity(t) >= 0.3)
+        common = sorted((t for t, c in counts.items() if c >= max(2, len(ranked) // 3)),
+                        key=lambda t: (-counts[t], -h.specificity(t)))[:shared]
+        for t in common:
+            if t in items:
+                continue
+            item(t, h.name[t], "phenotype", "shared", "", counts[t] + h.specificity(t),
+                 description=f"Recorded for {counts[t]} of the {len(ranked)} candidates.",
+                 links=[{"label": "HPO", "url": URL_PATTERNS["HP"][1].format(_local(t))}])
+            for r in ranked:
+                if t in props[r["node"]]:
+                    link(r["node"], t, "has")
+        # body systems as groups, as in the disease view
+        tops = {c: BODY_SYSTEMS.get(c) or re.sub(r"^(abnormality of (the )?|abnormal )", "",
+                                                 h.name[c], flags=re.I).capitalize()
+                for c in h.children.get(_hpoa.PHENOTYPE_ROOT, ())}
+        for it in items.values():
+            if it["section"] in ("symptoms", "shared"):
+                sys_ = [tops[a] for a in h.ancestors(it["id"]) if a in tops]
+                it["group"] = sys_[0] if sys_ else "Other features"
+        # disease-causing genes of the candidates (HPO genes_to_disease)
+        genes: dict[str, list[str]] = defaultdict(list)
+        for sym, links_ in h.g2d.items():
+            for dis, assoc in links_:
+                if _hpoa.causal(assoc):
+                    genes[dis].append(sym)
+        for r in ranked:
+            for sym in dict.fromkeys(s for i in [r["id"], *r["xrefs"]] for s in genes.get(normalize(i), ())):
+                gid = sym if sym in items else f"gene:{sym}"
+                if gid not in items:
+                    item(gid, sym, "gene", "genetics", "Disease-causing genes", 1.0,
+                         links=[{"label": "NCBI Gene", "url": "https://www.ncbi.nlm.nih.gov/gene/?term="
+                                 f"{sym}%5Bsym%5D+AND+human%5Borgn%5D"}])
+                link(r["node"], gid, "caused by")
+
+    groups: dict[str, dict] = {}
+    for it in sorted(items.values(), key=lambda i: -i["score"]):
+        gid = f"group:{it['section']}:{_slug(it['group'] or it['section'])}"
+        it["group_id"] = gid
+        groups.setdefault(gid, {"id": gid, "label": it["group"] or dict(
+            (s, lab) for s, lab, _ in QUERY_SECTIONS)[it["section"]], "section": it["section"],
+            "items": []})["items"].append(it["id"])
+    order = {s: i for i, (s, _, _) in enumerate(QUERY_SECTIONS)}
+    for gr in groups.values():
+        gr["count"] = len(gr["items"])
+    ordered = sorted(groups.values(), key=lambda gr: (
+        order[gr["section"]], gr["label"].startswith("Other"), -gr["count"], gr["label"]))
+    seen, unique_links = set(), []
+    for lk in links:
+        key = (lk["a"], lk["b"])
+        if key not in seen and lk["a"] in items and lk["b"] in items:
+            seen.add(key)
+            unique_links.append(lk)
+    terms = [p.get("label") or p["text"] for p in parts]
+    many = len(by_node) > top
+    facts = [{"label": "Searched", "value": ", ".join(terms)},
+             {"label": "Candidates", "value": f"{len(ranked)}" + (f" of {len(by_node)} shown" if many else "")}]
+    if ranked:
+        facts.append({"label": "Best match", "value": ranked[0]["name"]})
+    return {
+        "focus": {"id": g.data.get("start") or "query", "label": " · ".join(terms) or query["text"],
+                  "description": (
+                      f"{len(ranked)} diseases match these terms, ranked by how well their HPO "
+                      "annotations cover them (specific, frequent findings count most). Close "
+                      "scores mean the search fits them about equally: add a more specific "
+                      "finding or a gene to narrow it down."),
+                  "synonyms": [], "links": [], "facts": facts},
+        "sections": [{"id": s, "label": lab, "color": c} for s, lab, c in QUERY_SECTIONS
+                     if any(gr["section"] == s for gr in ordered)],
+        "groups": ordered,
+        "items": items,
+        "links": unique_links,
+        "notes": [],
+        "source_graph": g.data.get("args", {}),
+        "query": {"text": query["text"], "mode": query.get("mode")},
+    }
 
 
 def _write(view: dict, out: Path):

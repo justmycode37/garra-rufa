@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,6 +17,8 @@ from .catalog import get_catalog
 from .graphs import GraphBuilds
 from .monarch import UpstreamError
 from .service import ConnectionService, InputError
+
+EVIDENCE_PATH = re.compile(r"^/api/graphs/([a-z0-9-]{1,60}-[0-9a-f]{8})/evidence$")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -87,6 +90,7 @@ class Handler(BaseHTTPRequestHandler):
                         "clusters": "/api/clusters",
                         "graphs": "/api/graphs",
                         "graph_build": {"method": "POST", "path": "/api/graphs/build"},
+                        "graph_evidence": {"method": "POST", "path": "/api/graphs/{id}/evidence"},
                         "explorer": "/explore",
                         "search": {
                             "method": "POST",
@@ -215,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/research/papers",
             "/api/research/atlas",
             "/api/graphs/build",
-        }:
+        } and not EVIDENCE_PATH.match(path):
             return self._reply(404, {"error": "not_found"})
         if self.headers.get_content_type() != "application/json":
             return self._reply(415, {"error": "content_type_must_be_application_json"})
@@ -232,6 +236,14 @@ class Handler(BaseHTTPRequestHandler):
                 if self.graphs is None:
                     return self._reply(503, {"error": "Graph builds are not configured"})
                 result = self.graphs.start(body)
+            elif EVIDENCE_PATH.match(path):
+                if self.graphs is None:
+                    return self._reply(503, {"error": "Graph builds are not configured"})
+                if body != {}:
+                    raise InputError("Send an empty JSON object")
+                result = self.graphs.add_evidence(EVIDENCE_PATH.match(path)[1])
+                if result is None:
+                    return self._reply(404, {"error": "not_found"})
             elif path == "/api/search":
                 if isinstance(body, dict) and body.get("mode") == "phenotype":
                     result = self.service.search({k: v for k, v in body.items() if k != "mode"})

@@ -10,6 +10,9 @@
 .runPicker { position: relative; display: flex; align-items: center; }
 .runPicker select { appearance: none; max-width: min(520px, 80vw); font-family: var(--font-display); font-size: clamp(22px, 2.6vw, 30px); font-weight: 200; letter-spacing: -.8px; padding: 0 30px 2px 0; border: 0; background: transparent; cursor: pointer; text-overflow: ellipsis; }
 .runPicker svg { position: absolute; right: 4px; pointer-events: none; }
+.runTitle { max-width: min(520px, 80vw); margin: 0; font-family: var(--font-display); font-size: clamp(22px, 2.6vw, 30px); font-weight: 200; letter-spacing: -.8px; line-height: 1.2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.evidenceAction { display: grid; gap: 8px; justify-items: center; }
+.evidenceAction .primary { display: inline-flex; align-items: center; gap: 7px; border-radius: 22px; }
 .tabs { display: flex; gap: 4px; padding: 4px; border-radius: 22px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 3px 14px #14131407; }
 .tabs a { padding: 9px 16px; border-radius: 18px; font-size: 11px; font-weight: 500; color: var(--muted); }
 .tabs a:hover { color: var(--ink); }
@@ -28,14 +31,6 @@
 .check { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .check .fineprint { margin-left: 2px; }
 .message { font-size: 12px; }
-.buildList { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
-.buildList button { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 10px 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); text-align: left; }
-.buildList button:not(:disabled):hover { border-color: var(--lavender); }
-.buildList b { display: block; font-size: 12px; font-weight: 600; }
-.buildList small { display: block; font-size: 10px; color: var(--muted); line-height: 1.5; }
-.buildState { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; flex: none; background: var(--lilac); }
-.buildState[data-state=done] { background: var(--sea); }
-.buildState[data-state=failed] { background: var(--blush); }
 
 .progress { margin: 0 28px 12px; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 18px; background: color-mix(in srgb, var(--lilac) 45%, var(--card)); font-size: 12px; }
 .progress ol { display: flex; gap: 5px; margin: 0 0 0 auto; padding: 0; list-style: none; }
@@ -147,3 +142,14 @@ button.tag:hover { background: var(--lilac); }
   .brand > span { display: none; }
   .tabs a { padding: 8px 12px; }
 }
+
+/* symptom / gene search: the ranked candidate diseases and building one of them */
+.candidates { margin: 0 0 6px; padding: 0; list-style: none; counter-reset: rank; }
+.candidates li { counter-increment: rank; }
+.candidates button { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 7px 8px; border-radius: 12px; text-align: left; line-height: 1.4; font-weight: 500; }
+.candidates button::before { content: counter(rank); min-width: 16px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.candidates button:hover, .candidates button[aria-pressed=true] { background: color-mix(in srgb, var(--lilac) 45%, transparent); }
+.candidates button > span:not([class]) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.candidates small { font-weight: 400; }
+.candidateBuild { display: grid; gap: 6px; margin: 10px 0 4px; }
+.candidateBuild button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }

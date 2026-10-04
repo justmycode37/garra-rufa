@@ -57,5 +57,9 @@ export default function AboutPage() {
       </section>
     </main>
     <footer className={styles.footer}><span>garra rufa</span><span>A way forward, together.</span></footer>
+    <p className={styles.credits}>
+      Anatomy model: <a href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html" target="_blank" rel="noreferrer">BodyParts3D</a>, © The Database Center for Life Science, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>; lung meshes <a href="https://creativecommons.org/licenses/by-sa/2.1/jp/" target="_blank" rel="noreferrer">CC BY-SA 2.1 JP</a>. Simplified and resampled by Garra Rufa (<a href="/models/anatomy/NOTICE.md">details</a>).
+      Body and hands mesh: <a href="https://github.com/makehumancommunity/makehuman" target="_blank" rel="noreferrer">MakeHuman</a> (CC0).
+    </p>
   </div>;
 }

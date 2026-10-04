@@ -84,9 +84,17 @@ class GraphBuildTests(unittest.TestCase):
         self.assertEqual(b["label"], "Marfan syndrome")
         self.assertEqual(self.wait(b["id"])["state"], "done")
         self.assertEqual(calls[0][-2:], ["--label", "Marfan syndrome"])
-        # a label only names a disease id, never free text
         with self.assertRaises(InputError):
-            self.builds.start({"query": "Marfan syndrome", "label": "x"})
+            self.builds.start({"query": "OMIM:154700", "label": "see https://example.org"})
+
+    def test_symptom_build_keeps_its_label_but_no_label_flag(self):
+        calls = []
+        stubbed = graphs.subprocess.run
+        graphs.subprocess.run = lambda cmd, **kw: (calls.append(cmd), stubbed(cmd, **kw))[1]
+        b = self.builds.start({"query": "HP:0001627, chest pain", "label": "Heart: chest pain"})
+        self.assertEqual(b["label"], "Heart: chest pain")
+        self.assertEqual(self.wait(b["id"])["state"], "done")
+        self.assertNotIn("--label", calls[0])
 
     def test_evidence_build_runs_all_stages(self):
         b = self.builds.start({"query": "PMM2", "evidence": True})
@@ -95,6 +103,42 @@ class GraphBuildTests(unittest.TestCase):
         self.assertEqual(done["done"], b["stages"])
         self.assertTrue(self.builds.view(b["id"], "evidence"))
         self.assertTrue(done["views"]["present"])
+
+    def test_same_query_is_served_from_the_cache(self):
+        b = self.wait(self.builds.start({"query": "Pompe disease"})["id"])
+        again = self.builds.start({"query": "pompe  DISEASE"})
+        self.assertEqual((again["id"], again["state"]), (b["id"], "done"))
+
+    def test_evidence_is_added_to_a_cached_overview(self):
+        b = self.wait(self.builds.start({"query": "Marfan"})["id"])
+        self.assertFalse(b["views"].get("evidence"))
+        more = self.builds.add_evidence(b["id"])
+        self.assertEqual((more["id"], more["state"], more["evidence"]), (b["id"], "queued", True))
+        done = self.wait(b["id"])
+        self.assertEqual(done["done"], ["graph", "overview", "papers", "evidence", "export"])
+        self.assertTrue(self.builds.view(b["id"], "evidence"))
+        log = (self.builds.root / b["id"] / "build.log").read_text(encoding="utf-8")
+        self.assertEqual(log.count("== graph =="), 1)  # the overview is not rebuilt
+        # asking again (or building the query with evidence) reuses the finished build
+        self.assertEqual(self.builds.add_evidence(b["id"])["state"], "done")
+        self.assertEqual(self.builds.start({"query": "Marfan", "evidence": True})["id"], b["id"])
+
+    def test_evidence_query_upgrades_the_cached_overview(self):
+        b = self.wait(self.builds.start({"query": "Fabry"})["id"])
+        more = self.builds.start({"query": "Fabry", "evidence": True})
+        self.assertEqual((more["id"], more["state"]), (b["id"], "queued"))
+        self.assertTrue(self.wait(b["id"])["views"]["evidence"])
+
+    def test_evidence_needs_a_finished_overview(self):
+        self.assertIsNone(self.builds.add_evidence("nope-0123abcd"))
+        self.assertIsNone(self.builds.add_evidence("../x"))
+        failed = self.wait(self.builds.start({"query": "broken query"})["id"])
+        with self.assertRaises(InputError):
+            self.builds.add_evidence(failed["id"])
+        graphs._has_llm_key = lambda: False
+        b = self.wait(self.builds.start({"query": "Pompe"})["id"])
+        with self.assertRaises(InputError):
+            self.builds.add_evidence(b["id"])
 
     def test_failed_stage_is_reported_and_can_be_retried(self):
         b = self.wait(self.builds.start({"query": "broken query"})["id"])
@@ -140,6 +184,14 @@ class GraphBuildTests(unittest.TestCase):
         self.assertEqual(json.load(urlopen(f"{base}/api/graphs/{bid}/present")), {"focus": {}})
         with self.assertRaises(HTTPError) as err:
             urlopen(f"{base}/api/graphs/{bid}/evidence")
+        self.assertEqual(err.exception.code, 404)
+        more = Request(f"{base}/api/graphs/{bid}/evidence", data=b"{}", headers={"Content-Type": "application/json"})
+        self.assertEqual(json.load(urlopen(more))["evidence"], True)
+        self.wait(bid)
+        self.assertEqual(json.load(urlopen(f"{base}/api/graphs/{bid}/evidence")), {"nodes": []})
+        missing = Request(f"{base}/api/graphs/nope-0123abcd/evidence", data=b"{}", headers={"Content-Type": "application/json"})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(missing)
         self.assertEqual(err.exception.code, 404)
         bad = Request(f"{base}/api/graphs/build", data=b'{"query": "x"}', headers={"Content-Type": "application/json"})
         with self.assertRaises(HTTPError) as err:

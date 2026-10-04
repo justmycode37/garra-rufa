@@ -6,6 +6,8 @@ Each input is a graph JSON of main.py; the evidence graph is read from the
 <stem>.kg.json next to it when it exists (or pass a .kg.json alone for the evidence graph
 only). Per run, <out>/<stem>.present.json and <out>/<stem>.evidence.json are written and
 <out>/index.json (the list the webapp offers) is updated: entries of other runs are kept.
+A symptom / gene search ("HP:0001627, chest pain") is exported as the query-centred view
+(present.query_view: the ranked candidates side by side), unless --focus picks one of them.
 
 Usage:
   python src/query-test/web_export.py runs/marfan.json runs/pmm2.json runs/pompe.json
@@ -22,7 +24,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from present import Graph, Present  # noqa: E402
+from present import Graph, Present, query_view  # noqa: E402
+from web_enrich import enrich_evidence, enrich_present  # noqa: E402
 
 OUT = HERE.parents[1] / "webapp" / "public" / "graph-data"
 
@@ -35,16 +38,19 @@ def _dump(view: dict, path: Path) -> int:
 
 def export_present(graph_path: Path, focus: str | None, similar: int) -> dict:
     g = Graph(json.loads(graph_path.read_text(encoding="utf-8")))
+    if not focus and (g.data.get("query") or {}).get("ranking"):
+        return enrich_present(query_view(g), g.data)
     fid = g.pick_focus(focus)
     if not fid:
         raise SystemExit(f"{graph_path}: no disease to present"
                          + (f" (focus {focus!r} not found)" if focus else ""))
-    return Present(g, fid, similar=similar).build()
+    return enrich_present(Present(g, fid, similar=similar).build(), g.data)
 
 
 def export_evidence(kg_path: Path) -> dict:
     from evidence.main import viewer_data  # heavy imports: only when a .kg.json is exported
-    return viewer_data(json.loads(kg_path.read_text(encoding="utf-8")))
+    kg = json.loads(kg_path.read_text(encoding="utf-8"))
+    return enrich_evidence(viewer_data(kg), kg)
 
 
 def main():

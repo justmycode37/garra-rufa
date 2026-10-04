@@ -19,3 +19,10 @@ build/
 connections.html
 /runs/
 .vercel
+
+# SSH / private keys
+*.key
+*.pem
+id_rsa*
+id_ed25519*
+ssh-key-*

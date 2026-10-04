@@ -1,10 +1,13 @@
 'use client';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowUpRight, ChevronRight, Search } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowUpRight, ChevronRight, LoaderCircle, Search, Sparkles } from 'lucide-react';
 import { blend, tint, type GraphLink, type GraphNode } from '@/lib/force-canvas';
 import { SECTION_COLORS, safeUrl, type PresentItem, type PresentView } from '@/lib/graph-views';
+import { candidateQuery } from '@/lib/graph-builds';
 import { GraphMessage, loadView, useGraphRun } from './GraphsShell';
 import { useForceCanvas, ZoomControls } from './useForceCanvas';
+import { ItemFacts } from './NodeFacts';
 import styles from './Graphs.module.css';
 
 const MAX_SHOWN = 15; // entries drawn when a topic opens; all are listed in the panel
@@ -34,7 +37,10 @@ function Overview({ data }: { data: PresentView }) {
   const SECTION = useMemo(() => Object.fromEntries(data.sections.map(s => [s.id, { ...s, color: SECTION_COLORS[s.id] ?? s.color }])), [data]);
   const GROUP = useMemo(() => Object.fromEntries(data.groups.map(g => [g.id, g])), [data]);
   const [enabled, setEnabled] = useState(() => new Set(data.sections.map(s => s.id)));
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  // a symptom / gene search (present.query_view): its candidate diseases are the point, so
+  // they start open and are drawn larger, labelled and nearer the centre
+  const isSearch = data.sections.some(s => s.id === 'candidates');
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(data.groups.filter(g => g.section === 'candidates').map(g => g.id)));
   const [extra, setExtra] = useState<Set<string>>(() => new Set());
   const [showLinks, setShowLinks] = useState(true);
   const [selection, setSelection] = useState<Selection>({ type: 'focus' });
@@ -111,15 +117,20 @@ function Overview({ data }: { data: PresentView }) {
     for (const g of data.groups) {
       if (!enabled.has(g.section)) continue;
       const c = colors.group[g.id], p = ringPos[g.id], open = expanded.has(g.id);
-      nodes.push({ id: g.id, label: g.label.length > 34 ? g.label.slice(0, 32) + '…' : g.label, badge: String(g.count), shape: 'pill', r: 18,
-        fill: c.stops.length > 1 ? c.stops.map(s => tint(s, 0.42)) : tint(c.mixed, 0.42), stroke: open ? '#141314' : c.mixed, strokeWidth: open ? 2 : 1.2,
-        tx: p.x * ring, ty: p.y * ring, pull: 0.09, charge: -700, priority: 5 });
-      links.push({ id: `s:${g.id}`, source: F.id, target: g.id, colors: [SECTION[g.section].color, c.mixed], width: 2.6, opacity: 0.55, distance: ring * 0.9, strength: 0.03 });
+      const cand = g.section === 'candidates', reach = cand ? 0.72 : 1;
+      const label = !cand ? g.label : /^Match /.test(g.label) ? g.label.replace(/^Match/, 'Candidates matching') : 'Candidate diseases';
+      nodes.push({ id: g.id, label: label.length > 34 ? label.slice(0, 32) + '…' : label, badge: String(g.count), shape: 'pill', r: cand ? 22 : 18,
+        fill: c.stops.length > 1 ? c.stops.map(s => tint(s, 0.42)) : tint(c.mixed, 0.42), stroke: open || cand ? '#141314' : c.mixed, strokeWidth: cand ? 2.4 : open ? 2 : 1.2,
+        tx: p.x * ring * reach, ty: p.y * ring * reach, pull: 0.09, charge: -700, priority: cand ? 9 : 5, pinLabel: cand });
+      links.push({ id: `s:${g.id}`, source: F.id, target: g.id, colors: [SECTION[g.section].color, c.mixed], width: cand ? 4 : 2.6, opacity: cand ? 0.8 : 0.55, distance: ring * 0.9 * reach, strength: 0.03 });
       for (const iid of shownItems(g.id)) {
-        const ic = colors.item[iid];
-        nodes.push({ id: iid, label: ITEMS[iid].label, r: 8, fill: ic.stops.length > 1 ? ic.stops : ic.mixed, stroke: '#fffdfe', strokeWidth: 1.5, spawn: g.id,
-          tx: p.x * ring * 1.55, ty: p.y * ring * 1.55, pull: 0.015, charge: -140, priority: 1 + Math.min(1, ITEMS[iid].score / 3) });
-        links.push({ id: `m:${iid}`, source: g.id, target: iid, colors: [c.mixed, ic.mixed], width: 1.4, opacity: 0.6, distance: 70, strength: 0.6 });
+        // symptoms: everyday name, size by how often they occur, a gold ring for hallmark signs
+        const ic = colors.item[iid], it = ITEMS[iid], mark = !cand && !!it.hallmark;
+        nodes.push({ id: iid, label: it.lay ?? it.label, r: cand ? 14 : it.freq != null ? 6 + 5 * it.freq : 8, fill: ic.stops.length > 1 ? ic.stops : ic.mixed,
+          stroke: cand ? '#141314' : mark ? '#c9a52c' : '#fffdfe', strokeWidth: cand ? 2 : mark ? 3 : 1.5, spawn: g.id,
+          tx: p.x * ring * 1.55 * reach, ty: p.y * ring * 1.55 * reach, pull: 0.015, charge: cand ? -320 : -140,
+          priority: cand ? 8 : 1 + Math.min(1, ITEMS[iid].score / 3), pinLabel: cand });
+        links.push({ id: `m:${iid}`, source: g.id, target: iid, colors: [c.mixed, ic.mixed], width: cand ? 2.2 : 1.4, opacity: cand ? 0.8 : 0.6, distance: cand ? 95 : 70, strength: 0.6 });
       }
     }
     if (showLinks) {
@@ -152,17 +163,25 @@ function Overview({ data }: { data: PresentView }) {
   }
 
   const secCount = (s: string) => data.groups.filter(g => g.section === s).reduce((n, g) => n + g.count, 0);
-  const hits = query.trim() ? Object.values(ITEMS).filter(it => it.label.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 20) : [];
+  const q = query.trim().toLowerCase();
+  const hits = q ? Object.values(ITEMS).filter(it => it.label.toLowerCase().includes(q) || it.lay?.toLowerCase().includes(q)).slice(0, 20) : [];
   const ctx = { ITEMS, GROUP, SECTION, linksOf, colors, selectItem, selectGroup: (id: string) => setSelection({ type: 'group', id }) };
 
   return <div className={styles.stage}>
     <canvas ref={canvas} className={styles.canvas} aria-label={`Overview graph of ${F.label}: ${data.groups.length} topics, ${Object.keys(ITEMS).length} entries. The panels list the same content.`} role="img"/>
     <ZoomControls engine={engine}/>
     <aside className={`${styles.panel} ${styles.left}`} aria-label="Disease summary and topics">
-      <span className="eyebrow">DISEASE OVERVIEW</span>
+      <span className="eyebrow">{isSearch ? 'SEARCH OVERVIEW' : 'DISEASE OVERVIEW'}</span>
       <h1 className={styles.panelTitle}>{F.label}</h1>
       {F.facts.length > 0 && <dl className={styles.facts}>{F.facts.map(f => <div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl>}
       {F.description && <Clamp text={F.description}/>}
+      {isSearch && <>
+        <h2 className={styles.h2}>Candidate diseases</h2>
+        <ol className={`${styles.list} ${styles.candidates}`}>{Object.values(ITEMS).filter(it => it.section === 'candidates').sort((a, b) => b.score - a.score).map(it => <li key={it.id}>
+          <button onClick={() => selectItem(it.id)} aria-pressed={selection?.type === 'item' && selection.id === it.id}>
+            <span className={styles.swatch} style={{ background: colors.item[it.id].mixed }}/><span>{it.label}<small>{GROUP[it.group_id].label} · score {it.score.toFixed(1)}</small></span>
+          </button></li>)}</ol>
+      </>}
       {F.synonyms.length > 0 && <p className="fineprint">Also known as: {F.synonyms.join('; ')}</p>}
       <LinkRow links={F.links}/>
       <h2 className={styles.h2}>Topics</h2>
@@ -184,7 +203,7 @@ function Overview({ data }: { data: PresentView }) {
     <aside className={`${styles.panel} ${styles.right}`} aria-label="Selection details" aria-live="polite">
       {selection?.type === 'group' && GROUP[selection.id] ? <GroupDetail gid={selection.id} {...ctx}/>
         : selection?.type === 'item' && ITEMS[selection.id] ? <ItemDetail iid={selection.id} {...ctx}/>
-        : selection?.type === 'focus' ? <FocusDetail data={data}/>
+        : selection?.type === 'focus' ? <FocusDetail data={data} isSearch={isSearch}/>
         : <p className="muted">Click a topic or entry in the graph.</p>}
       {data.notes.length > 0 && selection?.type === 'focus' && <p className="fineprint">{data.notes.join(' · ')}</p>}
     </aside>
@@ -197,9 +216,9 @@ type DetailCtx = {
   colors: { item: Record<string, { mixed: string }> }; selectItem: (id: string) => void; selectGroup: (id: string) => void;
 };
 
-function FocusDetail({ data }: { data: PresentView }) {
+function FocusDetail({ data, isSearch }: { data: PresentView; isSearch: boolean }) {
   return <>
-    <span className="eyebrow">THE DISEASE</span>
+    <span className="eyebrow">{isSearch ? 'THE SEARCH' : 'THE DISEASE'}</span>
     <h2 className={styles.detailTitle}>{data.focus.label}</h2>
     {data.focus.description ? <p className={styles.body}>{data.focus.description}</p> : <p className="muted">No description in the sources.</p>}
     <p className="fineprint">{Object.keys(data.items).length} entries in {data.groups.length} topics, {data.links.length} connections between entries. Sources: Orphanet, MONDO, HPO, ClinicalTrials.gov, patient organisation directories and more.</p>
@@ -234,10 +253,32 @@ function ItemDetail({ iid, ITEMS, GROUP, SECTION, linksOf, colors, selectItem, s
     <h2 className={styles.detailTitle}><span className={styles.swatch} style={{ background: colors.item[iid].mixed }}/>{it.label}</h2>
     {facts.length > 0 && <dl className={styles.facts}>{facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>}
     {it.notes.map(n => <p key={n} className="muted">{n}</p>)}
+    <ItemFacts item={it}/>
+    {it.section === 'candidates' && <BuildCandidate name={it.label}/>}
     {it.description && <Clamp text={it.description}/>}
     <LinkRow links={it.links}/>
     <Connections ids={[iid]} {...{ ITEMS, GROUP, SECTION, linksOf, colors, selectItem, selectGroup }}/>
   </>;
+}
+
+/** A full disease graph for one candidate of a symptom search, built from its name only. */
+function BuildCandidate({ name }: { name: string }) {
+  const { canBuild, startGraph } = useGraphRun();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => { setBusy(false); setMessage(''); }, [name]);
+  const graphQuery = candidateQuery(name);
+  if (canBuild.signedIn === false) return <p className={styles.notice}><Link href="/?entry=signup&role=researcher">Sign in</Link> to build a graph of {name}.</p>;
+  if (canBuild.signedIn !== null && !canBuild.enabled) return <p className="fineprint">{canBuild.notice || 'Building graphs is unavailable right now.'}</p>;
+  return <div className={styles.candidateBuild}>
+    <button className="primary" disabled={busy || graphQuery.length < 2 || canBuild.signedIn === null} onClick={async () => {
+      setBusy(true); setMessage('');
+      const { error, cached } = await startGraph(graphQuery);
+      setMessage(error || (cached ? 'Opened from the cache.' : 'Building. The graph opens here as soon as its overview is ready.'));
+      if (error) setBusy(false);
+    }}>{busy ? <LoaderCircle size={15} className={styles.spin}/> : <Sparkles size={15}/>}Build a graph of this disease</button>
+    {message && <p className="fineprint" role="status">{message}</p>}
+  </div>;
 }
 
 function Connections({ ids, ITEMS, GROUP, SECTION, linksOf, colors, selectItem }: { ids: string[] } & DetailCtx) {

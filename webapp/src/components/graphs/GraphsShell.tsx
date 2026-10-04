@@ -2,24 +2,28 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowLeft, Check, ChevronDown, LoaderCircle, Plus, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, LoaderCircle, Plus, Sparkles, X } from 'lucide-react';
 import { GarraMark } from '@/components/Brand';
 import type { GraphBuild } from '@/lib/graph-builds';
-import { diseaseRequest, findDiseaseRun, type DiseaseRequest } from '@/lib/organ-diseases';
+import { CACHE_KEY, cachedExample, forget, isBuildId, readCache, remember, type ExampleEntry } from '@/lib/graph-cache';
 import styles from './Graphs.module.css';
 
 export type GraphRun = {
   id: string; label: string; source: 'example' | 'built';
   presentUrl?: string; evidenceUrl?: string; build?: GraphBuild;
-  ids?: string[]; names?: string[]; query?: string;
 };
-type IndexEntry = { id: string; label: string; present: string | null; evidence: string | null; ids?: string[]; names?: string[] };
-/** A disease opened from the atlas (?disease=…&name=…) until its graph is selected. */
-type DiseaseOpen = DiseaseRequest & { message?: string; busy?: boolean };
-type BuildState = { enabled: boolean; evidence: boolean; notice?: string; builds: GraphBuild[] };
-type Ctx = { runs: GraphRun[]; run?: GraphRun; loading: boolean; error: string };
+type Caps = { enabled: boolean; evidence: boolean; notice?: string };
+/** startGraph opens the cached graph of a query or starts its build, and selects it. */
+type Ctx = {
+  runs: GraphRun[]; run?: GraphRun; loading: boolean; error: string;
+  canBuild: { signedIn: boolean | null; enabled: boolean; evidence: boolean; notice?: string };
+  startGraph: (query: string, evidence?: boolean) => Promise<{ error?: string; cached?: boolean }>;
+  /** Adds the evidence graph to a built graph; resolves to an error message or ''. */
+  addEvidence: (id: string) => Promise<string>;
+};
 
-const GraphsContext = createContext<Ctx>({ runs: [], loading: true, error: '' });
+const GraphsContext = createContext<Ctx>({ runs: [], loading: true, error: '', canBuild: { signedIn: null, enabled: false, evidence: false },
+  startGraph: async () => ({ error: 'Graphs are not loaded yet.' }), addEvidence: async () => 'Graphs are not loaded yet.' });
 export const useGraphRun = () => useContext(GraphsContext);
 
 const viewCache = new Map<string, Promise<unknown>>();
@@ -42,100 +46,130 @@ const STAGE_LABEL: Record<string, string> = {
   evidence: 'Reading papers for evidence', export: 'Preparing the evidence graph',
 };
 
+function storeCache(ids: string[]) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(ids)); } catch { /* the page works without it */ }
+}
+
 export default function GraphsShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [examples, setExamples] = useState<IndexEntry[]>([]);
-  const [builds, setBuilds] = useState<BuildState>({ enabled: false, evidence: false, builds: [] });
+  const [examples, setExamples] = useState<ExampleEntry[]>([]);
+  const [examplesLoaded, setExamplesLoaded] = useState(false);
+  const [caps, setCaps] = useState<Caps>({ enabled: false, evidence: false });
+  // the graphs this browser has queried (most recent first) and their builds by id
+  const [cache, setCache] = useState<string[]>([]);
+  const [builds, setBuilds] = useState<Record<string, GraphBuild>>({});
+  const [resolved, setResolved] = useState<Set<string>>(() => new Set());
   const [runId, setRunId] = useState('');
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
-  const [buildsLoaded, setBuildsLoaded] = useState(false);
-  const [disease, setDisease] = useState<DiseaseOpen>();
-  const pendingSelect = useRef('');
-  const diseaseHandled = useRef(false);
+  const requested = useRef(new Set<string>());
 
-  const refreshBuilds = useCallback(async () => {
+  const updateCache = useCallback((change: (ids: string[]) => string[]) => setCache(ids => {
+    const next = change(ids);
+    if (next !== ids) storeCache(next);
+    return next;
+  }), []);
+
+  const fetchBuild = useCallback(async (id: string) => {
     try {
-      const r = await fetch('/api/graphs');
-      const d = await r.json();
-      if (r.ok) setBuilds(d);
-    } catch { /* the examples still work */ }
-    finally { setBuildsLoaded(true); }
-  }, []);
+      const r = await fetch(`/api/graphs/${encodeURIComponent(id)}`);
+      if (r.status === 404) updateCache(ids => forget(ids, id));  // gone from the research service
+      else if (r.ok) { const { build } = await r.json(); setBuilds(b => ({ ...b, [id]: build })); }
+    } catch { /* tried again on the next poll or visit */ }
+    finally { setResolved(s => s.has(id) ? s : new Set(s).add(id)); }
+  }, [updateCache]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setRunId(params.get('run') || '');
-    if (!params.get('run')) setDisease(diseaseRequest(params));
-    // the examples show at once; builds and the sign-in state arrive on their own
-    void refreshBuilds();
+    setRunId(new URLSearchParams(window.location.search).get('run') || '');
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(CACHE_KEY); } catch { /* no cache */ }
+    setCache(readCache(stored));
+    fetch('/api/graphs').then(r => r.json()).then(d => setCaps({ enabled: !!d.enabled, evidence: !!d.evidence, notice: d.notice }))
+      .catch(() => setCaps({ enabled: false, evidence: false }));
     fetch('/api/auth').then(r => r.json()).then(d => setSignedIn(!!d.user && !d.user.guest)).catch(() => setSignedIn(false));
     fetch('/graph-data/index.json').then(r => (r.ok ? r.json() : []))
       .then(index => setExamples(Array.isArray(index) ? index : []))
       .catch(() => setError('Graphs could not be loaded.'))
-      .finally(() => setLoading(false));
-  }, [refreshBuilds]);
+      .finally(() => setExamplesLoaded(true));
+  }, []);
 
-  // poll while a build runs
-  const active = builds.builds.some(b => b.state === 'queued' || b.state === 'running');
+  // load the builds of the cached graphs (and of ?run=) once each
+  useEffect(() => {
+    for (const id of [runId, ...cache]) if (id && isBuildId(id) && !requested.current.has(id)) { requested.current.add(id); void fetchBuild(id); }
+  }, [runId, cache, fetchBuild]);
+
+  // poll the builds that are still running
+  const active = Object.values(builds).filter(b => b.state === 'queued' || b.state === 'running').map(b => b.id).join(' ');
   useEffect(() => {
     if (!active) return;
-    const timer = setInterval(refreshBuilds, 4000);
+    const timer = setInterval(() => active.split(' ').forEach(id => void fetchBuild(id)), 4000);
     return () => clearInterval(timer);
-  }, [active, refreshBuilds]);
+  }, [active, fetchBuild]);
 
-  const runs = useMemo<GraphRun[]>(() => [
-    ...builds.builds.filter(b => b.state !== 'failed' || b.views.present).map(b => ({
-      id: b.id, label: b.label, source: 'built' as const, build: b,
-      presentUrl: b.views.present ? `/api/graphs/${b.id}/present?v=${b.done.length}` : undefined, query: b.query,
-      evidenceUrl: b.views.evidence ? `/api/graphs/${b.id}/evidence?v=${b.done.length}` : undefined,
-    })),
-    ...examples.map(e => ({
-      id: e.id, label: e.label, source: 'example' as const, ids: e.ids, names: e.names,
-      presentUrl: e.present ? `/graph-data/${e.present}` : undefined,
-      evidenceUrl: e.evidence ? `/graph-data/${e.evidence}` : undefined,
-    })),
-  ], [builds.builds, examples]);
+  const runs = useMemo<GraphRun[]>(() => {
+    const exampleBy = new Map(examples.map(e => [e.id, e]));
+    return [...new Set([runId, ...cache])].flatMap<GraphRun>(id => {
+      const b = builds[id], e = exampleBy.get(id);
+      if (b) return [{ id, label: b.label, source: 'built', build: b,
+        presentUrl: b.views.present ? `/api/graphs/${b.id}/present?v=${b.done.length}` : undefined,
+        evidenceUrl: b.views.evidence ? `/api/graphs/${b.id}/evidence?v=${b.done.length}` : undefined }];
+      if (e) return [{ id, label: e.label, source: 'example',
+        presentUrl: e.present ? `/graph-data/${e.present}` : undefined,
+        evidenceUrl: e.evidence ? `/graph-data/${e.evidence}` : undefined }];
+      return [];
+    });
+  }, [builds, examples, cache, runId]);
 
-  // A disease from the atlas shows its own graph, never a fallback example.
-  const run = runs.find(r => r.id === runId) ?? (disease ? undefined : runs.find(r => r.source === 'example') ?? runs[0]);
-  const select = (id: string) => {
-    setRunId(id); setDisease(undefined);
+  // ?run=<id> (a build started from the atlas) waits for its build instead of showing another graph
+  const waiting = !examplesLoaded || (!!runId && isBuildId(runId) && !runs.some(r => r.id === runId) && !resolved.has(runId));
+  const run = runs.find(r => r.id === runId) ?? (waiting ? undefined : runs[0]);
+  const select = useCallback((id: string) => {
+    setRunId(id);
     const params = new URLSearchParams(window.location.search);
-    params.set('run', id); params.delete('disease'); params.delete('name');
+    params.set('run', id);
     window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
-  };
+  }, []);
 
-  // Open the atlas disease: its existing graph, else a new build of it (by identifier).
-  useEffect(() => {
-    if (!disease || diseaseHandled.current || loading || !buildsLoaded || signedIn === null) return;
-    diseaseHandled.current = true;
-    const found = findDiseaseRun(runs, disease);
-    if (found) { select(found.id); return; }
-    if (!builds.enabled) { setDisease({ ...disease, message: `There is no graph of ${disease.name} yet, and building graphs is unavailable right now. ${builds.notice ?? ''}` }); return; }
-    if (!signedIn) { setDisease({ ...disease, message: `There is no graph of ${disease.name} yet. Sign in to build it.` }); return; }
-    setDisease({ ...disease, busy: true, message: `Starting a graph of ${disease.name}…` });
-    const id = disease.ids.find(i => i.startsWith('ORPHA:')) ?? disease.ids[0];
-    fetch('/api/graphs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: id, label: disease.name }) })
-      .then(async r => {
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error || 'The graph could not be started.');
-        setBuilds(s => ({ ...s, builds: [d.build, ...s.builds.filter(x => x.id !== d.build.id)] }));
-        pendingSelect.current = d.build.id;
-      })
-      .catch(e => setDisease({ ...disease, message: `The graph of ${disease.name} could not be started: ${e instanceof Error ? e.message : 'please try again.'}` }));
-  }, [disease, loading, buildsLoaded, signedIn, runs, builds.enabled, builds.notice]);
-  useEffect(() => {
-    if (pendingSelect.current && runs.some(r => r.id === pendingSelect.current)) { select(pendingSelect.current); pendingSelect.current = ''; }
-  }, [runs]);
+  // a graph that opened counts as queried: it moves to the top of the cache
+  useEffect(() => { if (run) updateCache(ids => ids[0] === run.id ? ids : remember(ids, run.id)); }, [run, updateCache]);
+  // nothing queried yet: start with the query form
+  useEffect(() => { if (!waiting && !runs.length) setBuilderOpen(true); }, [waiting, runs.length]);
+
+  const open = (b: GraphBuild) => {
+    setBuilds(s => ({ ...s, [b.id]: b }));
+    requested.current.add(b.id);
+    setResolved(s => new Set(s).add(b.id));
+    updateCache(ids => remember(ids, b.id));
+    select(b.id);
+  };
+  const startGraph: Ctx['startGraph'] = async (graphQuery, evidence = false) => {
+    const example = cachedExample(examples, graphQuery, evidence);
+    if (example) { updateCache(ids => remember(ids, example.id)); select(example.id); return { cached: true }; }
+    try {
+      const r = await fetch('/api/graphs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: graphQuery, evidence }) });
+      const d = await r.json();
+      if (!r.ok) return { error: d.error || 'The graph could not be started.' };
+      open(d.build);
+      return { cached: !!d.build.views.present && (!evidence || !!d.build.views.evidence) };
+    } catch { return { error: 'The graph could not be started.' }; }
+  };
+  const addEvidence = async (id: string) => {
+    try {
+      const r = await fetch(`/api/graphs/${encodeURIComponent(id)}/evidence`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const d = await r.json();
+      if (!r.ok) return d.error || 'The evidence graph could not be started.';
+      setBuilds(s => ({ ...s, [id]: d.build }));
+      return '';
+    } catch { return 'The evidence graph could not be started.'; }
+  };
+  const canBuild = { signedIn, ...caps };
 
   const tab = pathname?.endsWith('/evidence') ? 'evidence' : 'overview';
   const query = run ? `?run=${encodeURIComponent(run.id)}` : '';
-  const examplesList = runs.filter(r => r.source === 'example'), builtList = runs.filter(r => r.source === 'built');
+  const status = (r: GraphRun) => !r.build || r.build.state === 'done' ? '' : r.build.state === 'failed' ? ' · failed' : ' · building…';
 
-  return <GraphsContext.Provider value={{ runs, run, loading, error }}>
+  return <GraphsContext.Provider value={{ runs, run, loading: waiting, error, canBuild, startGraph, addEvidence }}>
     <div className={styles.page}>
       <a className="skip-link" href="#graph-content">Skip to graph</a>
       <header className={styles.header}>
@@ -148,14 +182,13 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
       <div className={styles.toolbar}>
         <div className={styles.title}>
           <span className="eyebrow">KNOWLEDGE GRAPHS</span>
-          <label className={styles.runPicker}>
-            <span className={styles.srOnly}>Disease graph</span>
-            <select value={run?.id ?? ''} onChange={e => select(e.target.value)} disabled={!runs.length} aria-label="Disease graph">
-              {builtList.length > 0 && <optgroup label="Built from queries">{builtList.map(r => <option key={r.id} value={r.id}>{r.label}{r.build && r.build.state !== 'done' ? ' · building…' : ''}</option>)}</optgroup>}
-              {examplesList.length > 0 && <optgroup label="Examples">{examplesList.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}</optgroup>}
+          {runs.length > 1 ? <label className={styles.runPicker}>
+            <span className={styles.srOnly}>Your graphs</span>
+            <select value={run?.id ?? ''} onChange={e => select(e.target.value)} aria-label="Your graphs">
+              {runs.map(r => <option key={r.id} value={r.id}>{r.label}{status(r)}</option>)}
             </select>
             <ChevronDown size={16} aria-hidden="true"/>
-          </label>
+          </label> : <h1 className={styles.runTitle}>{run?.label ?? (waiting ? '' : 'No graph yet')}</h1>}
         </div>
         <nav className={styles.tabs} aria-label="Graph views">
           <Link href={`/graphs/overview${query}`} aria-current={tab === 'overview' ? 'page' : undefined}>Disease overview</Link>
@@ -163,21 +196,16 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
         </nav>
         <button className={`primary ${styles.buildButton}`} onClick={() => setBuilderOpen(o => !o)} aria-expanded={builderOpen}><Plus size={15}/>Build a graph</button>
       </div>
-      {builderOpen && <BuildPanel builds={builds} signedIn={signedIn} onClose={() => setBuilderOpen(false)}
-        onStarted={b => { setBuilds(s => ({ ...s, builds: [b, ...s.builds.filter(x => x.id !== b.id)] })); pendingSelect.current = b.id; }}
-        onOpen={id => { select(id); setBuilderOpen(false); }}/>}
+      {builderOpen && <BuildPanel caps={caps} signedIn={signedIn} startGraph={startGraph} onClose={() => setBuilderOpen(false)}/>}
       {run?.build && run.build.state !== 'done' && <BuildProgress build={run.build}/>}
       <main id="graph-content" className={styles.main}>
-        {error ? <p className={styles.notice} role="alert">{error}</p>
-          : disease && !run ? <GraphMessage busy={!disease.message || disease.busy}>{disease.message ?? `Looking for the graph of ${disease.name}…`}
-            {!disease.busy && disease.message && signedIn === false && <p><Link href="/?entry=signup&role=researcher">Sign in</Link> · <Link href="/?view=atlas">Back to the atlas</Link></p>}</GraphMessage>
-          : children}
+        {error ? <p className={styles.notice} role="alert">{error}</p> : children}
       </main>
     </div>
   </GraphsContext.Provider>;
 }
 
-function BuildPanel({ builds, signedIn, onClose, onStarted, onOpen }: { builds: BuildState; signedIn: boolean | null; onClose: () => void; onStarted: (b: GraphBuild) => void; onOpen: (id: string) => void }) {
+function BuildPanel({ caps, signedIn, startGraph, onClose }: { caps: Caps; signedIn: boolean | null; startGraph: Ctx['startGraph']; onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [evidence, setEvidence] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -186,39 +214,31 @@ function BuildPanel({ builds, signedIn, onClose, onStarted, onOpen }: { builds: 
     event.preventDefault();
     if (busy || query.trim().length < 2) return;
     setBusy(true); setMessage('');
-    try {
-      const r = await fetch('/api/graphs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: query.trim(), evidence }) });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'The graph could not be started.');
-      onStarted(d.build); setQuery('');
-      setMessage(d.build.state === 'done' ? 'This graph already exists — it is now selected.' : 'Building. The overview opens as soon as it is ready.');
-    } catch (e) { setMessage(e instanceof Error ? e.message : 'The graph could not be started.'); }
-    finally { setBusy(false); }
+    const { error, cached } = await startGraph(query.trim(), evidence);
+    setBusy(false);
+    if (error) { setMessage(error); return; }
+    setQuery('');
+    setMessage(cached ? 'This query was built before. Its graph opened from the cache.' : 'Building. The overview opens as soon as it is ready.');
   }
-  const recent = builds.builds.slice(0, 6);
   return <section className={`${styles.builder} glass`} aria-labelledby="build-title">
     <div className={styles.builderHead}>
       <div><h2 id="build-title"><Sparkles size={17}/>Build a new graph</h2>
-        <p className="muted">Enter a disease (“Marfan syndrome”), a gene (“FBN1”) or symptoms (“tall stature, ectopia lentis”). The overview is collected from public rare-disease sources and takes a few minutes.</p></div>
+        <p className="muted">Enter a disease (“Marfan syndrome”), a gene (“FBN1”) or symptoms (“tall stature, ectopia lentis”). A query built before opens from the cache at once; a new one is collected from public rare-disease sources and takes a few minutes.</p></div>
       <button className={styles.iconButton} onClick={onClose} aria-label="Close graph builder"><X size={18}/></button>
     </div>
-    {!builds.enabled ? <p className={styles.notice}>{builds.notice || 'Building graphs is unavailable right now.'} The example graphs can still be explored.</p>
-      : signedIn === false ? <p className={styles.notice}><Link href="/?entry=signup&role=researcher">Sign in</Link> to build a graph.</p>
-      : <form className={styles.buildForm} onSubmit={submit}>
+    {/* cached graphs open for everyone; a new build needs the service and a sign-in */}
+    <form className={styles.buildForm} onSubmit={submit}>
         <input value={query} onChange={e => setQuery(e.target.value)} maxLength={120} placeholder="Disease, gene, or symptoms" aria-label="Graph query" disabled={busy}/>
-        <label className={styles.check} title={builds.evidence ? undefined : 'Needs an LLM key on the research service'}>
-          <input type="checkbox" checked={evidence} disabled={!builds.evidence || busy} onChange={e => setEvidence(e.target.checked)}/>
-          Also build the evidence graph <span className="fineprint">(reads papers with an LLM; can take an hour)</span>
+        <label className={styles.check} title={caps.evidence ? undefined : 'Needs an LLM key on the research service'}>
+          <input type="checkbox" checked={evidence} disabled={!caps.evidence || busy} onChange={e => setEvidence(e.target.checked)}/>
+          Also build the evidence graph <span className="fineprint">(reads papers with an LLM; can take an hour; can also be added later from the Evidence tab)</span>
         </label>
         <button className="primary" disabled={busy || query.trim().length < 2}>{busy ? <LoaderCircle size={15} className={styles.spin}/> : <Plus size={15}/>}Build</button>
-      </form>}
+      </form>
+    {!caps.enabled ? <p className={styles.notice}>{caps.notice || 'Building new graphs is unavailable right now.'} Graphs in the cache still open.</p>
+      : signedIn === false && <p className={styles.notice}><Link href="/?entry=signup&role=researcher">Sign in</Link> to build new graphs. Graphs in the cache open without it.</p>}
     {message && <p className={styles.message} role="status">{message}</p>}
-    <p className="fineprint">Graphs you build are listed for everyone using this site. Do not include personal or patient details in the query.</p>
-    {recent.length > 0 && <ul className={styles.buildList}>{recent.map(b => <li key={b.id}>
-      <button onClick={() => onOpen(b.id)} disabled={!b.views.present}>
-        <span className={styles.buildState} data-state={b.state}>{b.state === 'done' ? <Check size={13}/> : b.state === 'failed' ? <X size={13}/> : <LoaderCircle size={13} className={styles.spin}/>}</span>
-        <span><b>{b.label}</b><small>{b.state === 'failed' ? b.error : b.state === 'done' ? (b.evidence ? 'Overview and evidence' : 'Overview') : b.state === 'queued' ? 'Waiting to start' : STAGE_LABEL[b.stage ?? ''] ?? 'Building'}</small></span>
-      </button></li>)}</ul>}
+    <p className="fineprint">Built graphs are kept on the research service, so the same query is answered from the cache. Do not include personal or patient details in the query.</p>
   </section>;
 }
 

@@ -1,0 +1,30 @@
+/* Background facts in the graph detail panels (NodeFacts.tsx). */
+.card { margin: 12px 0; padding: 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.card .small, .card :global(.fineprint) { margin: 6px 0 0; }
+.cardHead { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
+.approved, .stage { margin-left: auto; padding: 1px 8px; border-radius: 9px; font-size: 10px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.approved { background: color-mix(in srgb, #5d7048 18%, transparent); color: #46552f; }
+.stage { background: color-mix(in srgb, #bda76a 22%, transparent); color: #6d5c26; }
+.small { display: block; font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+.hallmark { margin: 10px 0; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, #d8bd52 22%, transparent); line-height: 1.55; font-size: 12px; }
+.hallmark b { margin-right: 6px; }
+.lay { margin: 8px 0; font-size: 13px; }
+
+.meter { display: grid; gap: 3px; margin: 8px 0; }
+.meter small { font-size: 11px; color: var(--muted); }
+.track { display: block; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 8%, transparent); overflow: hidden; }
+.track > span { display: block; height: 100%; border-radius: 3px; }
+
+.split { display: grid; gap: 4px; margin: 8px 0; }
+.split > small { font-size: 10px; color: var(--muted); }
+.stack { display: flex; gap: 1px; height: 8px; border-radius: 4px; overflow: hidden; }
+.stack > span { min-width: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 10px; color: var(--muted); }
+.legend i { display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; }
+
+.funnel { margin: 14px 0 4px; border-top: 1px solid var(--line); padding-top: 8px; }
+.funnel summary { cursor: pointer; font-size: 12px; font-weight: 600; }
+.funnel summary small { display: block; font-weight: 400; font-size: 10px; color: var(--muted); }
+.unread { max-height: 260px; overflow-y: auto; margin-top: 4px; }
+.unread a { display: inline-flex; align-items: center; gap: 2px; text-decoration: underline; text-underline-offset: 3px; }

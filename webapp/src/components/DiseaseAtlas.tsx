@@ -10,7 +10,7 @@ import { atlasRegions } from '@/lib/atlas-graph';
 import { updateStreamingMessage, type OnAnswerText } from '@/lib/search-stream';
 import { Composer, type ComposerContext } from './Chat';
 import LandingChat from './LandingChat';
-import OrganDiseases from './OrganDiseases';
+import OrganGraphBuilder from './OrganGraphBuilder';
 import RegionalDiscovery from './RegionalDiscovery';
 import styles from './DiseaseAtlas.module.css';
 
@@ -139,10 +139,11 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
             aria-label={`Explore ${label.title}`}
             onClick={() => { const disease = diseases.find(d => d.id === label.diseaseId); if (disease) selectDisease(disease); else if (label.target) scene.current?.focus(label.target); }}><span className={styles.tagText}>{label.title}</span></button>)}
         </>}
-        {!loading && !error && graphRegion && <OrganDiseases regionId={graphRegion}/>}
-        <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore. Click a body part to list the diseases that involve it. Select a disease to open its knowledge graph. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
+        {!loading && !error && graphRegion && <OrganGraphBuilder key={graphRegion} regionId={graphRegion}/>}
+        <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore. Click a body part, add symptoms, genes or findings, and build an overview graph from them. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
         <div className={styles.footer}><button className={styles.researchToggle} aria-expanded={researchOpen} aria-controls="atlas-research-drawer" onClick={()=>setResearchOpen(v=>!v)}>Research & coverage</button>
           <span className={styles.dragHint}>Drag to rotate · Scroll to zoom</span>
+          <a className={styles.credit} href="/models/anatomy/NOTICE.md" target="_blank" rel="noreferrer"><span className={styles.creditFull}>Anatomy: BodyParts3D © DBCLS, CC BY 4.0 / CC BY-SA 2.1 JP (lungs)</span><span className={styles.creditShort}>© BodyParts3D</span></a>
           <div className={styles.controls} role="group" aria-label="Atlas view controls">
             <button onClick={() => { scene.current?.setPanMode(!pan); setPan(!pan); }} aria-label={pan ? 'Switch to rotation' : 'Switch to panning'} title={pan ? 'Drag to move. Switch to rotation.' : 'Drag to rotate. Switch to panning.'} aria-pressed={pan}>{pan ? <Move size={17}/> : <Rotate3D size={19}/>}</button>
             <span/>

@@ -51,12 +51,24 @@ export async function getGraphBuild(id: string): Promise<GraphBuild | null> {
   return graphBuildSchema.parse(await response.json());
 }
 
-/** label: the disease name when the query is a disease id (an atlas pick). */
+/** label: a readable name for the build ("Heart: chest pain"); with a disease id query also its name. */
 export async function startGraphBuild(query: string, evidence: boolean, label?: string): Promise<{ build?: GraphBuild; error?: string }> {
   const response = await call('/api/graphs/build', { method: 'POST', body: JSON.stringify({ query, evidence, ...(label ? { label } : {}) }) });
   const data = await response.json().catch(() => ({}));
+  // A research service from before build labels refuses the field: build without it.
+  if (response.status === 400 && label) return startGraphBuild(query, evidence);
   if (response.status === 400) return { error: typeof data.message === 'string' ? data.message.slice(0, 200) : 'Please check the query.' };
   if (!response.ok) throw new GraphBuildsUnavailable('The graph build could not be started.');
+  return { build: graphBuildSchema.parse(data) };
+}
+
+/** Add the evidence stages to a build whose overview is ready (null: no such build). */
+export async function addGraphEvidence(id: string): Promise<{ build?: GraphBuild; error?: string } | null> {
+  const response = await call(`/api/graphs/${encodeURIComponent(id)}/evidence`, { method: 'POST', body: '{}' });
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404) return null;
+  if (response.status === 400) return { error: typeof data.message === 'string' ? data.message.slice(0, 200) : 'The evidence graph could not be started.' };
+  if (!response.ok) throw new GraphBuildsUnavailable('The evidence graph could not be started.');
   return { build: graphBuildSchema.parse(data) };
 }
 
@@ -73,4 +85,12 @@ export async function graphBuildView(id: string, view: 'present' | 'evidence'): 
       if (attempt >= 1 || error instanceof GraphBuildsUnavailable && !/reached/.test(error.message)) throw error instanceof GraphBuildsUnavailable ? error : new GraphBuildsUnavailable('This graph could not be loaded.');
     }
   }
+}
+
+/** A disease name as a build query: the research service takes 2-120 characters of
+ * letters, digits and ,.;:'()+/- starting with a letter or digit, and reads the whole
+ * input as a disease name before splitting it at commas. */
+export function candidateQuery(name: string) {
+  return name.replace(/[^\p{L}\p{N}_\s,.;:'()+/-]/gu, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/^[^\p{L}\p{N}_]+/u, '').slice(0, 120).trim();
 }

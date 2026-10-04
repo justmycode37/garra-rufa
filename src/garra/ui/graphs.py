@@ -1,5 +1,7 @@
 """Graph builds for the webapp's graph pages: a query runs the query-test pipelines in the
 background and the result is exported for the viewers (src/query-test/web_export.py).
+Builds are a cache by query: the same query returns the existing build, and the evidence
+stages can be added to an overview-only build later (add_evidence).
 
   overview   main.py <query> -o run.json, then web_export -> present.json  (minutes)
   evidence   literature/main.py run.json, evidence/main.py (LLM, OPENROUTER_API_KEY),
@@ -30,7 +32,9 @@ DEFAULT_ROOT = REPO / "data" / "web-graphs"
 QUERY = re.compile(r"^\w[\w\s,.;:'()+/-]{1,119}$", re.UNICODE)  # argv: never a leading '-'
 ID = re.compile(r"^[a-z0-9-]{1,60}-[0-9a-f]{8}$")
 CURIE = re.compile(r"^[A-Za-z][A-Za-z0-9_.]*:[A-Za-z0-9_.-]+$")
+LABEL = re.compile(r"^[^\x00-\x1f]{2,200}$")
 MAX_QUEUED = 4
+EVIDENCE_STAGES = ["papers", "evidence", "export"]
 STAGE_TIMEOUT = {"graph": 20 * 60, "overview": 5 * 60, "papers": 30 * 60,
                  "evidence": 3 * 60 * 60, "export": 10 * 60}
 
@@ -97,22 +101,24 @@ class GraphBuilds:
         query = " ".join(str(body.get("query") or "").split())
         if not QUERY.match(query) or "://" in query:
             raise InputError("Use a disease, symptom or gene name (2-120 characters)")
-        # a disease picked by id (atlas) keeps its name as label: main.py --label
-        label = " ".join(str(body.get("label") or "").split())[:200]
-        if label and (not CURIE.match(query) or any(ord(c) < 32 for c in label) or "://" in label):
-            raise InputError("A label is only accepted with a disease id such as ORPHA:558")
+        # a readable name for the build ("Heart: chest pain"); for a CURIE query it is
+        # also the input's label (main.py --label)
+        label = " ".join(str(body.get("label") or "").split())
+        if label and (not LABEL.match(label) or "://" in label):
+            raise InputError("Use a short plain-text label (2-200 characters)")
         evidence = body.get("evidence") is True
         if evidence and not _has_llm_key():
             raise InputError("The evidence graph needs OPENROUTER_API_KEY on the research service")
-        key = hashlib.sha1(f"{query.lower()}|{evidence}".encode()).hexdigest()[:8]
-        bid = f"{_slug(query)}-{key}"
+        bid, with_evidence = (self._id(query, ev) for ev in (False, True))
         with self.lock:
-            old = self.builds.get(bid)
-            if old and old["state"] != "failed":
-                return self._public(old)  # same query: reuse the running / finished build
-            if sum(b["state"] == "queued" for b in self.builds.values()) >= MAX_QUEUED:
-                raise InputError("Several graphs are already being built. Try again later")
-            stages = ["graph", "overview"] + (["papers", "evidence", "export"] if evidence else [])
+            # the builds are a cache by query: a query built before (or building) is reused,
+            # and an overview-only build gets its evidence stages added instead of a rebuild
+            cached = next((b for b in map(self.builds.get, (with_evidence, bid)) if b
+                           and (b["state"] != "failed" or b["views"].get("present"))), None)
+            if cached:
+                return self._add_evidence(cached) if evidence else self._public(cached)
+            self._check_queue()
+            stages = ["graph", "overview"] + (EVIDENCE_STAGES if evidence else [])
             b = {"id": bid, "query": query, "label": label or query, "input_label": label,
                  "evidence": evidence,
                  "state": "queued", "stage": None, "stages": stages, "done": [],
@@ -121,6 +127,37 @@ class GraphBuilds:
             (self.root / bid).mkdir(exist_ok=True)
             self._save(b)
             self.queue.append(bid)
+        self.wake.set()
+        return self._public(b)
+
+    def add_evidence(self, bid: str) -> dict | None:
+        """Add the evidence graph to a build that has its overview (or retry a failed one)."""
+        if not ID.match(bid or ""):
+            return None
+        if not _has_llm_key():
+            raise InputError("The evidence graph needs OPENROUTER_API_KEY on the research service")
+        with self.lock:
+            b = self.builds.get(bid)
+            return self._add_evidence(b) if b else None
+
+    def _id(self, query: str, evidence: bool) -> str:
+        return f"{_slug(query)}-{hashlib.sha1(f'{query.lower()}|{evidence}'.encode()).hexdigest()[:8]}"
+
+    def _check_queue(self):
+        if sum(b["state"] == "queued" for b in self.builds.values()) >= MAX_QUEUED:
+            raise InputError("Several graphs are already being built. Try again later")
+
+    def _add_evidence(self, b: dict) -> dict:  # under self.lock
+        if b["views"].get("evidence") or b["evidence"] and b["state"] in ("queued", "running"):
+            return self._public(b)  # has it, or is building it
+        if b["state"] in ("queued", "running") or not b["views"].get("present"):
+            raise InputError("The overview of this graph is not ready yet. Try again when it is")
+        self._check_queue()
+        stages = [s for s in b["stages"] if s not in EVIDENCE_STAGES] + EVIDENCE_STAGES
+        b.update(evidence=True, stages=stages, state="queued", stage=None, error=None,
+                 updated=time.time())
+        self._save(b)
+        self.queue.append(b["id"])
         self.wake.set()
         return self._public(b)
 
@@ -142,7 +179,8 @@ class GraphBuilds:
         out = ["-o", str(d / "export")]
         commands = {
             "graph": [str(QUERY_TEST / "main.py"), b["query"], "-o", str(run),
-                      *(["--label", b["input_label"]] if b.get("input_label") else [])],
+                      *(["--label", b["input_label"]]
+                        if b.get("input_label") and CURIE.match(b["query"]) else [])],
             "overview": [str(QUERY_TEST / "web_export.py"), str(run), *out],
             "papers": [str(QUERY_TEST / "literature" / "main.py"), str(run), "-o", str(papers)],
             "evidence": [str(QUERY_TEST / "evidence" / "main.py"), str(papers), "-o", str(kg),
@@ -151,6 +189,8 @@ class GraphBuilds:
         }
         self._update(b, state="running")
         for stage in b["stages"]:
+            if stage in b["done"]:
+                continue  # evidence added to a finished overview, or a failed stage retried
             self._update(b, stage=stage)
             try:
                 with open(d / "build.log", "a", encoding="utf-8") as log:
@@ -187,7 +227,8 @@ class GraphBuilds:
                 views[kind] = True
                 if entry.get(f"{kind}Stats"):
                     views[f"{kind}Stats"] = entry[f"{kind}Stats"]
-        self._update(b, views=views, label=entry.get("label") or b["label"])
+        # a build named by its requester (the atlas: "Heart: chest pain") keeps that name
+        self._update(b, views=views, label=b.get("input_label") or entry.get("label") or b["label"])
 
     # -- state -----------------------------------------------------------------------
     def _update(self, b: dict, **changes):

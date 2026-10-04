@@ -2,6 +2,7 @@
   "name": "garra-rufa",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "dev:all": "node scripts/dev-all.mjs",
