@@ -37,7 +37,7 @@ export default function ConnectionExperience({ children }: { children: ReactNode
   } }}>
     <div className="connection-experience" data-connection-phase={phase} data-connection-fallback={fallback}>
       {children}
-      <ConnectionScene control={control} route={route} onReady={value => { setReady(value); if (value) setFallback(false); }}
+      {path !== '/demo' && <ConnectionScene control={control} route={route} onReady={value => { setReady(value); if (value) setFallback(false); }}
         onUnavailable={() => { setReady(false); setFallback(true); setPhase('idle'); }}
         onNavigate={destination => router.push(destination === 'about' ? '/about' : '/?view=explore', { scroll: false })}
         onArrive={destination => setPhase(destination === 'about' ? 'arriving' : 'settling')}
@@ -45,7 +45,7 @@ export default function ConnectionExperience({ children }: { children: ReactNode
           setPhase('idle');
           const target = destination === 'about' ? document.getElementById('mission-title') : document.querySelector<HTMLElement>('.about-link');
           target?.focus({ preventScroll: true });
-        }}/>
+        }}/>}
     </div>
   </Context.Provider>;
 }

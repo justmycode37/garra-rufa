@@ -76,8 +76,9 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
   const lastPage = Math.max(0, Math.ceil(filtered.length / pageSize) - 1);
   const currentPage = Math.min(page, lastPage);
   const visible = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const nodeWidth = Math.min(220, graphWidth * .31);
-  const root = { x: Math.max(nodeWidth + 36, Math.min(graphWidth - nodeWidth - 36, frame.regionAnchor?.x ?? graphWidth / 2)), y: Math.max(top + 32, Math.min(bottom - 32, frame.regionAnchor?.y ?? (top + bottom) / 2)) };
+  const nodeWidth = Math.min(220, graphWidth * .30);
+  const clearance = nodeWidth + 32 + (viewport.width < 600 ? 48 : 75);
+  const root = { x: graphWidth < clearance * 2 ? graphWidth / 2 : Math.max(clearance, Math.min(graphWidth - clearance, frame.regionAnchor?.x ?? graphWidth / 2)), y: Math.max(top + 32, Math.min(bottom - 32, frame.regionAnchor?.y ?? (top + bottom) / 2)) };
   const positions = new Map<string, { x: number; y: number }>([[rootId, root]]);
   visible.forEach((node, index) => {
     const side = index % 2, row = Math.floor(index / 2), rows = Math.ceil(visible.length / 2);
@@ -167,7 +168,7 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
         <div className={styles.relations}>{data.edges.filter(edge => edge.from === selected.id || edge.to === selected.id).map((edge, index) => {
           const other = data.nodes.find(node => node.id === (edge.from === selected.id ? edge.to : edge.from));
           if (!other) return null;
-          return <button key={index} onClick={() => select(other)}><small>{relationLabel(edge.relation)} · {edge.source}</small><span>{other.label}</span>{edge.evidence.length > 0 && <small>{edge.evidence.slice(0, 3).join(' · ')}{edge.evidence.length > 3 ? ` +${edge.evidence.length - 3}` : ''}</small>}</button>;
+          return <button key={index} onClick={() => select(other)}><small>{edge.from === selected.id ? '→ ' : '← '}{relationLabel(edge.relation)} · {edge.source}</small><span>{other.label}</span>{edge.evidence.length > 0 && <small>{edge.evidence.slice(0, 3).join(' · ')}{edge.evidence.length > 3 ? ` +${edge.evidence.length - 3}` : ''}</small>}</button>;
         })}</div>
       </aside>}
     </>}
