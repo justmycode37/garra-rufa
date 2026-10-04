@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { diseases } from './knowledge';
 import { placeAtlasLabels, SILHOUETTE_STEP, type LabelCandidate, type PlacedLabel, type SilhouetteRow } from './atlas-labels';
 import { AtlasLabelMotion, type AnimatedAtlasLabel } from './atlas-label-motion';
-import { ATLAS_GRAPH_ZOOM, atlasRegions } from './atlas-graph';
+import { atlasRegions } from './atlas-graph';
+import type { AnatomicalAnchor } from './atlas-callouts';
 
 export type AnatomyGraph = { positions: number[]; triangles: number[]; nodes: number[]; normals: number[]; spacing: number[]; edges: number[] };
 type OrganGraph = { nodes: number[]; normals: number[]; edges: number[]; spacing: number };
@@ -12,7 +12,7 @@ type OrganNetwork = { id: string; category: string; spacing: number; lines: THRE
 type Point3 = [number, number, number];
 type Organ = { id: string; name: string; category: string; anchor: Point3; center: Point3; bounds: [Point3, Point3]; structures: string[] };
 export type AnatomyManifest = { organs: Organ[] };
-export type AnatomyFrame = { zoom: number; labels: AnimatedAtlasLabel[]; detailReady: boolean; detailError: boolean; region: string; rotated: boolean; regionId?: string; regionAnchor?: { x: number; y: number }; viewport?: { width: number; height: number } };
+export type AnatomyFrame = { zoom: number; labels: AnimatedAtlasLabel[]; detailReady: boolean; detailError: boolean; region: string; rotated: boolean; regionId?: string; regionAnchor?: { x: number; y: number }; regionNodes?: AnatomicalAnchor[]; viewport?: { width: number; height: number } };
 type Target = { id: string; title: string; point: THREE.Vector3; zoom: number; conditions: string[] };
 
 export class AnatomyScene {
@@ -52,6 +52,7 @@ export class AnatomyScene {
   private graphRegion = '';
   private focusPoint: THREE.Vector3 | null = null;
   private regionalPoints = new Map<string, THREE.Vector3[]>();
+  private surfaceGraphPoints: THREE.Vector3[];
 
   constructor(private canvas: HTMLCanvasElement, private graph: AnatomyGraph, private manifest: AnatomyManifest, private onFrame: (frame: AnatomyFrame) => void, private onContextLost: () => void, private onSelection: (id: string, title: string) => void = () => {}) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'low-power' });
@@ -83,6 +84,7 @@ export class AnatomyScene {
     this.scene.add(this.surface);
     this.nodePoints = Array.from({ length: graph.nodes.length / 3 }, (_, i) => new THREE.Vector3().fromArray(graph.nodes, i * 3));
     const lifted = this.nodePoints.map((point, i) => point.clone().addScaledVector(new THREE.Vector3().fromArray(graph.normals, i * 3), .008));
+    this.surfaceGraphPoints = lifted;
     // Dense facial, hand, and foot samples should have the same visual weight
     // as the torso in the overview. Line coverage scales with spacing, while
     // point coverage scales with its square. Keep every connection intact.
@@ -263,6 +265,20 @@ export class AnatomyScene {
     return { x: (p.x + 1) * this.width / 2, y: (1 - p.y) * this.height / 2 };
   }
 
+  private recordNodes(regionId: string): AnatomicalAnchor[] {
+    if (regionId === 'skeleton') return this.organNetworks.filter(network => ['bone', 'dental'].includes(network.category))
+      .flatMap(network => (this.regionalPoints.get(network.id) ?? []).map((point, index) => ({ id: `${network.id}:${index}`, ...this.project(point) })));
+    let points = this.regionalPoints.get(regionId);
+    if (!points) {
+      const target = this.targets.find(item => item.id === regionId);
+      if (!target) return [];
+      points = [...this.surfaceGraphPoints].sort((a, b) => a.distanceToSquared(target.point) - b.distanceToSquared(target.point)).slice(0, 180);
+      this.regionalPoints.set(regionId, points);
+    }
+    // Actual rendered vertices, with stable IDs through camera movement.
+    return points.map((point, index) => ({ id: `${regionId}:${index}`, ...this.project(point) }));
+  }
+
   private silhouette() {
     const rows: SilhouetteRow[] = Array.from({ length: Math.ceil(this.height / SILHOUETTE_STEP) + 1 }, () => ({ left: Infinity, right: -Infinity }));
     // Use the full sampled surface, including its back, so transparent anatomy
@@ -325,21 +341,10 @@ export class AnatomyScene {
     // whole sets of labels on consecutive frames.
     if (!this.labelRegion || distance(closest) + 40 < distance(this.labelRegion)) this.labelRegion = closest;
     const nearest = this.labelRegion;
-    const regionCandidates = [
-      ...this.targets.filter(target => target.id !== 'skeleton').map(target => ({ id: target.id, point: target.point })),
-      ...this.manifest.organs.filter(organ => atlasRegions[organ.id]).map(organ => {
-        const points = this.regionalPoints.get(organ.id) ?? [new THREE.Vector3().fromArray(organ.center)];
-        const point = points.reduce((best, point) => point.distanceToSquared(this.controls.target) < best.distanceToSquared(this.controls.target) ? point : best);
-        return { id: organ.id, point };
-      }),
-    ].filter(candidate => !skeletal || ['bone', 'dental'].includes(this.manifest.organs.find(organ => organ.id === candidate.id)?.category ?? ''));
-    const regionDistance = (candidate: { id: string; point: THREE.Vector3 }) => candidate.point.distanceTo(this.controls.target) - (candidate.id === this.graphRegion ? .08 : 0);
-    regionCandidates.sort((a, b) => regionDistance(a) - regionDistance(b));
-    const focusStillHere = this.focusPoint && this.focusPoint.distanceTo(this.controls.target) < .12;
-    const activeRegion = (focusStillHere || this.tween) && this.focusedPart && atlasRegions[this.focusedPart]
-      ? { id: this.focusedPart, point: this.focusPoint ?? this.controls.target }
-      : regionCandidates[0];
-    this.graphRegion = zoom >= ATLAS_GRAPH_ZOOM ? activeRegion?.id ?? '' : '';
+    // Records belong to the body part the user selected, never a region
+    // inferred from scroll position or proximity to the camera.
+    this.graphRegion = this.focusedPart && atlasRegions[this.focusedPart] ? this.focusedPart : '';
+    const activeRegion = this.graphRegion ? { id: this.graphRegion, point: this.focusPoint ?? this.controls.target } : undefined;
     this.detailLabels = this.detailLabels ? zoom > 1.58 : zoom >= 1.72;
     const candidates: LabelCandidate[] = [];
     const addLabel = (label: Omit<LabelCandidate, 'anchor'>, point: THREE.Vector3) => {
@@ -349,11 +354,6 @@ export class AnatomyScene {
     if (!this.detailLabels && !skeletal) {
       this.targets.filter(target => target.id !== 'muscles').forEach(target => addLabel({ id: target.id, title: target.title, kind: 'region', target: target.id }, target.point));
     } else {
-      if (!skeletal && zoom < ATLAS_GRAPH_ZOOM) nearest.conditions.forEach(id => {
-        const disease = diseases.find(d => d.id === id)!;
-        const anchor = this.anchorPoints.get(`${nearest.id}-${id}`)!;
-        addLabel({ id: `disease-${nearest.id}-${id}`, title: disease.name, kind: 'disease', diseaseId: id }, anchor);
-      });
       const previousIds = new Set(this.labelPlacements.map(label => label.id));
       const organDistance = (screen: { x: number; y: number }, id: string) => Math.hypot(screen.x - center.x, screen.y - center.y) - (previousIds.has(`organ-${id}`) ? 32 : 0);
       this.manifest.organs.filter(organ => skeletal ? ['bone', 'dental'].includes(organ.category) : (['organ', 'eye', 'bone'].includes(organ.category) || organ.id === 'diaphragm') && organ.id !== 'lenses').map(organ => ({ organ, screen: this.project(new THREE.Vector3().fromArray(organ.anchor)) }))
@@ -369,7 +369,7 @@ export class AnatomyScene {
     const labels = motion.labels.map(label => ({ ...label, anchor: this.project(this.labelPoints.get(label.id)!) }));
     if (motion.animating) this.requestDraw();
     this.onFrame({ zoom, labels, detailReady: this.detailReady, detailError: this.detailError, region: this.lastRegion,
-      regionId: this.graphRegion, regionAnchor: activeRegion ? this.project(activeRegion.point) : undefined, viewport: { width: this.width, height: this.height },
+      regionId: this.graphRegion, regionNodes: this.graphRegion ? this.recordNodes(this.graphRegion) : [], regionAnchor: activeRegion ? this.project(activeRegion.point) : undefined, viewport: { width: this.width, height: this.height },
       rotated: Math.abs(this.controls.getAzimuthalAngle()) > .03 || Math.abs(this.controls.getPolarAngle() - Math.PI / 2) > .03 });
   };
 

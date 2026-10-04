@@ -6,12 +6,11 @@ import { AnatomyScene, type AnatomyFrame, type AnatomyGraph, type AnatomyManifes
 import { atlasContextForTarget, atlasContextForDisease, discoverAtlas, type AtlasContext } from '@/lib/atlas-discovery';
 import { diseases } from '@/lib/knowledge';
 import type { Disease, Message } from '@/lib/types';
-import { ATLAS_GRAPH_ZOOM, atlasRegions } from '@/lib/atlas-graph';
+import { atlasRegions } from '@/lib/atlas-graph';
 import { updateStreamingMessage, type OnAnswerText } from '@/lib/search-stream';
 import { Composer, type ComposerContext } from './Chat';
 import LandingChat from './LandingChat';
 import AtlasKnowledgeGraph from './AtlasKnowledgeGraph';
-import RegionalDiscovery from './RegionalDiscovery';
 import styles from './DiseaseAtlas.module.css';
 
 const initialFrame: AnatomyFrame = { zoom: 1, labels: [], detailReady: false, detailError: false, region: '', rotated: false };
@@ -37,7 +36,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const graphRegion = frame.zoom >= ATLAS_GRAPH_ZOOM && frame.regionId && atlasRegions[frame.regionId] ? frame.regionId : '';
+  const graphRegion = frame.regionId && atlasRegions[frame.regionId] ? frame.regionId : '';
   const activeDisease = diseases.find(d => d.id === (context?.diseaseId ?? context?.diseaseIds[0]));
 
   function applyContext(next: AtlasContext | undefined, move = true) {
@@ -120,7 +119,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
 
   return <section className={styles.layout} aria-label="Interactive atlas">
       <div className={styles.atlas}>
-        <canvas ref={canvas} className={`${styles.body} ${graphRegion ? styles.bodyKnowledge : ''}`} tabIndex={0} aria-label="3D human body" aria-describedby="atlas-instructions" onKeyDown={keyDown}/>
+        <canvas ref={canvas} className={styles.body} tabIndex={0} aria-label="3D human body" aria-describedby="atlas-instructions" onKeyDown={keyDown}/>
         {(loading || error) && <div className={styles.loading} role="status">{error || 'Preparing the body…'}{error && <button onClick={() => setAttempt(value => value + 1)}>Reload body</button>}</div>}
         {!loading && !error && <>
           {(frame.zoom > 1.05 || frame.rotated) && <div className={styles.breadcrumb}><button onClick={() => scene.current?.reset()}><ArrowLeft size={14}/>Whole body</button>{frame.region && <span>{frame.region}</span>}</div>}
@@ -139,7 +138,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
             onClick={() => { const disease = diseases.find(d => d.id === label.diseaseId); if (disease) selectDisease(disease); else if (label.target) scene.current?.focus(label.target); }}><span className={styles.tagText}>{label.title}</span></button>)}
         </>}
         {!loading && !error && graphRegion && <AtlasKnowledgeGraph key={graphRegion} regionId={graphRegion} frame={frame} onAsk={ask}/>}
-        <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore. Zoom in to reveal regional disease records, phenotypes and their connections. Select a disease to load genes, papers and specialist resources. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
+        <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore. Click a body part to reveal its records as labels connected to the anatomy. Select a disease to load genes, papers and specialist resources. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
         <div className={styles.footer}>
           <span className={styles.dragHint}>Drag to rotate · Scroll to zoom</span>
           <div className={styles.controls} role="group" aria-label="Atlas view controls">
@@ -152,7 +151,6 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
           </div>
         </div>
       </div>
-    <RegionalDiscovery regionId={graphRegion || (context?.target && atlasRegions[context.target] ? context.target : 'brain')} onRegion={id => applyContext(atlasContextForTarget(id), true)}/>
     <div className={styles.promptDock}>
       {chatOpen && <LandingChat messages={messages} busy={busy} onDisease={onDisease} onCommunity={onCommunity} onClose={() => setChatOpen(false)} composer={null}/>}
       <Composer {...composerContext} onSubmit={ask} busy={busy} compact placeholder={graphRegion ? `Ask about ${atlasRegions[graphRegion].label}…` : context ? `Ask about ${activeDisease?.shortName ?? context.label}…` : 'Ask a question…'}/>
