@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 120,
+      "excludeFiles": "{webapp/**,.venv/**,tests/**,.git/**,data/raw/**,data/cache/**,data/hpo/*.pickle,**/__pycache__/**}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/research/:path*",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index"
+    }
+  ],
+  "buildCommand": "python3 scripts/prepare_hosted.py"
+}

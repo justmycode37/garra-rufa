@@ -1,0 +1,1 @@
+Google sign-in artwork is the unmodified official light pill SVG from https://developers.google.com/static/identity/images/signin-assets.zip (downloaded 2026-10-04). Use follows https://developers.google.com/identity/branding-guidelines.

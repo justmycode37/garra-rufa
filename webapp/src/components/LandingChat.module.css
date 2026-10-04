@@ -1,0 +1,70 @@
+.panel {
+  border: 1px solid #ffffffd9;
+  border-radius: 27px;
+  background: #fffdfeae;
+  -webkit-backdrop-filter: blur(22px) saturate(1.1);
+  backdrop-filter: blur(22px) saturate(1.1);
+  box-shadow: 0 8px 30px #14131405;
+  transition: background .35s, box-shadow .35s;
+}
+.expanded { background: #fffdfef0; box-shadow: 0 16px 64px #1413140d; }
+.expansion { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s cubic-bezier(.22,1,.36,1); }
+.expanded .expansion { grid-template-rows: 1fr; }
+.conversation { overflow: hidden; min-height: 0; }
+.toolbar { height: 51px; display: flex; align-items: center; justify-content: flex-end; padding: 10px 17px 4px 28px; color: var(--quiet); font-size: 12px; }
+.transcript {
+  position: relative;
+  max-height: min(52svh, 490px);
+  overflow-y: auto;
+  overflow-anchor: none;
+  scroll-behavior: auto;
+  scroll-padding-block: 16px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #14131422 transparent;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.75;
+}
+.transcriptContent { display: flex; flex-direction: column; gap: 26px; padding: 16px 28px 28px; }
+.transcriptContent > * { flex-shrink: 0; }
+.transcript:focus-visible { outline: 2px solid #858abd; outline-offset: -4px; border-radius: 12px; }
+.question { align-self: flex-end; max-width: 85%; border-radius: 22px; padding: 11px 18px; background: #efedf0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+.response { min-width: 0; }
+.response :global(.answer) { padding: 0; }
+.response :global(.answer-text) { font: inherit; }
+.response :global(.answer-text p) { line-height: 1.75; white-space: pre-line; }
+.response :global(.answer-text h1), .response :global(.answer-text h2), .response :global(.answer-text h3) { font-family: inherit; font-weight: 600; letter-spacing: normal; }
+.response :global(.sources-toggle) { font-family: inherit; font-size: 12px; padding: 8px 0; }
+.response :global(.source-list), .response :global(.source-list a) { font-size: 12px; }
+.response :global(.service-notice) { font-size: 12px; background: #f5f4f6; border-color: #1413140d; }
+.actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.copy { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 7px; color: #777; margin-left: -6px; }
+.copy:hover { background: #14131408; color: var(--ink); }
+.copyError { font-size: 12px; color: var(--quiet); }
+.continue { display: inline-flex; align-items: center; justify-content: center; gap: 15px; margin-top: 16px; padding: 11px 17px; border: 1px solid var(--ink); border-radius: 24px; background: var(--ink); color: #fff; font-family: inherit; font-size: 13px; font-weight: 500; }
+.continue:hover, .continue:focus-visible { animation: continue-heartbeat 1.1s ease-in-out infinite; }
+@keyframes continue-heartbeat {
+  0%, 28%, 56%, 100% { transform: scale(1); }
+  14% { transform: scale(1.035); }
+  42% { transform: scale(1.022); }
+}
+.panel :global(.composer) { background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.expanded :global(.composer) { border-top: 1px solid #1413140a; border-radius: 0 0 27px 27px; }
+.panel :global(.voice-transcript-note), .panel :global(.composer-note), .panel :global(.form-error) { margin: 0 18px 12px; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 720px) {
+  .panel { border-radius: 24px; }
+  .toolbar { padding-left: 20px; }
+  .transcript { max-height: min(52svh, 490px); }
+  .transcriptContent { padding: 16px 20px 28px; gap: 22px; }
+  .question { max-width: 90%; padding: 10px 15px; }
+  .expanded :global(.composer) { border-radius: 0 0 24px 24px; }
+}
+@media (max-height: 600px) {
+  .transcript { max-height: 34svh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel, .expansion, .transcript { transition: none; }
+  .continue { animation: none !important; }
+}
