@@ -11,6 +11,12 @@ const cache = new Map<string, { at: number; data: AtlasGraphData }>();
 const filters = [['all', 'All'], ['disease', 'Diseases'], ['phenotype', 'Phenotypes'], ['gene', 'Genes'], ['specialist', 'Doctors & centres'], ['paper', 'Papers'], ['claim', 'Claims'], ['pathway', 'Pathways & processes'], ['trial', 'Trials'], ['resource', 'Resources']] as const;
 const kindLabel = (node: AtlasNode) => node.kind.replaceAll('_', ' ');
 const relationLabel = (relation: string) => relation.replaceAll('_', ' ');
+const widgetTones = ['lilac', 'sea', 'butter', 'peach', 'sky'] as const;
+function widgetTone(id: string) {
+  // Keep a record's widget and connector the same color while navigating.
+  const hash = Array.from(id).reduce((value, letter) => (value * 31 + letter.charCodeAt(0)) >>> 0, 0);
+  return widgetTones[hash % widgetTones.length];
+}
 
 export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { regionId: string; frame: AnatomyFrame; onAsk: (query: string) => void }) {
   const region = atlasRegions[regionId];
@@ -116,13 +122,13 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
     {error && <div className={styles.status} role="alert"><p>{error}</p><button onClick={() => setRetry(value => value + 1)}>Retry regional data</button></div>}
     {data && !loading && <>
       <svg className={styles.edges} aria-hidden="true">
-        {callouts.map(tag => <line key={tag.id} x1={tag.anchor.x} y1={tag.anchor.y} x2={tag.end.x} y2={tag.end.y}><title>Associated with {region.label}</title></line>)}
+        {callouts.map(tag => <line key={tag.id} data-tone={widgetTone(tag.id)} data-selected={selectedId === tag.id} x1={tag.anchor.x} y1={tag.anchor.y} x2={tag.end.x} y2={tag.end.y}><title>Associated with {region.label}</title></line>)}
       </svg>
       {callouts.map(tag => {
         const node = visible.find(item => item.id === tag.id)!;
         const path = paths.get(node.id) ?? [];
-        return <div key={node.id} className={styles.callout} data-side={tag.side} style={{ left: tag.x, top: tag.y, width: tag.width, minHeight: tag.height }}>
-          <button className={styles.node} onPointerDown={event => { if (event.button === 0) event.currentTarget.setPointerCapture(event.pointerId); }} onClick={() => select(node)} title={`${kindLabel(node)}${path.length ? ': ' + path.map((edge: { relation: string }) => relationLabel(edge.relation)).join(' → ') : ''}`} aria-label={`Explore ${node.label}, ${kindLabel(node)}`} aria-pressed={selectedId === node.id}>
+        return <div key={node.id} className={styles.callout} data-side={tag.side} data-tone={widgetTone(node.id)} style={{ left: tag.x, top: tag.y, width: tag.width, minHeight: tag.height }}>
+          <button className={styles.node} style={{ height: tag.height }} onPointerDown={event => { if (event.button === 0) event.currentTarget.setPointerCapture(event.pointerId); }} onClick={() => select(node)} title={`${node.label} · ${kindLabel(node)}${path.length ? ': ' + path.map((edge: { relation: string }) => relationLabel(edge.relation)).join(' → ') : ''}`} aria-label={`Explore ${node.label}, ${kindLabel(node)}`} aria-pressed={selectedId === node.id}>
             <span className={styles.nodeTitle}>{node.label}</span>
           </button>
           {selected?.id === node.id && <details className={styles.recordDetails}>
