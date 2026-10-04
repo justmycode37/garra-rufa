@@ -41,7 +41,7 @@ Sign-in without the plan-use scope still authenticates the account, but cannot p
 - **Related condition** accepts existing conditions or a new name. Saving a new condition creates its own community; normalized names and known aliases reuse the same community. Communities have opt-in profiles, conversations, and condition-specific published research. Members can join several communities and delete their own posts. Saving a private record does not join a community or share its contents.
 - Files are sent to OpenAI only when attached to a submitted question. Searching other workspace records requires enabling **My workspace**.
 - Landing-page search uses `gpt-6-luna` through the API. Workspace requests select `gpt-6-astra` when it appears in the signed-in account’s live model catalog, otherwise the first visible available model. Subscription inference uses streaming Responses requests with `store: false`; incomplete and failed streams are never treated as answers.
-- Voice input is available in every composer: record for up to two minutes, stop, choose **Transcribe**, then review and send the text. Audio goes through the server to ElevenLabs Scribe and is not saved by Garra Rufa. The ElevenLabs account’s retention settings apply. Cancelling before transcription discards the local recording; cancelling an in-flight request cannot undo audio already sent. Safari and Chrome are supported on localhost or HTTPS.
+- Voice input is available in every composer. Tap the microphone to start dictation immediately; words appear live in the question field alongside your existing draft. Tap again to stop, then edit and send normally. Escape cancels and restores the original draft. Browser speech recognition needs no application API key and may process speech through the browser vendor’s service; cancellation cannot undo that processing. Chrome and Safari support dictation; Safari may require Siri enabled. Browsers without speech recognition can use the optional ElevenLabs fallback: tap to record, tap to stop and automatically transcribe. Garra Rufa does not save the audio. Dictation stops after two minutes and requires HTTPS or loopback.
 - AI answers show retrieved sources. Provider failures fall back to explicitly labelled database search; unavailable literature is reported rather than replaced with invented papers.
 
 ## Data and architecture
@@ -80,7 +80,7 @@ claim that no evidence exists. Publication and sharing require explicit UI actio
 - `OPENAI_API_KEY`: server-only API credential for landing-page AI only. Never used for workspace inference.
 - `OPENAI_SEARCH_MODEL`: defaults to `gpt-6-luna`.
 - `OPENAI_WORKSPACE_MODEL`: preferred ChatGPT plan model; defaults to `gpt-6-astra`, subject to the user’s live catalog.
-- `ELEVENLABS_API_KEY`: server-only credential with speech-to-text access; enables microphone input.
+- `ELEVENLABS_API_KEY`: optional server-only credential with speech-to-text access. If absent, the microphone uses browser dictation without an app API key.
 - `ELEVENLABS_STT_MODEL`: defaults to `scribe_v2`.
 - `GARRA_RESEARCH_URL`: server-only backend origin, defaults to `http://127.0.0.1:8787`.
 - `GARRA_BACKEND_DIR` / `GARRA_PYTHON`: optional backend checkout and interpreter paths for `dev:all`.

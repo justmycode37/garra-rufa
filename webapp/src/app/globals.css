@@ -199,6 +199,7 @@ kbd { font-family: var(--font-body); font-size: 10px; color: var(--quiet); borde
 .workspace-shell .chat-empty .suggestions button:hover { color: var(--ink); transform: none; text-decoration: underline; text-underline-offset: 4px; }
 .workspace-shell .empty-art { width: 42px; height: 42px; background: none; border-radius: 0; transform: none; color: var(--quiet); margin-bottom: 22px; }
 .workspace-shell .empty-art > svg { transform: none; width: 30px; height: 30px; }
+.workspace-scroll.workbench-scroll { padding-bottom: 36px; }
 .workbench-sources { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: -10px 0 32px; }
 .workbench-sources .source-tag { font-size: 10px; color: var(--quiet); margin: 0; }
 .workspace-shell .community-hero { background: transparent; padding: 0; border-radius: 0; margin: 0 0 32px; }
@@ -289,21 +290,12 @@ kbd { font-family: var(--font-body); font-size: 10px; color: var(--quiet); borde
 /* Voice uses the same composer on the landing page and every workspace. */
 .composer-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
 .voice-button { width: 35px; height: 35px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--muted); }
-.voice-button:hover, .voice-button.active { background: #14131409; color: var(--ink); }
+.voice-button:hover { background: #14131409; color: var(--ink); }
+.voice-button.active { background: var(--ink); color: var(--page); }
+.voice-button.listening { animation: microphone-pulse 1.8s ease-in-out infinite; }
 .voice-button:disabled { opacity: .4; }
-.voice-panel { position: absolute; bottom: calc(100% + 12px); right: 0; z-index: 40; width: min(340px, 100%); padding: 18px 20px; border: 1px solid var(--line); border-radius: 21px; background: var(--card); box-shadow: 0 10px 40px #14131414; text-align: left; }
-.home-prompt .voice-panel { top: calc(100% + 12px); bottom: auto; }
-.voice-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.voice-panel-heading b { font-size: 14px; font-weight: 600; }
-.voice-panel-heading .icon-button { width: 27px; height: 27px; }
-.voice-panel > p { margin: 8px 0 16px; color: var(--quiet); font-size: 12px; line-height: 1.6; }
-.voice-panel-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
-.voice-panel-actions > span { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); }
-.voice-panel-actions .primary { min-height: 36px; padding: 9px 16px; font-size: 11px; }
-.voice-panel-actions .text-button { font-size: 11px; padding: 8px 0; }
-.voice-panel > .voice-error { color: #84352b; }
-.recording-clock { font-variant-numeric: tabular-nums; }
-.recording-clock i { width: 7px; height: 7px; border-radius: 50%; background: #b64b43; }
+@keyframes microphone-pulse { 0%, 100% { box-shadow: 0 0 0 0 #14131400; } 50% { box-shadow: 0 0 0 5px #1413140c; } }
+@media (prefers-reduced-motion: reduce) { .voice-button.listening { animation: none; } }
 .voice-transcript-note { color: var(--muted); font-size: 11px; text-align: center; margin-top: 9px; }
 @media (max-width: 480px) {
   .composer-actions { gap: 4px; }
