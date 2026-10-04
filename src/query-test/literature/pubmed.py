@@ -17,6 +17,8 @@ title, abstract, journal, year, authors, MeSH, publication types, DOI and PMCID.
 """
 import xml.etree.ElementTree as ET
 
+from sources import _local
+
 from . import ncbi
 from .base import Collection, Concept, Paper, Provider, Query, gene_terms
 
@@ -89,8 +91,8 @@ class PubmedProvider(Provider):
     # -- efetch ----------------------------------------------------------------
     def enrich(self, coll: Collection):
         todo = [p.pmid for p in coll.papers if p.pmid and not (p.abstract and p.mesh)]
-        for i in range(0, len(todo), BATCH):
-            batch = todo[i:i + BATCH]
+        done = 0
+        for batch in _local_first(todo, BATCH):
             try:
                 xml = self.fetch(f"{EUTILS}/efetch.fcgi", method="POST", data=ncbi.eutils_params(
                     db="pubmed", retmode="xml", id=",".join(batch)))
@@ -98,7 +100,16 @@ class PubmedProvider(Provider):
                     coll.add(p)
             except Exception as e:
                 self.fail(f"efetch {len(batch)} ids", e)
-            print(f"  pubmed efetch {min(i + BATCH, len(todo))}/{len(todo)}", flush=True)
+            done += len(batch)
+            print(f"  pubmed efetch {done}/{len(todo)}", flush=True)
+
+
+def _local_first(pmids: list[str], size: int) -> list[list[str]]:
+    """Batches of PMIDs: those in the local PubMed subset first (answered locally as a
+    whole), then the rest (sent to the API)."""
+    local = _local.pubmed_has(pmids)
+    groups = [[p for p in pmids if p in local], [p for p in pmids if p not in local]]
+    return [g[i:i + size] for g in groups for i in range(0, len(g), size)]
 
 
 def _text(el) -> str:

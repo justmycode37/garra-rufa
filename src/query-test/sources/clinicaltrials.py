@@ -23,7 +23,7 @@ Extra data (Node.info of trial nodes): brief summary, ClinicalTrials.gov url, st
 and the study's literature references ("refs": PMIDs; "ref_types" PMID -> BACKGROUND /
 RESULT / DERIVED, RESULT/DERIVED being publications of the trial's own results).
 """
-from . import _groups
+from . import _groups, _local
 from .base import Edge, Node, Source, info
 
 API = "https://clinicaltrials.gov/api/v2/studies"
@@ -75,7 +75,8 @@ class ClinicalTrialsSource(Source):
             if not label:
                 return []
             params["query.cond"] = f'"{label}"'
-        THROTTLE.wait()
+        if not _local.serves(API):
+            THROTTLE.wait()
         return self.get_json(API, params=params).get("studies") or []
 
     def _org(self, name: str) -> Node:

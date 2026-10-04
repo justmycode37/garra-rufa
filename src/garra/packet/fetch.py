@@ -7,6 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+from garra.local import router as local
 from garra.sources.envelope import now_iso
 from garra.ui.monarch import MonarchClient
 
@@ -33,6 +34,9 @@ query($terms:[String!]!){ mapIds(queryTerms:$terms, entityNames:["target"]){
 def _get_json(url: str, *, params: dict | None = None, headers: dict | None = None) -> dict:
     if params:
         url = url + ("&" if "?" in url else "?") + urlencode(params)
+    answer = local.urllib_json("GET", url)  # data/local/ indexes, when built
+    if answer is not None:
+        return answer
     h = {"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})}
     with urlopen(Request(url, headers=h), timeout=45) as resp:
         raw = resp.read(MAX_BYTES + 1)
@@ -42,6 +46,9 @@ def _get_json(url: str, *, params: dict | None = None, headers: dict | None = No
 
 
 def _post_json(url: str, body: dict, headers: dict | None = None) -> dict:
+    answer = local.urllib_json("POST", url, body)
+    if answer is not None:
+        return answer
     h = {
         "Content-Type": "application/json",
         "Accept": "application/json",

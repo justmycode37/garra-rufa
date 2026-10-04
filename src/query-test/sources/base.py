@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 
 import requests
 
+from . import _local
+
 TIMEOUT = 30
 USER_AGENT = "garra-rufa-query-test/0.1"
 WORD = re.compile(r"[a-z0-9]+")
@@ -142,6 +144,7 @@ class Source:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers["User-Agent"] = USER_AGENT
+        _local.install(self.session)  # answered from data/local/ when the index exists
 
     def ids_for(self, node: Node) -> list[str]:
         """The node's id/xrefs this source understands, in order of preference."""

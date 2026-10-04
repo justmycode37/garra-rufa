@@ -14,6 +14,8 @@ Provider   base class of the literature sources (pubmed, europepmc, litvar, pubt
            sources do.
 Cache      raw API responses in data/literature-cache/cache.sqlite (keyed by URL +
            params), so reruns cost no requests. --refresh ignores it.
+Local      requests the local indexes answer (garra.local: PubMed subset, PubTator,
+           LitVar, MeSH, OLS, HGNC) skip the network, the throttle and the cache.
 """
 import hashlib
 import json
@@ -25,6 +27,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import requests
+
+from sources import _local
 
 TIMEOUT = 60
 USER_AGENT = "garra-rufa-literature/0.1"
@@ -215,7 +219,9 @@ class Throttle:
 class Cache:
     def __init__(self, path: Path = CACHE_PATH, refresh: bool = False):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path, check_same_thread=False)  # guarded by _lock
+        # shared by threads (guarded by _lock) and by concurrent runs (WAL, busy timeout)
+        self.db = sqlite3.connect(path, check_same_thread=False, timeout=120)
+        self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("CREATE TABLE IF NOT EXISTS r (k TEXT PRIMARY KEY, url TEXT, "
                         "body TEXT, t REAL)")
         self.refresh = refresh
@@ -272,6 +278,13 @@ class Provider:
     def fetch(self, url: str, params: dict | None = None, data: dict | None = None,
               method: str = "GET", cache: bool = True) -> str:
         """Response text, from the cache when possible; raises after RETRIES."""
+        reply = _local.route(method, url, params, data)
+        if reply is not None:
+            if reply.status >= 400:
+                r = requests.Response()
+                r.status_code, r._content, r.url = reply.status, reply.bytes(), url
+                r.raise_for_status()
+            return reply.text()
         k = Cache.key(method, url, params, data)
         if cache:
             body = self.cache.get(k)

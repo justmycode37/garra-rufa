@@ -54,7 +54,9 @@ Rules:
   characters). Never paraphrase a quote. Edges without a verbatim quote will be discarded.
 - Name entities precisely and canonically ("PMM2", "epalrestat", "PMM2-CDG",
   "Purkinje cell", "Pmm2 R137H/F115L knock-in mouse"); give common synonyms/abbreviations.
-- Record negative and null results too (effect "negative"/"null"); they matter.
+- Record negative and null results too; they matter. effect "negative"/"null" means the
+  paper's data show harm / no benefit on the measured outcome; a limitation (e.g. "treats
+  symptoms but not the root cause") or a mere plan is not a null result.
 - Include the mechanistic links (causes, involves, has_phenotype, shares_mechanism_with)
   that connect the diseases in the paper to genes, pathways, processes, cell types and
   tissues; they decide whether a solution transfers.

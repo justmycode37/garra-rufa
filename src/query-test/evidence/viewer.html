@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evidence Graph</title>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+  :root { --bg:#fafafa; --panel:#fff; --fg:#222; --muted:#666; --line:#ddd; --accent:#2563eb;
+          --neg:#dc2626; --quote:#f3f4f6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181d; --panel:#1f2229; --fg:#e6e6e6; --muted:#999; --line:#333; --accent:#60a5fa;
+            --neg:#f87171; --quote:#272a33; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--fg);
+         display:grid; grid-template-columns:300px 1fr 380px; height:100vh; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:12px; overflow:auto; }
+  aside.right { border-right:0; border-left:1px solid var(--line); }
+  #net { height:100vh; min-width:0; }
+  h1 { font-size:15px; margin:0 0 4px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 6px; }
+  h3 { font-size:13px; margin:12px 0 4px; }
+  a { color:var(--accent); }
+  .muted { color:var(--muted); }
+  .small { font-size:11px; }
+  input[type=search] { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px;
+                       background:var(--bg); color:var(--fg); }
+  input[type=range] { width:100%; }
+  label.chk { display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
+  .bar { width:14px; height:3px; display:inline-block; flex:none; }
+  .count { margin-left:auto; color:var(--muted); }
+  button { padding:4px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg);
+           color:var(--fg); cursor:pointer; }
+  button.on { border-color:var(--accent); color:var(--accent); }
+  .list > div { padding:3px 4px; border-radius:4px; cursor:pointer; }
+  .list > div:hover { background:var(--bg); }
+  .cand { display:flex; gap:6px; align-items:baseline; }
+  .cand .score { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+  code { font-size:11px; word-break:break-all; }
+  .rel { color:var(--accent); font-size:11px; }
+  .neg { color:var(--neg); }
+  table { border-collapse:collapse; width:100%; }
+  td { padding:2px 4px; vertical-align:top; }
+  td:first-child { color:var(--muted); width:80px; }
+  details { border-top:1px solid var(--line); padding:4px 0; }
+  summary { cursor:pointer; }
+  blockquote { margin:4px 0 6px; padding:4px 8px; background:var(--quote); border-left:3px solid var(--line);
+               border-radius:3px; }
+  .tag { display:inline-block; padding:0 5px; border:1px solid var(--line); border-radius:8px;
+         font-size:11px; color:var(--muted); margin:0 2px 2px 0; }
+  .tabs { display:flex; gap:4px; margin-bottom:4px; }
+  @media (max-width: 1000px) {
+    body { grid-template-columns:1fr; grid-template-rows:auto 60vh auto; height:auto; }
+    #net { height:60vh; }
+    aside { border-right:0; border-bottom:1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <h1 id="title">Evidence graph</h1>
+  <div class="muted" id="stats"></div>
+  <h2>Search</h2>
+  <input type="search" id="q" placeholder="entity, paper title or ID…">
+  <div id="results" class="list"></div>
+  <h2>Candidate solutions</h2>
+  <div class="tabs"><button data-cat="direct" class="on">Direct</button><button data-cat="transfer">Transfer</button></div>
+  <div id="cands" class="list"></div>
+  <h2>Entity kind</h2>
+  <div id="kinds"></div>
+  <h2>Evidence level</h2>
+  <div id="levels"></div>
+  <h2>Min. edge confidence <span id="minConfVal" class="muted">0</span></h2>
+  <input type="range" id="minConf" min="0" max="1" step="0.05" value="0">
+  <h2>Papers</h2>
+  <label class="chk"><input type="checkbox" id="showPapers"> Papers as nodes (→ entities they report)</label>
+  <label class="chk"><input type="checkbox" id="showLinks"> Related-paper links (shared evidence)</label>
+  <h2>Options</h2>
+  <label class="chk"><input type="checkbox" id="edgeLabels"> Edge labels</label>
+  <label class="chk"><input type="checkbox" id="physics" checked> Physics</label>
+  <label class="chk"><input type="checkbox" id="focus"> Only selected node's neighbourhood</label>
+  <div style="margin-top:8px"><button id="fit">Fit view</button></div>
+</aside>
+<div id="net"></div>
+<aside class="right">
+  <div id="detail" class="muted">Click a node, an edge or a candidate. Edges carry the verbatim quotes that support them.</div>
+</aside>
+<script>
+const DATA = /*__DATA__*/{"start":null,"disease":"","settings":{},"stats":{},"nodes":[],"edges":[],"candidates":[],"papers":[],"paper_links":[]}/*__END__*/;
+
+const PALETTE = ["#4e79a7","#f28e2b","#59a14f","#e15759","#b07aa1","#76b7b2","#edc948","#ff9da7","#9c755f","#bab0ac",
+                 "#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd","#8c564b","#e377c2"];
+const LEVELS = ["clinical_trial","observational","case_report","animal","in_vitro","in_silico","review","inferred"];
+const LEVEL_COLOR = { clinical_trial:"#16a34a", observational:"#2563eb", case_report:"#7c3aed", animal:"#ea580c",
+                      in_vitro:"#ca8a04", in_silico:"#64748b", review:"#94a3b8", inferred:"#db2777",
+                      reports:"#9ca3af", related:"#0891b2" };
+const PAPER_COLOR = "#374151";
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+const fg = dark ? "#e6e6e6" : "#222";
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pid = k => "paper:" + k;
+
+// -- data ------------------------------------------------------------------------
+const kinds = [...new Set(DATA.nodes.map(n => n.kind))].sort();
+const color = k => k === "paper" ? PAPER_COLOR : PALETTE[kinds.indexOf(k) % PALETTE.length];
+const byId = Object.fromEntries(DATA.nodes.map(n => [n.id, n]));
+const paperBy = Object.fromEntries(DATA.papers.map(p => [p.key, p]));
+const candBy = Object.fromEntries(DATA.candidates.map(c => [c.id, c]));
+const levels = LEVELS.filter(l => DATA.edges.some(e => e.level === l));
+const allEdges = DATA.edges.map((e, i) => ({ ...e, id: "e" + i, type: "evidence" }));
+DATA.nodes.forEach(x => x.id !== DATA.start && x.papers.forEach(k => paperBy[k] &&
+  allEdges.push({ id: "r" + allEdges.length, from: pid(k), to: x.id, relation: "reports", type: "reports" })));
+DATA.paper_links.filter(l => l.shared_edges > 0).forEach(l =>
+  allEdges.push({ id: "l" + allEdges.length, from: pid(l.a), to: pid(l.b), relation: "shares evidence",
+                  type: "related", link: l }));
+const edgeBy = Object.fromEntries(allEdges.map(e => [e.id, e]));
+const related = {};
+DATA.paper_links.forEach(l => {
+  (related[l.a] ||= []).push({ key: l.b, ...l });
+  (related[l.b] ||= []).push({ key: l.a, ...l });
+});
+
+function nodeName(id) {
+  if (id.startsWith("paper:")) { const p = paperBy[id.slice(6)]; return p ? p.key : id; }
+  return byId[id] ? byId[id].label : id;
+}
+function paperLink(key) {
+  const p = paperBy[key];
+  const url = p && p.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(p.pmid)}/`
+            : p && p.doi ? `https://doi.org/${p.doi}` : null;
+  return `<a href="#" data-paper="${esc(key)}">${esc(key)}</a>` + (url ? ` <a href="${esc(url)}" target="_blank" rel="noopener" class="small">↗</a>` : "");
+}
+
+// -- network ---------------------------------------------------------------------
+const degree = {};
+allEdges.filter(e => e.type === "evidence").forEach(e => { degree[e.from] = (degree[e.from]||0)+1; degree[e.to] = (degree[e.to]||0)+1; });
+const short = s => s.length > 32 ? s.slice(0, 30) + "…" : s;
+const nodes = new vis.DataSet([
+  ...DATA.nodes.map(n => ({
+    id: n.id, label: short(n.label), title: `${n.label}\n${n.id}\n${n.kind}` + (n.score != null ? `\ncandidate score ${n.score} (${n.category})` : ""),
+    color: { background: color(n.kind), border: n.id === DATA.start ? fg : n.score != null ? "#db2777" : color(n.kind) },
+    borderWidth: n.id === DATA.start ? 4 : n.score != null ? 2 : 1,
+    value: n.id === DATA.start ? 40 : (degree[n.id] || 1), font: { color: fg, size: 12 },
+  })),
+  ...DATA.papers.map(p => ({
+    id: pid(p.key), label: p.key, shape: "square", title: `${p.title || p.key}\n${p.journal || ""} ${p.year || ""}`,
+    color: { background: PAPER_COLOR, border: PAPER_COLOR }, value: 4, font: { color: fg, size: 10 },
+  })),
+]);
+const edgeStyle = e => {
+  if (e.type === "reports") return { color: { color: dark ? "#3a3f4a" : "#d1d5db", highlight: "#9ca3af" }, dashes: [2, 3], width: 0.5, arrows: "" };
+  if (e.type === "related") return { color: { color: LEVEL_COLOR.related, highlight: LEVEL_COLOR.related }, width: Math.min(6, e.link.shared_edges), arrows: "" };
+  const c = e.mostly_negative ? (dark ? "#f87171" : "#dc2626") : LEVEL_COLOR[e.level] || "#999";
+  return { color: { color: c, highlight: c, opacity: 0.75 }, width: 0.5 + 3 * (e.confidence || 0),
+           dashes: e.level === "inferred" || e.mostly_negative ? [6, 4] : false, arrows: "to" };
+};
+const edges = new vis.DataSet(allEdges.map(e => ({
+  id: e.id, from: e.from, to: e.to, rel: e.relation,
+  title: e.type === "evidence" ? `${e.relation} · ${e.level} · conf ${e.confidence} · ${e.papers} paper(s)` + (e.negative_papers ? ` · ${e.negative_papers} negative/null` : "")
+       : e.type === "related" ? `${e.link.shared_edges} shared edges, ${e.link.shared_entities} shared entities` : "reports",
+  font: { size: 9, color: dark ? "#aaa" : "#666", strokeWidth: 0, align: "middle" },
+  ...edgeStyle(e),
+})));
+
+const state = { kinds: new Set(kinds), levels: new Set(levels), minConf: 0, papers: false, links: false,
+                focus: false, selected: null };
+let visibleNodes = new Set();
+function edgeVisible(e) {
+  if (e.type === "reports") return state.papers;
+  if (e.type === "related") return state.links;
+  return state.levels.has(e.level) && (e.confidence || 0) >= state.minConf
+      && state.kinds.has(byId[e.from].kind) && state.kinds.has(byId[e.to].kind);
+}
+function computeVisible() {
+  const vis = new Set([DATA.start]);
+  let es = allEdges.filter(edgeVisible);
+  if (state.focus && state.selected) {
+    const s = state.selected;
+    es = es.filter(e => e.from === s || e.to === s);
+    vis.add(s);
+  }
+  es.forEach(e => { vis.add(e.from); vis.add(e.to); });
+  visibleNodes = vis;
+  return new Set(es.map(e => e.id));
+}
+let visibleEdges = computeVisible();
+const nodeView = new vis.DataView(nodes, { filter: n => visibleNodes.has(n.id) });
+const edgeView = new vis.DataView(edges, { filter: e => visibleEdges.has(e.id) });
+const net = new vis.Network(document.getElementById("net"), { nodes: nodeView, edges: edgeView }, {
+  nodes: { shape: "dot", scaling: { min: 6, max: 34 } },
+  edges: { smooth: { type: "continuous" } },
+  physics: { solver: "forceAtlas2Based", forceAtlas2Based: { gravitationalConstant: -60, springLength: 90 },
+             stabilization: { iterations: 300 } },
+  interaction: { hover: true, tooltipDelay: 150 },
+});
+function refresh() {
+  visibleEdges = computeVisible(); nodeView.refresh(); edgeView.refresh(); renderCounts();
+}
+
+// -- left panel ------------------------------------------------------------------
+function checklist(el, items, set, swatch, counter) {
+  el.innerHTML = items.map(x => `<label class="chk"><input type="checkbox" value="${esc(x)}" checked>
+    ${swatch(x)}${esc(x.replace(/_/g, " "))}<span class="count" data-c="${esc(x)}"></span></label>`).join("");
+  el.addEventListener("change", ev => { ev.target.checked ? set.add(ev.target.value) : set.delete(ev.target.value); refresh(); });
+  el._counter = counter;
+}
+const kindsEl = document.getElementById("kinds"), levelsEl = document.getElementById("levels");
+checklist(kindsEl, kinds, state.kinds, k => `<span class="dot" style="background:${color(k)}"></span>`,
+          k => [DATA.nodes.filter(n => n.kind === k && visibleNodes.has(n.id)).length, DATA.nodes.filter(n => n.kind === k).length]);
+checklist(levelsEl, levels, state.levels, l => `<span class="bar" style="background:${LEVEL_COLOR[l]}"></span>`,
+          l => [allEdges.filter(e => e.level === l && visibleEdges.has(e.id)).length, allEdges.filter(e => e.level === l).length]);
+function renderCounts() {
+  for (const el of [kindsEl, levelsEl])
+    el.querySelectorAll("[data-c]").forEach(s => { const [a, b] = el._counter(s.dataset.c); s.textContent = a === b ? b : `${a}/${b}`; });
+  const ne = [...visibleEdges].filter(id => edgeBy[id].type === "evidence").length;
+  document.getElementById("stats").innerHTML =
+    `${esc(DATA.settings.model || "")}<br>screened ${DATA.stats.screened ?? "?"} · read ${DATA.stats.read ?? DATA.papers.length} papers<br>` +
+    `${DATA.nodes.filter(n => visibleNodes.has(n.id)).length}/${DATA.nodes.length} entities · ${ne}/${DATA.edges.length} edges shown · ${DATA.candidates.length} candidates`;
+}
+
+let candCat = "direct";
+function renderCands() {
+  const cs = DATA.candidates.filter(c => c.category === candCat);
+  document.getElementById("cands").innerHTML = cs.slice(0, 60).map((c, i) =>
+    `<div class="cand" data-id="${esc(c.id)}"><span class="dot" style="background:${color(c.kind)}"></span>
+     <span>${i + 1}. ${esc(c.label)}${c.tested_without_benefit_in_input ? ' <span class="neg" title="tested without benefit in the input disease">✕</span>' : ""}</span>
+     <span class="score">${c.score.toFixed(2)}</span></div>`).join("")
+    + (cs.length > 60 ? `<div class="muted small">… ${cs.length - 60} more (see JSON / MD)</div>` : "")
+    || '<span class="muted">none</span>';
+}
+document.querySelector(".tabs").addEventListener("click", ev => {
+  const b = ev.target.closest("button"); if (!b) return;
+  candCat = b.dataset.cat;
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+  renderCands();
+});
+
+// -- right panel -----------------------------------------------------------------
+function quoteHtml(ev) {
+  const meta = [ev.level, ev.effect !== "na" ? ev.effect : "", ev.organism, ev.section].filter(Boolean).map(esc).join(" · ");
+  const negCls = ev.effect === "negative" || ev.effect === "null" ? ' class="neg"' : "";
+  return `<blockquote>“${esc(ev.quote)}”<div class="small muted">${paperLink(ev.paper)} ${esc(ev.passage)} · <span${negCls}>${meta}</span></div></blockquote>`;
+}
+function edgeRow(e, from) {
+  const out = e.from === from, other = out ? e.to : e.from;
+  const head = `<span class="rel">${out ? "→" : "←"} ${esc(e.relation)}</span> <a href="#" data-id="${esc(other)}">${esc(nodeName(other))}</a>
+    <span class="small muted">${esc(e.level)} · conf ${e.confidence} · ${e.papers} paper(s)${e.negative_papers ? ` · <span class="neg">${e.negative_papers} negative/null</span>` : ""}</span>`;
+  if (!e.evidence || !e.evidence.length) return `<div style="padding:4px 0;border-top:1px solid var(--line)">${head}</div>`;
+  return `<details><summary>${head}</summary>${e.evidence.map(quoteHtml).join("")}</details>`;
+}
+function pathHtml(x) {
+  return `<details><summary><b>${esc(x.edge)}</b> <span class="small muted">score ${x.score} · ${esc(x.level)} · conf ${x.confidence} · ${x.papers} paper(s)${x.negative_papers ? ` · <span class="neg">${x.negative_papers} negative/null</span>` : ""}</span>
+    <div class="small">bridge: ${esc(x.bridge)} (×${x.bridge_weight})</div></summary>
+    ${x.evidence.map(q => `<blockquote>${esc(q)}</blockquote>`).join("")}
+    ${x.bridge_evidence.map(q => `<blockquote class="small"><span class="muted">bridge:</span> ${esc(q)}</blockquote>`).join("")}</details>`;
+}
+const detail = document.getElementById("detail");
+function showNode(id) {
+  if (id.startsWith("paper:")) return showPaper(id.slice(6));
+  const n = byId[id]; if (!n) return;
+  const c = candBy[id];
+  const es = allEdges.filter(e => e.type === "evidence" && (e.from === id || e.to === id))
+                     .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+  detail.className = "";
+  detail.innerHTML = `<h1>${esc(n.label)}</h1>
+    <table>
+      <tr><td>ID</td><td><code>${esc(n.id)}</code></td></tr>
+      <tr><td>Kind</td><td><span class="dot" style="background:${color(n.kind)}"></span> ${esc(n.kind)}</td></tr>
+      <tr><td>Mapped by</td><td>${esc(n.how)}${n.in_source_graph ? " · in source graph" : ""}</td></tr>
+      ${n.names.length ? `<tr><td>Names in papers</td><td>${n.names.map(x => `<span class="tag">${esc(x)}</span>`).join("")}</td></tr>` : ""}
+      ${n.xrefs.length ? `<tr><td>Xrefs</td><td>${n.xrefs.map(x => `<code>${esc(x)}</code>`).join(" ")}</td></tr>` : ""}
+    </table>
+    ${c ? `<h2>Candidate solution · ${esc(c.category)} · score ${c.score}</h2>
+      ${c.tested_without_benefit_in_input ? '<div class="neg">Tested without benefit in the input disease.</div>' : ""}
+      ${c.paths.map(pathHtml).join("")}` : ""}
+    <h2>Evidence edges (${es.length})</h2>${es.map(e => edgeRow(e, id)).join("") || '<span class="muted">none</span>'}
+    <h2>Papers (${n.papers.length})</h2>${n.papers.map(k => `<div>${paperLink(k)} <span class="small muted">${esc((paperBy[k] || {}).title || "")}</span></div>`).join("")}`;
+}
+function showPaper(key) {
+  const p = paperBy[key]; if (!p) return;
+  const ents = DATA.nodes.filter(n => n.papers.includes(key) && n.id !== DATA.start);
+  const es = allEdges.filter(e => e.type === "evidence" && e.evidence.some(v => v.paper === key));
+  const rel = (related[key] || []).slice().sort((a, b) => b.shared_edges - a.shared_edges || b.shared_entities - a.shared_entities);
+  const links = [p.pmid && `<a href="https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(p.pmid)}/" target="_blank" rel="noopener">PubMed</a>`,
+                 p.pmcid && `<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/${encodeURIComponent(p.pmcid)}/" target="_blank" rel="noopener">PMC</a>`,
+                 p.doi && `<a href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener">DOI</a>`].filter(Boolean).join(" · ");
+  detail.className = "";
+  detail.innerHTML = `<h1>${esc(p.title || key)}</h1>
+    <div class="muted">${esc(p.journal || "")} ${esc(p.year || "")} · ${esc(key)} · text: ${esc(p.text_source)}${p.cited_by != null ? ` · cited by ${esc(p.cited_by)}` : ""}</div>
+    <div>${links}</div>
+    ${p.summary ? `<p>${esc(p.summary)}</p>` : ""}
+    <h2>Related papers (${rel.length})</h2>
+    ${rel.map(r => `<div>${paperLink(r.key)} <span class="small muted">${r.shared_edges} shared edges · ${r.shared_entities} shared entities</span><br><span class="small">${esc((paperBy[r.key] || {}).title || "")}</span></div>`).join("") || '<span class="muted">none</span>'}
+    <h2>Edges it supports (${es.length})</h2>
+    ${es.map(e => `<details><summary><a href="#" data-id="${esc(e.from)}">${esc(nodeName(e.from))}</a> <span class="rel">${esc(e.relation)}</span> <a href="#" data-id="${esc(e.to)}">${esc(nodeName(e.to))}</a></summary>${e.evidence.filter(v => v.paper === key).map(quoteHtml).join("")}</details>`).join("")}
+    <h2>Entities (${ents.length})</h2>
+    ${ents.map(n => `<a href="#" data-id="${esc(n.id)}" class="tag">${esc(n.label)}</a>`).join("")}`;
+}
+function showEdge(id) {
+  const e = edgeBy[id]; if (!e) return;
+  if (e.type === "related") return showPaper(e.from.slice(6));
+  if (e.type === "reports") return showPaper(e.from.slice(6));
+  detail.className = "";
+  const c = e.level === "inferred" ? candBy[e.from] : null;
+  detail.innerHTML = `<h1><a href="#" data-id="${esc(e.from)}">${esc(nodeName(e.from))}</a> <span class="rel">${esc(e.relation)}</span> <a href="#" data-id="${esc(e.to)}">${esc(nodeName(e.to))}</a></h1>
+    <div class="muted">${esc(e.level)} · confidence ${e.confidence} · ${e.papers} paper(s)${e.negative_papers ? ` · <span class="neg">${e.negative_papers} negative/null</span>` : ""}</div>
+    ${c ? `<h2>Inferred from</h2>${c.paths.map(pathHtml).join("")}` : `<h2>Evidence (${e.evidence.length})</h2>${e.evidence.map(quoteHtml).join("")}`}`;
+}
+function select(id) {
+  const isNode = nodes.get(id);
+  if (!isNode) return;
+  state.selected = id;
+  if (state.focus) refresh();
+  if (visibleNodes.has(id)) { net.selectNodes([id]); net.focus(id, { scale: 1.1, animation: true }); }
+  showNode(id);
+}
+
+net.on("click", p => {
+  if (p.nodes.length) select(p.nodes[0]);
+  else if (p.edges.length) showEdge(p.edges[0]);
+});
+document.body.addEventListener("click", ev => {
+  const a = ev.target.closest("[data-id], [data-paper]");
+  if (!a || !a.closest("#detail, #results, #cands")) return;
+  ev.preventDefault();
+  if (a.dataset.paper) { const id = pid(a.dataset.paper); state.selected = id; if (state.focus) refresh(); if (visibleNodes.has(id)) net.selectNodes([id]); showPaper(a.dataset.paper); }
+  else select(a.dataset.id);
+});
+document.getElementById("q").addEventListener("input", ev => {
+  const q = ev.target.value.trim().toLowerCase();
+  const hits = !q ? [] : [
+    ...DATA.nodes.filter(n => n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q)
+                         || n.names.some(x => x.toLowerCase().includes(q))).slice(0, 25)
+      .map(n => `<div data-id="${esc(n.id)}"><span class="dot" style="background:${color(n.kind)}"></span> ${esc(n.label)} <span class="muted small">${esc(n.kind)}</span></div>`),
+    ...DATA.papers.filter(p => p.key.toLowerCase().includes(q) || (p.title || "").toLowerCase().includes(q)).slice(0, 10)
+      .map(p => `<div data-paper="${esc(p.key)}"><span class="dot" style="background:${PAPER_COLOR};border-radius:0"></span> ${esc(p.title || p.key)} <span class="muted small">${esc(p.key)}</span></div>`),
+  ];
+  document.getElementById("results").innerHTML = hits.join("");
+});
+document.getElementById("minConf").addEventListener("input", ev => {
+  state.minConf = +ev.target.value; document.getElementById("minConfVal").textContent = ev.target.value; refresh();
+});
+document.getElementById("showPapers").addEventListener("change", ev => { state.papers = ev.target.checked; refresh(); });
+document.getElementById("showLinks").addEventListener("change", ev => { state.links = ev.target.checked; refresh(); });
+document.getElementById("focus").addEventListener("change", ev => { state.focus = ev.target.checked; refresh(); if (state.selected) net.fit({ animation: true }); });
+document.getElementById("edgeLabels").addEventListener("change", ev =>
+  edges.update(edges.get().map(e => ({ id: e.id, label: ev.target.checked ? e.rel : undefined }))));
+document.getElementById("physics").addEventListener("change", ev => net.setOptions({ physics: { enabled: ev.target.checked } }));
+document.getElementById("fit").addEventListener("click", () => net.fit({ animation: true }));
+
+document.getElementById("title").textContent = "Existing solutions: " + (DATA.disease || nodeName(DATA.start));
+document.title = (DATA.disease ? DATA.disease + " · " : "") + "Evidence Graph";
+renderCands();
+renderCounts();
+</script>
+</body>
+</html>

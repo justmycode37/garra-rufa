@@ -23,6 +23,7 @@ links to the record (elink clinvar -> pubmed, one batched request per query; "re
 import os
 import time
 
+from . import _local
 from ._ols import interleave, slug
 from .base import TIMEOUT, Edge, Node, Source, info
 
@@ -64,7 +65,7 @@ class ClinVarSource(Source):
 
     def _get(self, util: str, **params):
         wait = MIN_INTERVAL - (time.monotonic() - self._last)
-        if wait > 0:
+        if wait > 0 and not _local.serves(f"{EUTILS}/{util}.fcgi"):
             time.sleep(wait)
         params = {"db": "clinvar", "retmode": "json", "tool": "garra-rufa-query-test", **params,
                   **({"api_key": API_KEY} if API_KEY else {})}

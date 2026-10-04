@@ -8,6 +8,8 @@ and its robots.txt only disallows admin/search paths:
   /diseases/<id>/<slug>           per disease: the consortium/consortia studying it (name,
                                   rdcrn.org/<acronym> link), their research studies grouped
                                   by recruiting status, and their partner PAGs (name, website)
+                                  (cached in data/rdcrn/pages/<id>.html; prefetch them all
+                                  with `python -m sources.rdcrn --prefetch` from src/query-test)
 
 Matching: the disease list has names only, so diseases are matched by normalised name
 (and the parts of "A / B (abbr)" names, _groups.name_variants) against the node label and the Orphanet preferred terms of its ORPHA ids (exact match,
@@ -30,6 +32,7 @@ from .base import Edge, Node, Source
 
 BASE = "https://www.rarediseasesnetwork.org"
 THROTTLE = _groups.Throttle(0.5)
+PAGES = _groups.DATA_ROOT / "rdcrn" / "pages"
 
 _LIST_ITEM = re.compile(r'<li><a href="/diseases/(\d+)/([^"]+)">([^<]+)</a></li>')
 _BLOCK = 'class="des-listing'
@@ -93,10 +96,25 @@ class RdcrnSource(Source):
 
     def _page(self, did: str, slug: str) -> str | None:
         if did not in self._pages:
-            THROTTLE.wait()
-            r = self.session.get(f"{BASE}/diseases/{did}/{slug}", timeout=60)
-            self._pages[did] = r.text if r.status_code == 200 else None
+            path = PAGES / f"{did}.html"
+            if path.exists():
+                self._pages[did] = path.read_text(encoding="utf-8")
+            else:
+                THROTTLE.wait()
+                r = self.session.get(f"{BASE}/diseases/{did}/{slug}", timeout=60)
+                self._pages[did] = r.text if r.status_code == 200 else None
+                if self._pages[did] is not None:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(self._pages[did], encoding="utf-8")
         return self._pages[did]
+
+    def prefetch(self) -> int:
+        """Download every disease page not cached yet (about 260); returns the count."""
+        n = 0
+        for d in self._list.json():
+            if not (PAGES / f"{d['id']}.html").exists() and self._page(d["id"], d["slug"]):
+                n += 1
+        return n
 
     def _query(self, node: Node, limit: int) -> list[Edge]:
         consortia, studies, pags = [], [], []
@@ -149,3 +167,9 @@ class RdcrnSource(Source):
                     pags.append(_groups.org_node(name, f"RDCRN.PAG:{_groups.slug(name)}",
                                                  "patient_organisation", self.name, href))
         return consortium, studies, pags
+
+
+if __name__ == "__main__":
+    import sys
+    if "--prefetch" in sys.argv:
+        print(f"{RdcrnSource().prefetch()} pages downloaded into {PAGES}")

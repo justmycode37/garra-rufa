@@ -111,7 +111,7 @@ def _keyish(s) -> str:
 
 def screen_batch(llm, profile_text: str, batch: list[dict]) -> dict[str, dict]:
     """key -> decision for one batch (papers the model skipped are missing)."""
-    out = llm.chat(SYSTEM, prompt(profile_text, batch), max_tokens=8000)
+    out = llm.chat(SYSTEM, prompt(profile_text, batch), max_tokens=32000)
     rows = out.get("papers") if isinstance(out, dict) else out
     keys = {_keyish(paper_key(p)): paper_key(p) for p in batch}
     res = {}

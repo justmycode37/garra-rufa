@@ -16,8 +16,10 @@ dropped), entities mapped to graph / MONDO / Orphanet / HP / UBERON / CL / CHEBI
 HGNC ids (normalize.py), and the edges merged, scored and turned into ranked candidate
 solutions for the input disease with the path that justifies each (build.py).
 
-Outputs: <out>.json (everything, incl. all screening decisions), <out>.md (ranked
-candidates with quotes), <out>.html (graph viewer). LLM and HTTP responses are cached in
+Outputs: <out>.json (everything, incl. all screening decisions and the links between
+papers), <out>.md (ranked candidates with quotes, papers and their related papers),
+<out>.html (evidence/viewer.html: graph with quotes per edge, candidates, papers as
+optional nodes and their links). LLM and HTTP responses are cached in
 data/literature-cache/, so a rerun costs no calls (--refresh ignores the cache).
 
 Usage:
@@ -28,6 +30,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -54,6 +57,16 @@ from evidence.normalize import Normalizer  # noqa: E402
 from evidence.verify import Verifier  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def load_env(path: Path = ROOT / ".env"):
+    """KEY=value lines of the repo's .env into os.environ (already set variables win)."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        k, sep, v = line.strip().partition("=")
+        if sep and k and not k.startswith("#"):
+            os.environ.setdefault(k.strip().removeprefix("export "), v.strip().strip("'\""))
 
 
 def find_graph(papers_path: Path, papers: dict, override: Path | None) -> Path:
@@ -84,23 +97,26 @@ def run_pool(fn, items, workers: int, label: str):
 
 # -- pass 1 ------------------------------------------------------------------------
 def pass_screen(llm, profile_text, papers, batch_size, workers) -> dict[str, dict]:
-    batches = [papers[i:i + batch_size] for i in range(0, len(papers), batch_size)]
+    """Screen in batches; papers of a failed batch (e.g. reply cut off) or missing from a
+    reply are screened again in halves, down to single papers."""
     decisions: dict[str, dict] = {}
-    res = run_pool(lambda b: screen.screen_batch(llm, profile_text, b), batches, workers,
-                   "screen batch")
-    retry = []
-    for b, r in zip(batches, res):
-        if isinstance(r, Exception):
-            continue
-        decisions.update(r)
-        retry += [p for p in b if screen.paper_key(p) not in r]
-    if retry:  # papers the model skipped in a batch: once more, in smaller batches
-        print(f"screen: {len(retry)} papers missing from replies, retrying")
-        small = [retry[i:i + 5] for i in range(0, len(retry), 5)]
-        for r in run_pool(lambda b: screen.screen_batch(llm, profile_text, b), small, workers,
-                          "screen retry"):
+    todo, size, label = papers, batch_size, "screen batch"
+    while todo:
+        batches = [todo[i:i + size] for i in range(0, len(todo), size)]
+        res = run_pool(lambda b: screen.screen_batch(llm, profile_text, b), batches, workers,
+                       label)
+        retry = []
+        for b, r in zip(batches, res):
             if not isinstance(r, Exception):
                 decisions.update(r)
+            retry += [p for p in b if screen.paper_key(p) not in decisions]
+        if not retry or size == 1:
+            if retry:
+                print(f"screen: {len(retry)} papers could not be screened", file=sys.stderr)
+            break
+        size = max(1, size // 2)
+        todo, label = retry, f"screen retry ({size}/batch)"
+        print(f"screen: retrying {len(retry)} papers in batches of {size}")
     return decisions
 
 
@@ -108,7 +124,7 @@ def pass_screen(llm, profile_text, papers, batch_size, workers) -> dict[str, dic
 def read_paper(paper, *, llm, profile_text, fulltext, normalizer, max_chars) -> dict:
     key = screen.paper_key(paper)
     doc = fulltext.get(paper, max_chars)
-    out = llm.chat(extract.SYSTEM, extract.prompt(profile_text, paper, doc), max_tokens=24000)
+    out = llm.chat(extract.SYSTEM, extract.prompt(profile_text, paper, doc), max_tokens=64000)
     ents, edges, st = extract.clean_result(out)
     ver = Verifier(doc)
     passages = doc.by_id()
@@ -139,30 +155,51 @@ def read_paper(paper, *, llm, profile_text, fulltext, normalizer, max_chars) -> 
 
 
 # -- outputs -----------------------------------------------------------------------
-def write_html(g: Graph, candidates: list[dict], path: Path):
-    """Embed the evidence graph into ../viewer.html (edge source = evidence level)."""
-    top = {c["id"] for c in candidates[:40]}
-    data = {"start": g.profile.id,
-            "nodes": [{"id": n["id"], "label": n["label"], "kind": n["kind"],
-                       "sources": ["papers"] if n["papers"] else ["graph"]}
-                      for n in g.nodes.values()],
-            "edges": [{"from": e["from"], "to": e["to"], "relation": e["relation"],
-                       "source": e["level"]} for e in g.edges.values()]
-            + [{"from": c["id"], "to": g.profile.id, "relation": "may_accelerate",
-                "source": "inferred"} for c in candidates if c["id"] in top]}
-    template = (Path(__file__).resolve().parents[1] / "viewer.html").read_text(encoding="utf-8")
-    payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+def write_html(data: dict, path: Path):
+    """Embed the evidence graph, its quotes, the candidates and the papers into viewer.html
+    (next to this file)."""
+    cands = {c["id"]: c for c in data["candidates"]}
+    top = data["candidates"][:40]
+    papers = [{"key": r["key"], **r["meta"], "title": re.sub(r"<[^>]+>", "", r["meta"].get("title") or ""),
+               "text_source": r["text_source"], "summary": r["summary"]} for r in data["papers"]]
+    view = {
+        "start": data["profile"]["disease"]["id"],
+        "disease": data["profile"]["disease"]["label"],
+        "settings": data["settings"],
+        "stats": {k: data["stats"][k] for k in ("screened", "included", "selected", "read")},
+        "nodes": [{**{k: n[k] for k in ("id", "label", "kind", "how", "names", "xrefs",
+                                          "papers", "in_source_graph")},
+                   **({"score": cands[n["id"]]["score"],
+                       "category": cands[n["id"]]["category"]} if n["id"] in cands else {})}
+                  for n in data["nodes"]],
+        "edges": [{k: e[k] for k in ("from", "to", "relation", "level", "confidence", "papers",
+                                     "negative_papers", "mostly_negative")}
+                  | {"evidence": [{k: ev[k] for k in ("paper", "level", "effect", "organism",
+                                                       "passage", "section", "quote")}
+                                  for ev in e["evidence"]]}
+                  for e in data["edges"]]
+        + [{"from": c["id"], "to": data["profile"]["disease"]["id"], "relation": "may_accelerate",
+            "level": "inferred", "confidence": c["score"], "papers": len(c["papers"]),
+            "negative_papers": 0, "mostly_negative": False, "evidence": []} for c in top],
+        "candidates": [{k: c[k] for k in ("id", "label", "kind", "score", "category",
+                                          "tested_without_benefit_in_input", "papers", "paths")}
+                       for c in data["candidates"]],
+        "papers": papers,
+        "paper_links": data["paper_links"],
+    }
+    template = (Path(__file__).resolve().parent / "viewer.html").read_text(encoding="utf-8")
+    payload = json.dumps(view, ensure_ascii=False).replace("</", "<\\/")
     html = re.sub(r"/\*__DATA__\*/.*?/\*__END__\*/", lambda _: payload, template, flags=re.S)
-    path.write_text(html.replace("<title>Query Graph</title>", "<title>Evidence Graph</title>"),
-                    encoding="utf-8")
+    path.write_text(html, encoding="utf-8")
 
 
 def write_md(data: dict, path: Path):
     p = data["profile"]["disease"]
     L = [f"# Existing solutions for {p['label']} ({p['id']})", "",
          f"Model `{data['settings']['model']}` · screened {data['stats']['screened']} papers "
-         f"· {data['stats']['selected']} read · {len(data['nodes'])} nodes · "
-         f"{len(data['edges'])} evidence edges · {len(data['candidates'])} candidates", "",
+         f"· {data['stats']['read']} read · {len(data['nodes'])} nodes · "
+         f"{len(data['edges'])} evidence edges · {len(data['candidates'])} candidates · "
+         f"{len(data['paper_links'])} paper links", "",
          "Scores combine edge evidence (level, number of papers) with how the solution's "
          "target connects to the input disease. *direct*: already applied to the input "
          "disease; *transfer*: from a related disease / shared mechanism.", ""]
@@ -170,6 +207,8 @@ def write_md(data: dict, path: Path):
                        ("transfer", "Transfer candidates")):
         cs = [c for c in data["candidates"] if c["category"] == cat]
         L += [f"## {title} ({len(cs)})", ""]
+        if len(cs) > 40:
+            L += [f"Top 40 of {len(cs)}; all are in the JSON.", ""]
         for i, c in enumerate(cs[:40], 1):
             flag = " — **tested without benefit in the input disease**" \
                 if c["tested_without_benefit_in_input"] else ""
@@ -191,6 +230,8 @@ def write_md(data: dict, path: Path):
     labels = {n["id"]: n["label"] for n in data["nodes"]}
     for rel, n in by.most_common():
         L += [f"### {rel} ({n})", ""]
+        if n > 30:
+            L += [f"Top 30 of {n} by confidence.", ""]
         es = sorted((e for e in data["edges"] if e["relation"] == rel),
                     key=lambda e: -e["confidence"])
         for e in es[:30]:
@@ -198,6 +239,27 @@ def write_md(data: dict, path: Path):
             L.append(f"- {labels.get(e['from'], e['from'])} → {labels.get(e['to'], e['to'])} "
                      f"({e['level']}, {e['papers']} paper(s), conf {e['confidence']}): "
                      f"\"{ev['quote'][:240]}\" ({ev['paper']})")
+        L.append("")
+    L += ["## Papers read and how they connect", "",
+          "Related papers support the same evidence edges or name the same entities "
+          "(the input disease not counted).", ""]
+    titles = {r["key"]: r["meta"].get("title") or "" for r in data["papers"]}
+    links: dict[str, list[tuple]] = {}
+    for x in data["paper_links"]:
+        links.setdefault(x["a"], []).append((x["b"], x))
+        links.setdefault(x["b"], []).append((x["a"], x))
+    for r in sorted(data["papers"], key=lambda r: -len(links.get(r["key"], []))):
+        m = r["meta"]
+        L.append(f"### {r['key']}: {m.get('title') or ''} ({m.get('year') or 'n.d.'})")
+        L.append(f"{m.get('journal') or ''} · text: {r['text_source']} · "
+                 f"{r['stats'].get('edges_kept', 0)} edges kept · "
+                 f"{len(links.get(r['key'], []))} related papers")
+        L.append("")
+        if r["summary"]:
+            L += [r["summary"], ""]
+        for other, x in links.get(r["key"], [])[:8]:
+            L.append(f"- related: {other} {titles.get(other, '')[:100]} "
+                     f"({x['shared_edges']} shared edges, {x['shared_entities']} shared entities)")
         L.append("")
     path.write_text("\n".join(L), encoding="utf-8")
 
@@ -211,6 +273,9 @@ def main():
     ap.add_argument("--graph", type=Path, help="graph JSON (default: the papers' 'graph')")
     ap.add_argument("--model", help="OpenRouter model (default $OPENROUTER_MODEL or "
                                     "stealth/space-bunny-alpha)")
+    ap.add_argument("--reasoning", choices=["none", "low", "medium", "high"],
+                    help="reasoning effort (default $OPENROUTER_REASONING or low); reasoning "
+                         "tokens count against the reply limit")
     ap.add_argument("--pass", dest="passes", choices=["screen", "all"], default="all",
                     help="screen only, or screen + extract (default)")
     ap.add_argument("--max-screen", type=int, help="screen only the first N papers")
@@ -218,11 +283,13 @@ def main():
     ap.add_argument("--min-relevance", type=int, default=2)
     ap.add_argument("--max-fulltext", type=int, default=50, help="papers read in pass 2")
     ap.add_argument("--max-chars", type=int, default=150_000, help="text per paper in pass 2")
-    ap.add_argument("--workers", type=int, default=4, help="parallel LLM calls")
+    ap.add_argument("--workers", type=int, default=8,
+                    help="parallel LLM calls (agents); rate limits pause all of them")
     ap.add_argument("--refresh", action="store_true", help="ignore cached API/LLM responses")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the profile and first prompt of each pass; no LLM calls")
     args = ap.parse_args()
+    load_env()
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
@@ -236,7 +303,7 @@ def main():
     profile = build_profile(graph, papers_doc)
     ptext = profile.text()
     cache = Cache(refresh=args.refresh)
-    llm = Llm(cache, args.model)
+    llm = Llm(cache, args.model, reasoning=args.reasoning)
     fulltext = FullTextProvider(cache)
     normalizer = Normalizer(cache, profile)
     papers = papers_doc["papers"][:args.max_screen] if args.max_screen else papers_doc["papers"]
@@ -280,15 +347,17 @@ def main():
     g = Graph(profile)
     for r in records:
         g.add_paper(r)
+    merged = g.merge_duplicates()
     g.score_edges()
     candidates = g.candidates()
+    links = g.paper_links()
 
     rstats = Counter()
     for r in records:
         rstats.update(r["stats"])
     data = {
         "papers_file": str(args.papers), "graph": str(graph_path),
-        "settings": {"model": llm.model, "max_screen": args.max_screen,
+        "settings": {"model": llm.model, "reasoning": llm.reasoning, "max_screen": args.max_screen,
                      "min_relevance": args.min_relevance, "max_fulltext": args.max_fulltext,
                      "max_chars": args.max_chars},
         "profile": {k: getattr(profile, k) for k in ("disease", "genes", "phenotypes",
@@ -298,6 +367,7 @@ def main():
                   "failed": failed, "llm": llm.stats,
                   "text_sources": dict(Counter(r["text_source"] for r in records)),
                   "extraction": dict(rstats), "normalization": normalizer.counts,
+                  "merged_duplicate_nodes": merged,
                   "http": {"requests": cache.misses, "cache_hits": cache.hits},
                   "errors": (fulltext.errors + normalizer.errors)[:30]},
         "candidates": candidates,
@@ -305,6 +375,7 @@ def main():
         "edges": sorted(g.edges.values(), key=lambda e: -e["confidence"]),
         "papers": [{k: v for k, v in r.items() if k not in ("entities", "edges")}
                    for r in records],
+        "paper_links": links,
         "screening": [{"key": screen.paper_key(p), "title": p.get("title"),
                        **decisions.get(screen.paper_key(p), {"error": "not screened"})}
                       for p in papers],
@@ -312,7 +383,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     write_md(data, out.with_suffix(".md"))
-    write_html(g, candidates, out.with_suffix(".html"))
+    write_html(data, out.with_suffix(".html"))
 
     print(f"\n=== {len(g.nodes)} nodes, {len(g.edges)} evidence edges, "
           f"{len(candidates)} candidate solutions ===")

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Disease Overview</title>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+  :root { --bg:#f6f6f4; --panel:#fff; --fg:#1f2328; --muted:#646a73; --line:#e1e1dc; --accent:#2563eb;
+          --chip:#f0f0ec; --link:#9aa0a6; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#15171b; --panel:#1d2026; --fg:#e7e7e4; --muted:#9aa0a8;
+          --line:#30343b; --accent:#7aa7ff; --chip:#272b32; --link:#6b7078; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg);
+         color:var(--fg); display:grid; grid-template-columns:320px 1fr 360px; height:100vh; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:16px; overflow:auto; }
+  aside.right { border-right:0; border-left:1px solid var(--line); }
+  #net { height:100vh; min-width:0; }
+  h1 { font-size:20px; line-height:1.25; margin:0 0 8px; }
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:18px 0 8px; }
+  h3 { font-size:16px; margin:0 0 6px; }
+  p { margin:6px 0; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .muted { color:var(--muted); }
+  .facts { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; margin:8px 0; }
+  .facts dt { color:var(--muted); } .facts dd { margin:0; }
+  .desc { max-height:9.5em; overflow:hidden; position:relative; }
+  .desc.open { max-height:none; }
+  .more { background:none; border:0; color:var(--accent); padding:0; cursor:pointer; font:inherit; }
+  .links a { display:inline-block; margin:0 8px 4px 0; }
+  .chip { display:inline-block; background:var(--chip); border-radius:10px; padding:1px 8px; font-size:12px;
+          margin:0 4px 4px 0; }
+  label.sec { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; }
+  .dot { width:11px; height:11px; border-radius:50%; flex:none; }
+  .count { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .btns { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  button.b { padding:5px 10px; border:1px solid var(--line); border-radius:6px; background:var(--bg);
+             color:var(--fg); cursor:pointer; font:inherit; font-size:13px; }
+  button.b:hover { border-color:var(--accent); }
+  input[type=search] { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px;
+                       background:var(--bg); color:var(--fg); font:inherit; }
+  .list > div { padding:5px 6px; border-radius:6px; cursor:pointer; }
+  .list > div:hover { background:var(--bg); }
+  .list .sub { font-size:12px; color:var(--muted); }
+  .rel { font-size:12px; color:var(--muted); }
+  .hint { font-size:12px; color:var(--muted); margin-top:10px; }
+  @media (max-width: 1000px) {
+    body { grid-template-columns:1fr; grid-template-rows:auto 70vh auto; height:auto; }
+    aside { border-right:0; border-bottom:1px solid var(--line); }
+    aside.right { border-left:0; border-top:1px solid var(--line); }
+    #net { height:70vh; }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <h1 id="title"></h1>
+  <dl class="facts" id="facts"></dl>
+  <div class="desc" id="desc"></div>
+  <button class="more" id="descMore" hidden>Read more</button>
+  <div id="syn"></div>
+  <h2>Read more</h2>
+  <div class="links" id="links"></div>
+  <h2>Topics</h2>
+  <div id="sections"></div>
+  <div class="btns">
+    <button class="b" id="expandAll">Expand all</button>
+    <button class="b" id="collapseAll">Collapse all</button>
+    <button class="b" id="fit">Fit</button>
+  </div>
+  <label class="sec" style="margin-top:8px"><input type="checkbox" id="showLinks" checked> Show connections between topics</label>
+  <h2>Search</h2>
+  <input type="search" id="q" placeholder="Symptom, gene, organisation…">
+  <div class="list" id="results"></div>
+  <p class="hint">Click a topic to open it and list its entries. Dashed lines connect topics that are
+    related (a gene and the symptoms it is linked to, a trial and the drug it tests, a similar disease and
+    the symptoms it shares).</p>
+</aside>
+<div id="net"></div>
+<aside class="right">
+  <div id="detail"><p class="muted">Click a topic or entry in the graph.</p></div>
+</aside>
+<script>
+const DATA = /*__DATA__*/{"focus":{"id":"","label":"","description":null,"synonyms":[],"links":[],"facts":[]},"sections":[],"groups":[],"items":{},"links":[],"notes":[]}/*__END__*/;
+
+const MAX_SHOWN = 15;  // entries drawn when a topic is opened (all are listed in the panel)
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const safeUrl = u => /^https?:\/\//i.test(u || "") ? u : null;
+const F = DATA.focus, ITEMS = DATA.items;
+const SECTION = Object.fromEntries(DATA.sections.map(s => [s.id, s]));
+const GROUP = Object.fromEntries(DATA.groups.map(g => [g.id, g]));
+const enabled = new Set(DATA.sections.map(s => s.id));
+const expanded = new Set();
+const extra = new Set();  // entries beyond MAX_SHOWN the user picked from the panel
+let showLinks = true;
+
+const linksOf = {};
+for (const l of DATA.links) {
+  (linksOf[l.a] ||= []).push({ other: l.b, label: l.label, origin: l.origin, out: true });
+  (linksOf[l.b] ||= []).push({ other: l.a, label: l.label, origin: l.origin, out: false });
+}
+
+// -- left panel ------------------------------------------------------------------------
+document.title = F.label + " · Disease Overview";
+document.getElementById("title").textContent = F.label;
+document.getElementById("facts").innerHTML = F.facts.map(f => `<dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd>`).join("");
+const desc = document.getElementById("desc");
+if (F.description) {
+  desc.innerHTML = `<p>${esc(F.description)}</p>`;
+  requestAnimationFrame(() => {
+    if (desc.scrollHeight > desc.clientHeight + 4) {
+      const b = document.getElementById("descMore"); b.hidden = false;
+      b.onclick = () => { desc.classList.toggle("open"); b.textContent = desc.classList.contains("open") ? "Show less" : "Read more"; };
+    }
+  });
+}
+if (F.synonyms.length)
+  document.getElementById("syn").innerHTML = `<p class="muted">Also known as: ${F.synonyms.map(esc).join("; ")}</p>`;
+document.getElementById("links").innerHTML = F.links.filter(l => safeUrl(l.url))
+  .map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join("") || '<span class="muted">none</span>';
+
+const secCount = s => DATA.groups.filter(g => g.section === s).reduce((n, g) => n + g.count, 0);
+document.getElementById("sections").innerHTML = DATA.sections.map(s =>
+  `<label class="sec"><input type="checkbox" value="${esc(s.id)}" checked><span class="dot" style="background:${esc(s.color)}"></span>${esc(s.label)}<span class="count">${secCount(s.id)}</span></label>`).join("");
+document.getElementById("sections").addEventListener("change", ev => {
+  ev.target.checked ? enabled.add(ev.target.value) : enabled.delete(ev.target.value); render();
+});
+
+// -- graph -----------------------------------------------------------------------------
+const fg = () => css("--fg"), muted = () => css("--muted");
+const nodes = new vis.DataSet(), edges = new vis.DataSet();
+const net = new vis.Network(document.getElementById("net"), { nodes, edges }, {
+  nodes: { font: { face: "system-ui, sans-serif" } },
+  edges: { smooth: { type: "continuous" } },
+  physics: { solver: "forceAtlas2Based",
+             forceAtlas2Based: { gravitationalConstant: -70, centralGravity: 0.008, springLength: 120,
+                                 springConstant: 0.06, avoidOverlap: 0.8 },
+             stabilization: { iterations: 300 } },
+  interaction: { hover: true, tooltipDelay: 120 },
+});
+
+// topics start on a ring around the disease, in section order, so colours cluster
+const RING = Math.max(320, DATA.groups.length * 28);
+const ringPos = Object.fromEntries(DATA.groups.map((g, i) => {
+  const a = 2 * Math.PI * i / DATA.groups.length - Math.PI / 2;
+  return [g.id, { x: RING * Math.cos(a), y: RING * Math.sin(a) }];
+}));
+const shortLabel = (s, n = 34) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+function shownItems(g) {
+  if (!expanded.has(g.id)) return g.items.filter(i => extra.has(i));
+  return g.items.filter((i, k) => k < MAX_SHOWN || extra.has(i));
+}
+function visibleOf(id) {  // where an entry is drawn: itself, its (collapsed) topic, or nowhere
+  const it = ITEMS[id]; if (!it) return null;
+  const g = GROUP[it.group_id];
+  if (!enabled.has(it.section)) return null;
+  return shownItems(g).includes(id) ? id : g.id;
+}
+
+function render() {
+  const want = new Map(), wantE = new Map();
+  want.set(F.id, { id: F.id, label: shortLabel(F.label, 40), shape: "dot", size: 34,
+    color: { background: fg(), border: fg() }, font: { size: 18, color: fg(), strokeWidth: 4, strokeColor: css("--bg") },
+    mass: 4, title: F.label, x: 0, y: 0, fixed: true });
+  for (const g of DATA.groups) {
+    if (!enabled.has(g.section)) continue;
+    const col = SECTION[g.section].color, open = expanded.has(g.id);
+    want.set(g.id, { id: g.id, label: `${shortLabel(g.label, 30)}\n${g.count}`, shape: "box",
+      color: { background: col, border: open ? fg() : col, highlight: { background: col, border: fg() } },
+      borderWidth: open ? 2 : 1, margin: 8, mass: 2,
+      font: { size: 14, color: "#111", multi: false }, ...ringPos[g.id], title: `${g.label} · ${g.count} ${g.count === 1 ? "entry" : "entries"}` });
+    wantE.set("s:" + g.id, { id: "s:" + g.id, from: F.id, to: g.id, color: { color: col, opacity: 0.7 }, width: 2.5, length: RING * 0.8 });
+    for (const iid of shownItems(g)) {
+      const it = ITEMS[iid];
+      want.set(iid, { id: iid, label: shortLabel(it.label), shape: "dot", size: 9,
+        color: { background: col, border: css("--panel") }, borderWidth: 1.5,
+        font: { size: 12, color: fg(), strokeWidth: 3, strokeColor: css("--bg") }, title: it.label });
+      wantE.set("m:" + iid, { id: "m:" + iid, from: g.id, to: iid, color: { color: col, opacity: 0.5 }, width: 1, length: 60 });
+    }
+  }
+  if (showLinks) {
+    const agg = new Map();
+    for (const l of DATA.links) {
+      const a = visibleOf(l.a), b = visibleOf(l.b);
+      if (!a || !b || a === b) continue;
+      const key = a < b ? a + "|" + b : b + "|" + a;
+      const e = agg.get(key) || { from: a, to: b, rows: [] };
+      e.rows.push(`${ITEMS[l.a].label} — ${l.label} — ${ITEMS[l.b].label}`);
+      agg.set(key, e);
+    }
+    for (const [key, e] of agg) {
+      const n = e.rows.length;
+      wantE.set("x:" + key, { id: "x:" + key, from: e.from, to: e.to, dashes: [4, 4],
+        width: Math.min(6, 0.8 + Math.log2(n)), color: { color: css("--link"), opacity: 0.45, highlight: css("--accent"), hover: css("--accent") },
+        title: `${n} connection${n > 1 ? "s" : ""}:\n` + e.rows.slice(0, 10).join("\n") + (n > 10 ? `\n… ${n - 10} more` : ""),
+        physics: false });
+    }
+  }
+  // diff instead of rebuild, so the layout stays put; new entries appear next to their topic
+  const pos = net.getPositions();
+  nodes.remove(nodes.getIds().filter(id => !want.has(id)));
+  const add = [], upd = [];
+  for (const [id, n] of want) {
+    if (nodes.get(id)) { delete n.x; delete n.y; upd.push(n); continue; }
+    const parent = ITEMS[id] ? pos[ITEMS[id].group_id] : null;
+    if (parent) { n.x = parent.x + (Math.random() - 0.5) * 60; n.y = parent.y + (Math.random() - 0.5) * 60; }
+    add.push(n);
+  }
+  nodes.update(upd); nodes.add(add);
+  edges.remove(edges.getIds().filter(id => !wantE.has(id)));
+  edges.update([...wantE.values()]);
+}
+
+// -- detail panel ----------------------------------------------------------------------
+const detail = document.getElementById("detail");
+const linkList = links => (links || []).filter(l => safeUrl(l.url))
+  .map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join("");
+const facts = it => [
+  it.frequency && ["How often", it.frequency], it.status && ["Status", it.status],
+  it.phase && ["Trial phase", "phase " + it.phase], it.country && ["Country", it.country],
+  it.sponsors && ["Sponsor", it.sponsors.join(", ")],
+  it.variants && ["Variants", Object.entries(it.variants).map(([k, v]) => `${v} ${k}`).join(", ")],
+  it.sources?.length && ["Sources", it.sources.join(", ")],
+].filter(Boolean);
+
+function connections(ids) {
+  // other entries linked to these, grouped by topic
+  const own = new Set(ids), byGroup = new Map();
+  for (const id of ids) for (const c of linksOf[id] || []) {
+    if (own.has(c.other)) continue;
+    const o = ITEMS[c.other], g = GROUP[o.group_id];
+    if (!byGroup.has(g.id)) byGroup.set(g.id, new Map());
+    const m = byGroup.get(g.id);
+    m.set(c.other, (m.get(c.other) || new Set()).add(c.label));
+  }
+  if (!byGroup.size) return "";
+  let h = "<h2>Connected to</h2>";
+  for (const [gid, m] of [...byGroup].sort((a, b) => b[1].size - a[1].size)) {
+    const g = GROUP[gid];
+    h += `<div class="rel" style="margin-top:8px"><span class="dot" style="display:inline-block;background:${esc(SECTION[g.section].color)}"></span> ${esc(g.label)}</div><div class="list">`;
+    h += [...m].slice(0, 12).map(([oid, labels]) =>
+      `<div data-id="${esc(oid)}">${esc(ITEMS[oid].label)} <span class="sub">${esc([...labels].join(", "))}</span></div>`).join("");
+    if (m.size > 12) h += `<div class="sub">… ${m.size - 12} more</div>`;
+    h += "</div>";
+  }
+  return h;
+}
+
+function showGroup(gid) {
+  const g = GROUP[gid], sec = SECTION[g.section];
+  let h = `<div class="rel">${esc(sec.label)}</div><h3>${esc(g.label)}</h3><p class="muted">${g.count} ${g.count === 1 ? "entry" : "entries"}</p><div class="list">`;
+  h += g.items.map(iid => {
+    const it = ITEMS[iid];
+    const sub = [it.frequency, it.status, it.phase && "phase " + it.phase, ...(it.notes || [])].filter(Boolean).join(" · ");
+    return `<div data-id="${esc(iid)}">${esc(it.label)}${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>`;
+  }).join("");
+  detail.innerHTML = h + "</div>" + connections(g.items);
+}
+
+function showItem(iid) {
+  const it = ITEMS[iid], g = GROUP[it.group_id], sec = SECTION[it.section];
+  let h = `<div class="rel">${esc(sec.label)} › <a href="#" data-group="${esc(g.id)}">${esc(g.label)}</a></div><h3>${esc(it.label)}</h3>`;
+  const fs = facts(it);
+  if (fs.length) h += `<dl class="facts">${fs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+  for (const n of it.notes || []) h += `<p class="muted">${esc(n)}</p>`;
+  if (it.description) h += `<p>${esc(it.description.length > 700 ? it.description.slice(0, 700) + "…" : it.description)}</p>`;
+  const ll = linkList(it.links);
+  if (ll) h += `<h2>Links</h2><div class="links">${ll}</div>`;
+  detail.innerHTML = h + connections([iid]);
+}
+
+function selectItem(iid) {
+  const it = ITEMS[iid]; if (!it) return;
+  if (!enabled.has(it.section)) { enabled.add(it.section); document.querySelector(`#sections input[value="${it.section}"]`).checked = true; }
+  const g = GROUP[it.group_id];
+  expanded.add(g.id);
+  if (!shownItems(g).includes(iid)) extra.add(iid);
+  render(); showItem(iid);
+  setTimeout(() => { net.selectNodes([iid]); net.focus(iid, { scale: 1.1, animation: true }); }, 50);
+}
+
+net.on("click", p => {
+  const id = p.nodes[0]; if (!id) return;
+  if (GROUP[id]) { expanded.has(id) ? expanded.delete(id) : expanded.add(id); render(); showGroup(id); }
+  else if (ITEMS[id]) showItem(id);
+  else if (id === F.id) detail.innerHTML = `<h3>${esc(F.label)}</h3>${F.description ? `<p>${esc(F.description)}</p>` : ""}`;
+});
+for (const el of [detail, document.getElementById("results")])
+  el.addEventListener("click", ev => {
+    const g = ev.target.closest("[data-group]");
+    if (g) { ev.preventDefault(); showGroup(g.dataset.group); return; }
+    const d = ev.target.closest("[data-id]");
+    if (d && !ev.target.closest("a")) selectItem(d.dataset.id);
+  });
+
+document.getElementById("q").addEventListener("input", ev => {
+  const q = ev.target.value.trim().toLowerCase();
+  const hits = q ? Object.values(ITEMS).filter(it => it.label.toLowerCase().includes(q)).slice(0, 25) : [];
+  document.getElementById("results").innerHTML = hits.map(it =>
+    `<div data-id="${esc(it.id)}"><span class="dot" style="display:inline-block;background:${esc(SECTION[it.section].color)}"></span> ${esc(it.label)}<div class="sub">${esc(GROUP[it.group_id].label)}</div></div>`).join("");
+});
+document.getElementById("expandAll").onclick = () => { DATA.groups.forEach(g => expanded.add(g.id)); render(); };
+document.getElementById("collapseAll").onclick = () => { expanded.clear(); extra.clear(); render(); };
+document.getElementById("fit").onclick = () => net.fit({ animation: true });
+document.getElementById("showLinks").onchange = ev => { showLinks = ev.target.checked; render(); };
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { nodes.clear(); edges.clear(); render(); });
+render();
+net.stabilize(300);
+net.fit();
+net.once("stabilized", () => net.fit({ animation: true }));
+</script>
+</body>
+</html>

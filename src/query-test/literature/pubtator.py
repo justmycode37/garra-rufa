@@ -20,6 +20,7 @@ extracted (type|concept|concept), the input for linking papers later.
 """
 from . import ncbi
 from .base import Collection, Concept, Paper, Provider, Query
+from .pubmed import _local_first
 
 API = "https://www.ncbi.nlm.nih.gov/research/pubtator3-api"
 BIOTYPE = {"disease": "disease", "phenotype": "disease", "gene": "gene", "drug": "chemical"}
@@ -117,19 +118,21 @@ class PubtatorProvider(Provider):
     # -- annotations ---------------------------------------------------------------
     def enrich(self, coll: Collection):
         todo = [p.pmid for p in coll.papers if p.pmid and not p.annotations]
-        for i in range(0, len(todo), BATCH):
-            batch = todo[i:i + BATCH]
+        done = 0
+        for batch in _local_first(todo, BATCH):
             try:
                 d = self.fetch_json(f"{API}/publications/export/biocjson",
                                     {"pmids": ",".join(batch)})
             except Exception as e:
                 self.fail(f"export {len(batch)} pmids", e)
                 continue
+            finally:
+                done += len(batch)
             for doc in (d.get("PubTator3") if isinstance(d, dict) else d) or []:
                 p = coll.get(f"PMID:{doc.get('pmid') or doc.get('id')}")
                 if p is not None:
                     p.annotations, p.relations = summarize(doc)
-            print(f"  pubtator annotations {min(i + BATCH, len(todo))}/{len(todo)}", flush=True)
+            print(f"  pubtator annotations {done}/{len(todo)}", flush=True)
 
 
 def summarize(doc: dict) -> tuple[list[dict], list[str]]:

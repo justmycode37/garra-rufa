@@ -19,18 +19,26 @@ evidenced edge S -[SOLUTION_PREDICATES]-> X is connected to D through a bridge:
   X is a gene / pathway / process / cell type / anatomy / phenotype linked to D
                                             weight of that kind as above
 path score = edge confidence x bridge weight (x NEGATIVE_W when most papers on the edge
-report no or a negative effect); a candidate's score is the noisy-OR over its paths.
+report no or a negative effect; negative / null evidence only counts from primary
+studies, not reviews); a candidate's score is the noisy-OR over its paths.
 "direct" candidates were already applied to D itself, "transfer" ones come from related
 diseases or shared mechanisms. Each becomes an inferred "may_accelerate" edge S -> D.
-"""
-from collections import defaultdict
 
-from .context import CAUSAL, GENERIC, HIERARCHY
+Nodes of one kind with the same normalised label but different ids (an ontology id and a
+merged source-graph id for one disease) are merged into one, preferring the id the source
+graph uses. Papers are related when they support the same edges or name the same entities,
+not counting background ones most papers share (paper_links).
+"""
+from collections import Counter, defaultdict
+from itertools import combinations
+
+from .context import CAUSAL, GENERIC, HIERARCHY, key
 from .extract import SOLUTION_TYPES
 
 LEVEL_W = {"clinical_trial": 0.9, "observational": 0.7, "case_report": 0.5, "animal": 0.5,
            "in_vitro": 0.35, "in_silico": 0.2, "review": 0.2}
 ABSTRACT_W = 0.7
+SECONDHAND = ("review", "in_silico")
 NEGATIVE_W = 0.25
 SOLUTION_PREDICATES = frozenset({"treats", "rescues", "tested_in", "models", "biomarker_for",
                                  "diagnoses", "measures_outcome_of", "targets",
@@ -94,11 +102,67 @@ class Graph:
                     "organism": ed["organism"], "passage": q["passage"],
                     "section": q.get("section"), "quote": q["quote"]})
 
+    def merge_duplicates(self) -> int:
+        """Merge nodes of one kind with the same normalised label; returns how many went."""
+        groups: dict[tuple, list[dict]] = defaultdict(list)
+        for n in self.nodes.values():
+            groups[(n["kind"], key(n["label"]))].append(n)
+        alias = {}
+        d = self.profile.id
+        for (_, k), ns in groups.items():
+            if not k or len(ns) < 2:
+                continue
+            ns.sort(key=lambda n: (n["id"] != d, not n["in_source_graph"], n["how"] == "text",
+                                   -len(n["papers"]), n["id"]))
+            keep = ns[0]
+            for n in ns[1:]:
+                alias[n["id"]] = keep["id"]
+                for f in ("names", "papers"):
+                    keep[f] += [x for x in n[f] if x not in keep[f]]
+                keep["xrefs"] += [x for x in [n["id"], *n["xrefs"]]
+                                  if x not in keep["xrefs"] and x != keep["id"]]
+                del self.nodes[n["id"]]
+        if alias:
+            edges, self.edges = self.edges, {}
+            for (s, p, o), e in edges.items():
+                s, o = alias.get(s, s), alias.get(o, o)
+                if s == o:
+                    continue
+                agg = self.edges.setdefault((s, p, o), {"from": s, "relation": p, "to": o,
+                                                        "evidence": []})
+                agg["evidence"] += e["evidence"]
+            self._nb.clear()
+        return len(alias)
+
+    def paper_links(self, min_shared: int = 2, common: float = 0.2) -> list[dict]:
+        """Pairs of papers that support the same edges / name the same entities (at least
+        min_shared). Edges and entities in more than `common` of the papers (the disease,
+        its gene, "PMM2 causes PMM2-CDG") are background and link nothing."""
+        n_papers = len({p for n in self.nodes.values() for p in n["papers"]})
+        cap = max(3, common * n_papers)
+        edges, ents = Counter(), Counter()
+        for e in self.edges.values():
+            ps = sorted({ev["paper"] for ev in e["evidence"]})
+            if len(ps) <= cap:
+                for a, b in combinations(ps, 2):
+                    edges[(a, b)] += 1
+        for n in self.nodes.values():
+            if n["id"] != self.profile.id and len(n["papers"]) <= cap:
+                for a, b in combinations(sorted(n["papers"]), 2):
+                    ents[(a, b)] += 1
+        out = [{"a": a, "b": b, "shared_edges": edges[(a, b)], "shared_entities": ents[(a, b)]}
+               for a, b in set(edges) | set(ents)
+               if edges[(a, b)] or ents[(a, b)] >= min_shared]
+        out.sort(key=lambda x: (-x["shared_edges"], -x["shared_entities"], x["a"], x["b"]))
+        return out
+
     # -- scoring -------------------------------------------------------------------
     def score_edges(self):
         for e in self.edges.values():
             per_paper: dict[str, dict] = {}
             for ev in e["evidence"]:
+                if ev["effect"] in ("negative", "null") and ev["level"] in SECONDHAND:
+                    continue  # a negative result needs the paper's own data
                 w = LEVEL_W.get(ev["level"], 0.2) * (ABSTRACT_W if ev["text"] == "abstract"
                                                      else 1)
                 cur = per_paper.get(ev["paper"])
@@ -112,7 +176,7 @@ class Graph:
             e["confidence"] = noisy_or(sup)
             e["mostly_negative"] = len(neg) > len(sup)
             levels = sorted({ev["level"] for ev in e["evidence"]},
-                            key=lambda x: -LEVEL_W.get(x, 0))
+                            key=lambda x: (-LEVEL_W.get(x, 0), x))
             e["level"] = levels[0] if levels else "review"
 
     # -- neighbourhoods ------------------------------------------------------------
@@ -229,7 +293,8 @@ class Graph:
             out.append({"id": s, "label": self.label(s), "kind": self.kind(s),
                         "score": score,
                         "category": "direct" if any(x["direct"] for x in paths) else "transfer",
-                        "tested_without_benefit_in_input": bool(neg_direct),
+                        "tested_without_benefit_in_input": bool(neg_direct)
+                        and self.kind(s) in ("drug", "therapy"),
                         "papers": sorted({ev["paper"] for x in paths
                                           for ev in self.edges_for(s, x)}),
                         "paths": paths[:8]})

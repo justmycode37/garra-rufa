@@ -12,6 +12,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from garra.local import router as local
+
 from .catalog import QUERY_SOURCES
 from .client import USER_AGENT
 from .envelope import envelope
@@ -20,6 +22,9 @@ MAX_BYTES = 4 * 1024 * 1024
 
 
 def _request_json(url: str, payload: dict | None = None, timeout: int = 40) -> dict:
+    answer = local.urllib_json("POST" if payload is not None else "GET", url, payload)
+    if isinstance(answer, dict):  # answered from the data/local/ indexes
+        return answer
     data = None
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
     if payload is not None:
