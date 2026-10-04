@@ -3,7 +3,6 @@
 import argparse
 import json
 import re
-import socket
 import sys
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,21 +23,6 @@ from .service import ConnectionService, InputError
 EVIDENCE_PATH = re.compile(r"^/api/graphs/([a-z0-9-]{1,60}-[0-9a-f]{8})/evidence$")
 
 
-class Server(ThreadingHTTPServer):
-    def shutdown_request(self, request):
-        # Close only after the client has read the response. On Windows, closing a
-        # loopback socket that still has unsent data can drop the tail of a large
-        # response and reset the connection about 19 s later.
-        try:
-            request.shutdown(socket.SHUT_WR)
-            request.settimeout(5)
-            while request.recv(4096):
-                pass
-        except OSError:
-            pass
-        self.close_request(request)
-
-
 class Handler(BaseHTTPRequestHandler):
     def __init__(
         self, *args, service, origins, communities, discovery, research, regions, graphs=None,
@@ -51,6 +35,12 @@ class Handler(BaseHTTPRequestHandler):
         self.regions = regions
         self.graphs = graphs
         super().__init__(*args, **kwargs)
+
+    def _write(self, body):
+        # Write in small pieces: on Windows a single large loopback send can stall after
+        # the first 64 KB until the connection resets about 19 s later.
+        for start in range(0, len(body), 16384):
+            self.wfile.write(body[start:start + 16384])
 
     def log_message(self, format, *args):
         # Don't persist request details or symptom queries.
@@ -78,7 +68,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        self._write(body)
 
     def do_OPTIONS(self):
         self._reply(
@@ -125,7 +115,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
-            self.wfile.write(body)
+            self._write(body)
             return
         if path == "/api/regions" or path.startswith("/api/regions/"):
             if self.regions is None:
@@ -227,7 +217,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        self._write(body)
 
     def do_POST(self):
         if not self._allowed():
@@ -330,7 +320,7 @@ def create_server(
         communities=communities if communities is not None else CommunityCatalog(),
         discovery=discovery if discovery is not None else DiscoveryEngine(),
     )
-    return Server(("127.0.0.1", port), handler)
+    return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 
 def main(argv=None):

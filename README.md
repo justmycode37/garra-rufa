@@ -95,7 +95,9 @@ export PYTHONPATH=src
 **Minimum to start the server: nothing.** The files the server needs at startup are
 committed (about 90 MB): `data/atlas.sqlite`, `data/derived/discovery/bridge.json`,
 `data/ontology/hp.obo` and `data/hpo/` (`hp.obo`, `phenotype.hpoa`, `genes_to_disease.txt`).
-Everything else in `data/` stays ignored and is either rebuilt or fetched live.
+Everything else in `data/` stays ignored and is either rebuilt or fetched live. If any of
+the startup files is deleted, the server restores it from `deploy/discovery/` or the HPO
+release (`src/garra/datasets.py`); if that fails it still starts, without that file.
 
 **Full rebuild from source:**
 

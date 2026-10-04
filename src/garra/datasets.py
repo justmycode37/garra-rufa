@@ -58,10 +58,13 @@ def _from_release(name, target):
         return False
     request = urllib.request.Request(url, headers={"User-Agent": "garra-rufa/0.1"})
     part = target.with_name(target.name + ".part")
-    with urllib.request.urlopen(request, timeout=120) as response, open(part, "wb") as out:
-        while chunk := response.read(1 << 20):
-            out.write(chunk)
-    part.replace(target)
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response, open(part, "wb") as out:
+            while chunk := response.read(1 << 20):
+                out.write(chunk)
+        part.replace(target)
+    finally:
+        part.unlink(missing_ok=True)
     return True
 
 
@@ -75,12 +78,12 @@ def ensure(path, *, download=True):
     if path in _tried:
         return _tried[path]
     result = None
-    path.parent.mkdir(parents=True, exist_ok=True)
     for label, restore in (("deploy bundle", _from_bundle),
                            ("official release", _from_release if download else None)):
         if restore is None:
             continue
         try:
+            path.parent.mkdir(parents=True, exist_ok=True)
             if restore(path.name, path):
                 _log(f"{path.name}: missing, restored from the {label}")
                 result = path
