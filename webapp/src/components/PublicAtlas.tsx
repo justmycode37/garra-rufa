@@ -19,7 +19,7 @@ export default function PublicAtlas({onDisease, onCommunity}: {
       const data = await response.json();
       if (!response.ok) throw Error(data.error || 'Search unavailable');
       return {id: crypto.randomUUID(), role: 'assistant', text: data.results.length
-        ? `Found ${data.total} records. Select an entity in Connected research to inspect its groups and evidence.\n\n${data.results.map((r: {name: string; id: string}) => `${r.name} (${r.id})`).join('\n')}`
+        ? `Found ${data.total} records. Select a body part, then a connected record label to explore its research and evidence.\n\n${data.results.map((r: {name: string; id: string}) => `${r.name} (${r.id})`).join('\n')}`
         : 'No matching records in the loaded snapshot. Try a disease name, gene or identifier.'};
     }}/>
 }

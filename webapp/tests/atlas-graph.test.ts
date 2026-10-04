@@ -54,3 +54,19 @@ test('expansion keeps partial results, preserves identifier equivalence and excl
   assert.deepEqual(new Set(result.graph.nodes.map(n => n.id)), new Set(['MONDO:1', 'HGNC:1', 'OMIM:1', 'parent']));
   assert.ok(result.graph.edges.some(e => e.relation === 'same_as'));
 });
+
+
+test('claim metadata survives schema parsing and graph merging without becoming a reusable asset', () => {
+  const claim = atlasNodeSchema.parse({id:'evidence:c1',label:'A claim',kind:'claim',
+    url:'https://pmc.ncbi.nlm.nih.gov/articles/PMC123/',access:'Open full text in PMC',
+    claim:{id:'c1',subject:'OMIM:1',object:'HP:2',relationship:'has_phenotype',paper_id:'PMID:1',
+      direction:'unknown',polarity:'asserted',reviewed:false,passage:'Exact passage',context:{model:'human'},
+      limitations:['Review only'],study_type:'review',locator:{section:'Results'}}});
+  const paper = node('PMID:1','paper');
+  const graph = mergeAtlasGraphs(base(), [{nodes:[claim,paper],edges:[edge('OMIM:1','evidence:c1'),edge('PMID:1','evidence:c1')],focus:[]}]);
+  assert.deepEqual(graph.nodes.find(n=>n.id==='evidence:c1')?.claim,claim.claim);
+  assert.equal(atlasNodeKind(claim),'claim');
+  assert.equal(atlasNodeKind(node('GO:1','process')),'pathway');
+  assert.equal(atlasNodeKind(paper),'paper');
+  assert.equal(atlasPaths(graph,'OMIM:1').get('PMID:1')?.length,2);
+});

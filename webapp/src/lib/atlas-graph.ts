@@ -8,6 +8,13 @@ export const atlasNodeSchema = z.object({
   id: z.string().min(1).max(300), label: z.string().min(1).max(2000), kind: z.string().max(100),
   description: z.string().max(10000).default(''), url: publicUrl.nullish().transform(value => value || undefined).optional(),
   providers: z.array(z.string().max(100)).max(30).default([]), email: optionalText, phone: optionalText, location: optionalText,
+  access: z.string().max(500).optional(),
+  claim: z.object({
+    id: z.string(), subject: z.string(), object: z.string(), relationship: z.string(), paper_id: z.string(),
+    direction: z.string(), polarity: z.string(), reviewed: z.boolean(), passage: z.string(),
+    context: z.record(z.string(), z.string()), limitations: z.array(z.string()),
+    study_type: z.string().optional(), locator: z.record(z.string(), z.unknown()),
+  }).optional(),
   xrefs: z.array(z.string().max(300)).max(1000).default([]),
 });
 export const atlasEdgeSchema = z.object({
@@ -34,7 +41,8 @@ export function atlasNodeKind(node: AtlasNode) {
   if (['doctor', 'clinician', 'investigator'].includes(node.kind)) return 'doctor';
   if (['expert_centre', 'healthcare_provider', 'hospital'].includes(node.kind)) return 'centre';
   if (['clinical_trial', 'trial'].includes(node.kind)) return 'trial';
-  if (['disease', 'gene', 'phenotype', 'paper'].includes(node.kind)) return node.kind;
+  if (['pathway', 'process'].includes(node.kind)) return 'pathway';
+  if (['disease', 'gene', 'phenotype', 'paper', 'claim'].includes(node.kind)) return node.kind;
   return 'resource';
 }
 

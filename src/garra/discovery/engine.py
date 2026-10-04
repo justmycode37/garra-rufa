@@ -355,6 +355,49 @@ class DiscoveryEngine:
             for x in sorted(ids)
             if x in self.nodes
         ]
+        # Attach claims only through the selected entity or its recorded genes.
+        # A shared phenotype/pathway is not sufficient to attach another disease's paper.
+        anchors = {identifier} | genes
+        claims = [c for c in self.claims.values() if c.get("subject") in anchors or c.get("object") in anchors]
+        node_map = {n["id"]: n for n in nodes}
+        for claim in claims:
+            if claim["subject"] not in self.nodes or claim["object"] not in self.nodes:
+                continue
+            paper = self.papers[claim["paper_id"]]
+            identifiers = paper.get("identifiers", [])
+            pmc = next((x for x in identifiers if x.startswith("PMC") and x[3:].isdigit()), None)
+            pmid = next((x[5:] for x in identifiers if x.startswith("PMID:") and x[5:].isdigit()), None)
+            url = ("https://pmc.ncbi.nlm.nih.gov/articles/" + pmc + "/") if pmc else (("https://pubmed.ncbi.nlm.nih.gov/" + pmid + "/") if pmid else None)
+            metadata = next((r.get("meta", {}) for r in paper.get("records", []) if r.get("meta")), {})
+            paper_node = {
+                "id": paper["id"], "label": metadata.get("title") or paper["id"], "kind": "paper",
+                "description": "Publication containing extracted claims. Each claim requires separate review.",
+                "providers": ["Publication evidence"], "xrefs": identifiers,
+                "access": "Open full text in PMC" if pmc else "Publication record; full-text access not verified",
+            }
+            if url:
+                paper_node["url"] = url
+            node_map[paper["id"]] = paper_node
+            claim_id = "evidence:" + claim["id"]
+            node_map[claim_id] = {
+                "id": claim_id, "label": claim["relationship"].replace("_", " ") + " · " + claim["id"],
+                "kind": "claim", "description": claim.get("passage", ""),
+                "providers": ["Extracted publication claim"], "xrefs": [], "claim": deepcopy(claim),
+            }
+            if url:
+                node_map[claim_id]["url"] = url
+                node_map[claim_id]["access"] = paper_node["access"]
+            for role in ("subject", "object"):
+                entity = claim[role]
+                node_map.setdefault(entity, {
+                    "id": entity, "label": self._card(entity)["name"], "kind": self.nodes[entity]["kind"],
+                    "description": "", "providers": ["Claim entity"], "xrefs": [],
+                })
+                edges.append({"from": claim_id, "to": entity, "relation": "claim_" + role,
+                              "source": paper["id"], "evidence": [claim["id"]]})
+            edges.append({"from": paper["id"], "to": claim_id, "relation": "contains_claim",
+                          "source": paper["id"], "evidence": [claim["id"]]})
+        nodes = list(node_map.values())
         return {
             "graph": {"nodes": nodes, "edges": edges, "focus": [identifier]},
             "unavailableProviders": [],
