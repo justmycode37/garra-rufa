@@ -7,7 +7,7 @@ import type { AnatomyFrame } from '@/lib/anatomy-scene';
 import styles from './AtlasKnowledgeGraph.module.css';
 
 const cache = new Map<string, { at: number; data: AtlasGraphData }>();
-const filters = [['all', 'All'], ['disease', 'Diseases'], ['phenotype', 'Phenotypes'], ['gene', 'Genes'], ['specialist', 'Doctors & centres'], ['paper', 'Papers'], ['trial', 'Trials'], ['resource', 'Resources']] as const;
+const filters = [['all', 'All'], ['disease', 'Diseases'], ['phenotype', 'Phenotypes'], ['gene', 'Genes'], ['specialist', 'Doctors & centres'], ['paper', 'Papers'], ['claim', 'Claims'], ['pathway', 'Pathways & processes'], ['trial', 'Trials'], ['resource', 'Resources']] as const;
 const kindLabel = (node: AtlasNode) => node.kind.replaceAll('_', ' ');
 const relationLabel = (relation: string) => relation.replaceAll('_', ' ');
 
@@ -113,7 +113,7 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
       <div className={styles.heading}><span className={styles.liveDot}/><strong>{region.label}</strong><span>{loading ? 'Loading regional records…' : data ? `${data.total.toLocaleString()} disease records` : 'Regional knowledge'}</span></div>
       <label className={styles.search}><Search size={13}/><input aria-label="Filter regional disease records" value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a disease in this region" maxLength={120}/>{query && <button aria-label="Clear disease filter" onClick={() => setQuery('')}><X size={12}/></button>}</label>
       {data && <div className={styles.filters} role="group" aria-label="Graph record types">{filters.map(([kind, label]) => {
-        const count = records.filter(node => matches(node, kind)).length;
+        const count = records.filter(node => matches(node, kind)).length + (selected && selected.id !== data.root && matches(selected, kind) ? 1 : 0);
         return <button key={kind} aria-pressed={filter === kind} onClick={() => { setFilter(kind); setPage(0); }}>{label}<span>{count}</span></button>;
       })}</div>}
     </div>
@@ -154,11 +154,21 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
         <span>Diseases {data.total ? offset + 1 : 0}–{Math.min(offset + 6, data.total)} / {data.total.toLocaleString()}</span>
         <button aria-label="Next disease records" disabled={data.nextOffset === null} onClick={() => setOffset(data.nextOffset!)}><ChevronRight size={14}/></button>
       </div>
-      <div className={styles.provenance}>HPO · {data.datasetVersion} <span>Dashed lines follow multiple recorded relationships</span></div>
+      <div className={styles.provenance}>Counts show loaded connected records. Zero means none linked in this snapshot, not none exist. HPO · {data.datasetVersion} <span>Dashed lines follow multiple recorded relationships</span></div>
       {selected && <aside className={styles.details} aria-label="Selected graph record">
         <button className={styles.close} aria-label="Close record details" onClick={() => setSelectedId('')}><X size={16}/></button>
         <span className={styles.eyebrow}>{kindLabel(selected)} · {selected.id}</span><h3>{selected.label}</h3>
-        <p>{selected.description || 'No description supplied by this source.'}</p>
+        {selected.claim ? <section aria-label="Publication claim">
+          <p>{selected.claim.reviewed ? 'Reviewed claim' : 'Unreviewed extracted claim'} — not proof of a shared disease mechanism.</p>
+          <blockquote>{selected.claim.passage}</blockquote>
+          <p>{selected.claim.subject} → {selected.claim.relationship} → {selected.claim.object}</p>
+          <p>Direction: {selected.claim.direction}. Assertion: {selected.claim.polarity}.</p>
+          <p>Study type: {selected.claim.study_type || 'unknown'}</p>
+          <p>{Object.entries(selected.claim.context).map(([key, value]) => `${key}: ${value}`).join(' · ')}</p>
+          <p>Publication location: {JSON.stringify(selected.claim.locator)}</p>
+          {selected.claim.limitations.map((text, index) => <p key={index}>{text}</p>)}
+        </section> : <p>{selected.description || 'No description supplied by this source.'}</p>}
+        {selected.access && <p>{selected.access}</p>}
         {selected.location && <p>{selected.location}</p>}{selected.email && <p>{selected.email}</p>}{selected.phone && <p>{selected.phone}</p>}
         <div className={styles.sourceLinks}>{selected.url && <a href={selected.url} target="_blank" rel="noreferrer">Open original source <ArrowUpRight size={13}/></a>}<span>{selected.providers.join(' · ')}</span></div>
         {selected.kind === 'disease' && /^(OMIM|ORPHA|MONDO|DECIPHER):\d+$/.test(selected.id) && <button className={styles.expand} disabled={expanding || expanded.includes(selected.id)} onClick={() => expand(selected)}>{expanding ? <><LoaderCircle size={14} className={styles.spinner}/>Loading connected research…</> : expanded.includes(selected.id) ? 'Connected research loaded' : 'Load genes, papers & specialist resources'}</button>}

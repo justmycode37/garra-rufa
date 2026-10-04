@@ -184,6 +184,14 @@ class RegionIndex:
                         "evidence": [],
                     }
                 )
+        # Include available source connections and paper claims for this disease page.
+        # Counts remain local to this page, not the full regional catalogue.
+        for disease in ids[offset : offset + limit]:
+            graph = self.engine.entity_graph(disease)["graph"]
+            for node in graph["nodes"]:
+                nodes[node["id"]] = {**nodes.get(node["id"], {}), **node}
+            edges.extend(graph["edges"])
+        edges = list({(e["from"], e["to"], e["relation"], e.get("source")): e for e in edges}.values())
         return {
             "status": "ok" if ids else "empty",
             "root": root,

@@ -70,3 +70,12 @@ python3 scripts/prepare_hosted.py
 Deploy the root backend and `webapp/` frontend as the two existing Vercel projects. Preserve their shared private token and set frontend `GARRA_RESEARCH_URL` to the backend URL. The frontend reads this configuration server-side only. Vercel sign-in/project access is required; no production deployment was performed during this change.
 
 Validation: 192 Python tests, 147 frontend tests, TypeScript checking, production build, repository lint, and local HTTP tests of the actual hosted handler with the packaged snapshot. The production-built Next UI was also run against that handler: regions, Heart details, clusters, unified search, anatomical graph and disease expansion all returned 200 through the frontend proxy; mouse selection opened Myhre syndrome and loaded connected research. The HTTP check covered health, all 40 regions, Heart, unified search, disease expansion, anatomical graph, 180 clusters and cluster details. Live Vercel routing, external paper providers and authenticated patient workflows still require separate production verification.
+
+
+## Publication claims in the anatomical graph
+
+Regional pages now include available gene/process connections and publication claims for the loaded diseases. Entity expansion preserves the same evidence. Each paper connects to explicit claim nodes, which connect separately to the subject and object. A gene-level claim is not converted into a direct disease-mechanism assertion, and a shared phenotype alone cannot attach an unrelated paper.
+
+Claims have their own filter and show passage, direction, polarity, review status, study type, context, location and limitations. Paper and claim cards link to PMC full text when an identifier exists, otherwise to the PubMed record when available. Pathways/processes are separately counted from reusable assets. Counts include the selected record and refer only to the loaded connected graph. Zero does not mean that no publications or resources exist elsewhere.
+
+The current Pompe example (MONDO:0009290) contains one publication and eight unreviewed claims. This change connects existing evidence; it does not fetch additional literature, trials, specialist contacts or reusable assets. Other diseases may still have no linked publication claims.
