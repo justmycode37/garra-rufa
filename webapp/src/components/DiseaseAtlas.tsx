@@ -10,7 +10,7 @@ import { atlasRegions } from '@/lib/atlas-graph';
 import { updateStreamingMessage, type OnAnswerText } from '@/lib/search-stream';
 import { Composer, type ComposerContext } from './Chat';
 import LandingChat from './LandingChat';
-import AtlasKnowledgeGraph from './AtlasKnowledgeGraph';
+import OrganDiseases from './OrganDiseases';
 import RegionalDiscovery from './RegionalDiscovery';
 import styles from './DiseaseAtlas.module.css';
 
@@ -139,8 +139,8 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
             aria-label={`Explore ${label.title}`}
             onClick={() => { const disease = diseases.find(d => d.id === label.diseaseId); if (disease) selectDisease(disease); else if (label.target) scene.current?.focus(label.target); }}><span className={styles.tagText}>{label.title}</span></button>)}
         </>}
-        {!loading && !error && graphRegion && <AtlasKnowledgeGraph key={graphRegion} regionId={graphRegion} frame={frame} onAsk={ask}/>}
-        <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore. Click a body part to reveal its records as labels connected to the anatomy. Select a disease to load genes, papers and specialist resources. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
+        {!loading && !error && graphRegion && <OrganDiseases regionId={graphRegion}/>}
+        <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore. Click a body part to list the diseases that involve it. Select a disease to open its knowledge graph. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
         <div className={styles.footer}><button className={styles.researchToggle} aria-expanded={researchOpen} aria-controls="atlas-research-drawer" onClick={()=>setResearchOpen(v=>!v)}>Research & coverage</button>
           <span className={styles.dragHint}>Drag to rotate · Scroll to zoom</span>
           <div className={styles.controls} role="group" aria-label="Atlas view controls">

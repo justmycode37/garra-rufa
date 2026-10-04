@@ -57,15 +57,26 @@ export const SECTION_COLORS: Record<string, string> = {
   symptoms: '#d59683', genetics: '#85a3d6', related: '#9d93d4', treatment: '#90986c',
   trials: '#d8bd52', support: '#e3a1b4', care: '#7fb7a9', research: '#b39f8f',
 };
-export const KIND_PALETTE = ['#85a3d6', '#d59683', '#90986c', '#9d93d4', '#d8bd52', '#7fb7a9', '#e3a1b4', '#b39f8f',
-  '#5f82bd', '#c07560', '#6f7c46', '#7c70bf', '#b89b33', '#5a9a8a', '#c87b95', '#8a7565', '#a8abd8'];
+// Evidence entities come in families: each family is one hue of the webapp's palette,
+// its kinds are shades of that hue, and the graph gives every family its own territory.
+export type KindFamily = { id: string; label: string; color: string; kinds: string[]; shades: string[] };
+export const KIND_FAMILIES: KindFamily[] = [
+  { id: 'treatment', label: 'Treatments', color: '#90986c', kinds: ['drug', 'therapy'], shades: ['#6f7c46', '#a3ab7c'] },
+  { id: 'clinical', label: 'Disease & symptoms', color: '#d59683', kinds: ['disease', 'phenotype', 'anatomy'], shades: ['#c07560', '#d59683', '#e3a1b4'] },
+  { id: 'biology', label: 'Genes & biology', color: '#85a3d6', kinds: ['gene', 'pathway', 'process', 'cell_type'], shades: ['#5f82bd', '#85a3d6', '#9d93d4', '#a8abd8'] },
+  { id: 'measure', label: 'Measures', color: '#d8bd52', kinds: ['biomarker', 'outcome_measure', 'diagnostic', 'assay'], shades: ['#b89b33', '#d8bd52', '#c9a26a', '#ddc985'] },
+  { id: 'research', label: 'Research tools', color: '#7fb7a9', kinds: ['model_system', 'method', 'resource'], shades: ['#5a9a8a', '#7fb7a9', '#a5cbc1'] },
+];
+export const OTHER_FAMILY: KindFamily = { id: 'other', label: 'Other', color: '#b39f8f', kinds: [], shades: ['#b39f8f', '#8a7565', '#cbbcb0'] };
+export const familyOf = (kind: string) => KIND_FAMILIES.find(f => f.kinds.includes(kind)) ?? OTHER_FAMILY;
 export const PAPER_COLOR = '#554f4d';
-export const LEVELS = ['clinical_trial', 'observational', 'case_report', 'animal', 'in_vitro', 'in_silico', 'review', 'inferred'];
+export const LEVELS = ['clinical_trial', 'registered_trial', 'observational', 'case_report', 'animal', 'in_vitro', 'in_silico', 'review', 'inferred'];
+// strongest evidence in the deepest tones, weaker evidence fades towards the page
 export const LEVEL_COLOR: Record<string, string> = {
-  clinical_trial: '#16a34a', observational: '#2563eb', case_report: '#7c3aed', animal: '#ea580c',
-  in_vitro: '#ca8a04', in_silico: '#64748b', review: '#94a3b8', inferred: '#db2777', reports: '#c9c4c2', related: '#0891b2',
+  clinical_trial: '#4f6a2f', registered_trial: '#7d8a4e', observational: '#4f72ad', case_report: '#7466b5', animal: '#b8664f',
+  in_vitro: '#a88a26', in_silico: '#8a7565', review: '#b3aaa6', inferred: '#c87b95', reports: '#d9d3d0', related: '#5a9a8a',
 };
-export const NEGATIVE = '#dc2626';
+export const NEGATIVE = '#b4372f';
 
 export const safeUrl = (url: string | undefined | null) => (url && /^https?:\/\//i.test(url) ? url : undefined);
 export const human = (s: string) => s.replaceAll('_', ' ');

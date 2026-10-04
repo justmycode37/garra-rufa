@@ -770,6 +770,50 @@ class PresentFocusTests(unittest.TestCase):
         data["focus"] = ["MONDO:0007947"]
         self.assertEqual(present.Graph(data).pick_focus(None), "MONDO:0007947")
 
+    def test_subtype_symptoms_for_unannotated_group(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "query-test"))
+        try:
+            import present
+            from sources import _hpoa
+        finally:
+            sys.path.pop(0)
+        root = _hpoa.PHENOTYPE_ROOT
+
+        class FakeHpo:  # three annotated diseases behind three subtypes
+            ann = {"OMIM:1": {"HP:1": 1.0, "HP:2": 0.5}, "OMIM:2": {"HP:1": 0.8},
+                   "OMIM:3": {"HP:1": 0.9, "HP:2": 0.2, "HP:3": 1.0}}
+            name = {"HP:1": "Seizure", "HP:2": "Visual loss", "HP:3": "Deafness"}
+            ancestors = staticmethod(lambda hp: frozenset({root}))
+            is_inheritance = staticmethod(lambda hp: False)
+            specificity = staticmethod(lambda hp: 0.5)
+
+        class FakeOntology:  # juvenile CLN-x has no ids; its other parent CLN-x does
+            kids = {"MONDO:9": ["MONDO:11", "MONDO:12"]}
+            par = {"MONDO:11": ["MONDO:9", "MONDO:21"], "MONDO:12": ["MONDO:9", "MONDO:22"]}
+            xr = {"MONDO:21": ["OMIM:1"], "MONDO:22": ["OMIM:2"]}
+            children = classmethod(lambda c, m: c.kids.get(m, []))
+            parents = classmethod(lambda c, m: c.par.get(m, []))
+            xrefs = classmethod(lambda c, m: c.xr.get(m, []))
+
+        node = lambda i, lab, xr=(): {"id": i, "label": lab, "kind": "disease",
+                                     "sources": ["mondo"], "xrefs": list(xr), "info": {}}
+        data = {"start": "MONDO:9", "focus": ["MONDO:9"],
+                "nodes": [node("MONDO:9", "juvenile CLN"), node("MONDO:13", "CLN 9", ["OMIM:3"])],
+                "edges": [{"from": "MONDO:9", "to": "MONDO:13", "relation": "has_subclass",
+                           "source": "mondo"}]}
+        with patch.object(present._hpoa, "load", lambda: FakeHpo()),\
+                patch.object(present, "_ontology", lambda: FakeOntology):
+            off = present.Present(present.Graph(data), "MONDO:9", subtype_symptoms=False)
+            off.collect()
+            on = present.Present(present.Graph(data), "MONDO:9")  # default: on
+            on.collect()
+        self.assertFalse([i for i in off.items.values() if i["section"] == "symptoms"])
+        self.assertEqual(on.subtypes, {"MONDO:11": ["OMIM:1"], "MONDO:12": ["OMIM:2"],
+                                       "MONDO:13": ["OMIM:3"]})
+        sym = {i["label"]: i["notes"] for i in on.items.values() if i["section"] == "symptoms"}
+        self.assertEqual(set(sym), {"Seizure", "Visual loss"})  # deafness: 1 of 3 subtypes
+        self.assertIn("in 3 of 3 subtypes (HPO annotations)", sym["Seizure"])
+
 
 if __name__ == "__main__":
     unittest.main()

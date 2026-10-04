@@ -1,8 +1,8 @@
 'use client';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { ArrowUpRight, Search } from 'lucide-react';
-import type { GraphLink, GraphNode } from '@/lib/force-canvas';
-import { human, KIND_PALETTE, LEVEL_COLOR, LEVELS, NEGATIVE, PAPER_COLOR, paperUrl, type CandidatePath, type Evidence, type EvidenceEdge, type EvidenceView } from '@/lib/graph-views';
+import type { GraphLink, GraphNode, GraphRegion } from '@/lib/force-canvas';
+import { familyOf, human, KIND_FAMILIES, LEVEL_COLOR, LEVELS, NEGATIVE, OTHER_FAMILY, PAPER_COLOR, paperUrl, type CandidatePath, type Evidence, type EvidenceEdge, type EvidenceView } from '@/lib/graph-views';
 import { BackToOverview, GraphMessage, loadView, useGraphRun } from './GraphsShell';
 import { useForceCanvas, ZoomControls } from './useForceCanvas';
 import styles from './Graphs.module.css';
@@ -37,7 +37,11 @@ export default function EvidenceGraph() {
 
 function EvidenceExplorer({ data }: { data: EvidenceView }) {
   const model = useMemo(() => {
-    const kinds = [...new Set(data.nodes.map(n => n.kind))].sort();
+    // kinds in family order, so the legend and the territories read the same way round
+    const families = [...KIND_FAMILIES, OTHER_FAMILY];
+    const rank = (k: string) => { const f = familyOf(k); return families.indexOf(f) * 100 + (f.kinds.includes(k) ? f.kinds.indexOf(k) : 50); };
+    const kinds = [...new Set(data.nodes.map(n => n.kind))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    const otherKinds = kinds.filter(k => familyOf(k) === OTHER_FAMILY);
     const byId = Object.fromEntries(data.nodes.map(n => [n.id, n]));
     const paperBy = Object.fromEntries(data.papers.map(p => [p.key, p]));
     const candBy = Object.fromEntries(data.candidates.map(c => [c.id, c]));
@@ -50,14 +54,18 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
     for (const e of edges) if (e.type === 'evidence') { degree[e.from] = (degree[e.from] ?? 0) + 1; degree[e.to] = (degree[e.to] ?? 0) + 1; }
     const related: Record<string, (EvidenceView['paper_links'][number] & { key: string })[]> = {};
     for (const l of data.paper_links) { (related[l.a] ||= []).push({ ...l, key: l.b }); (related[l.b] ||= []).push({ ...l, key: l.a }); }
-    const color = (k: string) => (k === 'paper' ? PAPER_COLOR : KIND_PALETTE[kinds.indexOf(k) % KIND_PALETTE.length]);
+    const color = (k: string) => {
+      if (k === 'paper') return PAPER_COLOR;
+      const f = familyOf(k), i = f === OTHER_FAMILY ? otherKinds.indexOf(k) : f.kinds.indexOf(k);
+      return f.shades[i % f.shades.length];
+    };
     return { kinds, byId, paperBy, candBy, levels, edges, edgeBy, degree, related, color };
   }, [data]);
   const { kinds, byId, paperBy, candBy, levels, edges, edgeBy, degree, related, color } = model;
 
   const [kindOn, setKindOn] = useState(() => new Set(kinds));
   const [levelOn, setLevelOn] = useState(() => new Set(levels));
-  const [minConf, setMinConf] = useState(0);
+  const [minConf, setMinConf] = useState(0.75);
   const [papers, setPapers] = useState(false);
   const [paperLinks, setPaperLinks] = useState(false);
   const [edgeLabels, setEdgeLabels] = useState(false);
@@ -91,6 +99,28 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
   useEffect(() => {
     if (!engine) return;
     const nodes: GraphNode[] = [];
+    // every family gets a sector around the disease, as wide as its share of the visible
+    // entities; within it each kind has its own heading, so like sits next to like
+    const shown = [...visible.nodes].map(id => byId[id]).filter(n => n && n.id !== data.start);
+    const perFamily = new Map<string, number>();
+    for (const n of shown) perFamily.set(familyOf(n.kind).id, (perFamily.get(familyOf(n.kind).id) ?? 0) + 1);
+    const present = [...KIND_FAMILIES, OTHER_FAMILY].filter(f => perFamily.has(f.id));
+    const weight = (f: typeof OTHER_FAMILY) => 0.6 + Math.sqrt(perFamily.get(f.id)!);
+    const total = present.reduce((s, f) => s + weight(f), 0);
+    const ring = 110 + 22 * Math.sqrt(shown.length);
+    const anchor: Record<string, { x: number; y: number }> = {};
+    const regions: Record<string, GraphRegion> = {};
+    let at = -Math.PI / 2;
+    for (const f of present) {
+      const span = 2 * Math.PI * weight(f) / total;
+      const ks = kinds.filter(k => familyOf(k) === f && shown.some(n => n.kind === k));
+      ks.forEach((k, i) => {
+        const a = at + span * (0.18 + 0.64 * (ks.length > 1 ? i / (ks.length - 1) : 0.5));
+        anchor[k] = { x: Math.cos(a) * ring, y: Math.sin(a) * ring };
+      });
+      regions[f.id] = { label: f.label, color: f.color };
+      at += span;
+    }
     for (const id of visible.nodes) {
       if (id.startsWith('paper:')) {
         const p = paperBy[id.slice(6)];
@@ -100,23 +130,27 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
       const n = byId[id];
       if (!n) continue;
       const start = id === data.start, cand = candBy[id];
+      const home = anchor[n.kind];
       nodes.push({ id, label: n.label, r: start ? 24 : 4 + Math.sqrt(degree[id] ?? 1) * 2.1,
-        fill: start ? '#141314' : color(n.kind), stroke: start ? '#fffdfe' : cand ? '#db2777' : undefined, strokeWidth: start ? 4 : cand ? 2 : 0,
+        fill: start ? '#141314' : color(n.kind), stroke: start ? '#fffdfe' : cand ? '#141314' : '#fffdfe', strokeWidth: start ? 4 : cand ? 1.8 : 1,
         pinLabel: start, fixed: start, x: start ? 0 : undefined, y: start ? 0 : undefined, fx: start ? 0 : undefined, fy: start ? 0 : undefined,
-        priority: start ? 10 : cand ? 0.6 + cand.score : Math.min(0.8, (degree[id] ?? 1) / 12), charge: start ? -800 : undefined, pull: 0.012 });
+        group: start ? undefined : familyOf(n.kind).id, tx: home?.x, ty: home?.y,
+        priority: start ? 10 : cand ? 0.6 + cand.score : Math.min(0.8, (degree[id] ?? 1) / 12), charge: start ? -800 : undefined, pull: start ? undefined : 0.06 });
     }
     const pairs = new Map<string, number>();
     const links: GraphLink[] = visible.edges.map(e => {
       const key = e.from < e.to ? `${e.from}|${e.to}` : `${e.to}|${e.from}`;
       const k = pairs.get(key) ?? 0; pairs.set(key, k + 1);
       const curve = k ? (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.12 : 0;
-      if (e.type === 'reports') return { id: e.id, source: e.from, target: e.to, color: '#c9c4c2', width: 0.6, dash: [2, 3], opacity: 0.7, distance: 50, strength: 0.05, curve };
+      if (e.type === 'reports') return { id: e.id, source: e.from, target: e.to, color: LEVEL_COLOR.reports, width: 0.6, dash: [2, 3], opacity: 0.7, distance: 50, strength: 0.05, curve };
       if (e.type === 'related') return { id: e.id, source: e.from, target: e.to, color: LEVEL_COLOR.related, width: Math.min(6, e.link.shared_edges), opacity: 0.6, distance: 80, strength: 0.1, curve };
-      const c = e.mostly_negative ? NEGATIVE : LEVEL_COLOR[e.level] ?? '#999';
-      return { id: e.id, source: e.from, target: e.to, color: c, width: 0.6 + 3 * (e.confidence || 0), opacity: 0.75, arrow: true, curve,
-        dash: e.level === 'inferred' || e.mostly_negative ? [6, 4] : undefined, label: human(e.relation), distance: 70, strength: 0.25 };
+      const c = e.mostly_negative ? NEGATIVE : LEVEL_COLOR[e.level] ?? LEVEL_COLOR.review;
+      // links across families are long and soft, so they bridge territories without dissolving them
+      const across = familyOf(byId[e.from]?.kind ?? '') !== familyOf(byId[e.to]?.kind ?? '');
+      return { id: e.id, source: e.from, target: e.to, color: c, width: 0.6 + 2.6 * (e.confidence || 0), opacity: 0.7, arrow: true, curve: curve || (across ? 0.08 : 0),
+        dash: e.level === 'inferred' || e.mostly_negative ? [6, 4] : undefined, label: human(e.relation), distance: across ? 120 : 55, strength: across ? 0.08 : 0.3 };
     });
-    engine.setGraph(nodes, links, { energy: 0.45 });
+    engine.setGraph(nodes, links, { energy: 0.45, regions });
   }, [engine, visible, byId, paperBy, candBy, degree, color, data.start]);
   useEffect(() => { engine?.fitWhenSettled(); }, [engine]);
   useEffect(() => { engine?.setSelected(selectedNode); }, [engine, selectedNode]);
@@ -149,10 +183,13 @@ function EvidenceExplorer({ data }: { data: EvidenceView }) {
       <div className={styles.segmented} role="tablist">{(['direct', 'transfer', 'gaps'] as const).map(c => <button key={c} role="tab" aria-selected={cat === c} onClick={() => setCat(c)}>{c === 'direct' ? 'Direct' : c === 'transfer' ? 'Transfer' : 'Gaps'}</button>)}</div>
       <Candidates cat={cat} {...ctx}/>
       <h2 className={styles.h2}>Entity kind</h2>
-      <div className={styles.toggles}>{kinds.map(k => <label key={k} className={styles.toggle}>
-        <input type="checkbox" checked={kindOn.has(k)} onChange={e => setKindOn(s => { const n = new Set(s); if (e.target.checked) n.add(k); else n.delete(k); return n; })}/>
-        <span className={styles.dot} style={{ background: color(k) }}/>{human(k)}<span className={styles.count}>{data.nodes.filter(n => n.kind === k && visible.nodes.has(n.id)).length}/{data.nodes.filter(n => n.kind === k).length}</span>
-      </label>)}</div>
+      <div className={styles.toggles}>{kinds.map((k, i) => <Fragment key={k}>
+        {(i === 0 || familyOf(k) !== familyOf(kinds[i - 1])) && <span className={styles.family}><span className={styles.familyBand} style={{ background: familyOf(k).color }}/>{familyOf(k).label}</span>}
+        <label className={styles.toggle}>
+          <input type="checkbox" checked={kindOn.has(k)} onChange={e => setKindOn(s => { const n = new Set(s); if (e.target.checked) n.add(k); else n.delete(k); return n; })}/>
+          <span className={styles.dot} style={{ background: color(k) }}/>{human(k)}<span className={styles.count}>{data.nodes.filter(n => n.kind === k && visible.nodes.has(n.id)).length}/{data.nodes.filter(n => n.kind === k).length}</span>
+        </label>
+      </Fragment>)}</div>
       <h2 className={styles.h2}>Evidence level</h2>
       <div className={styles.toggles}>{levels.map(l => <label key={l} className={styles.toggle}>
         <input type="checkbox" checked={levelOn.has(l)} onChange={e => setLevelOn(s => { const n = new Set(s); if (e.target.checked) n.add(l); else n.delete(l); return n; })}/>

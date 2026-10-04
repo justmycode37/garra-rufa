@@ -79,6 +79,12 @@ _pages_lock = threading.Lock()
 _disk = _groups.PageCache("orphanet_groups/pages")
 
 
+def is_challenge(page: str) -> bool:
+    """orpha.net's bot check ("Vérification de la connexion...") comes with status 200 and
+    no result cards: not a page of the disease, so it is neither cached nor parsed."""
+    return 'action="/_challenge"' in page
+
+
 def fetch_page(session, category: str, code: str, name: str = "") -> str | None:
     """A category page for ORPHA:<code> (kept in data/orphanet_groups/pages/ across runs;
     shared with ern.py). Some pages return nothing without a diseaseName; its value does not
@@ -89,7 +95,7 @@ def fetch_page(session, category: str, code: str, name: str = "") -> str | None:
         if key in _pages:
             return _pages[key]
     cached = _disk.get(key)
-    if cached is not None:
+    if cached is not None and not is_challenge(cached):
         with _pages_lock:
             _pages[key] = cached
         return cached
@@ -101,7 +107,10 @@ def fetch_page(session, category: str, code: str, name: str = "") -> str | None:
         r = session.get(BASE + path.replace("{code}", code), params=params, timeout=60)
         if r.status_code == 200:
             text = r.content.decode("utf-8", errors="replace")
-            _disk.put(key, text)
+            if is_challenge(text):
+                text = None
+            else:
+                _disk.put(key, text)
     except Exception:
         text = None
     with _pages_lock:

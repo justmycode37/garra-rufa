@@ -65,6 +65,9 @@
 .links a { display: inline-flex; align-items: center; gap: 3px; padding: 5px 10px; border-radius: 14px; background: color-mix(in srgb, var(--sea) 70%, var(--card)); font-size: 11px; }
 .links a:hover { background: var(--sea); }
 .toggles { display: grid; gap: 2px; }
+.family { display: flex; align-items: center; gap: 8px; margin: 8px 0 1px; font-size: 10px; font-weight: 600; letter-spacing: .6px; color: var(--muted); }
+.family:first-child { margin-top: 0; }
+.familyBand { width: 16px; height: 6px; border-radius: 3px; flex: none; opacity: .75; }
 .toggle { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
 .toggle input, .check input { accent-color: var(--ink); }
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; flex: none; vertical-align: -1px; }

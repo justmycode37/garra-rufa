@@ -15,7 +15,19 @@
    "edges": 1262,
    "candidates": 331,
    "papers": 50
-  }
+  },
+  "ids": [
+   "MONDO:0007947",
+   "ORPHA:558"
+  ],
+  "names": [
+   "Marfan syndrome",
+   "Marfan syndrome type 1",
+   "Marfan syndrome, type 1",
+   "Marfan's syndrome",
+   "MFS",
+   "MFS1"
+  ]
  },
  {
   "id": "pmm2",
@@ -33,7 +45,22 @@
    "edges": 1227,
    "candidates": 349,
    "papers": 50
-  }
+  },
+  "ids": [
+   "MONDO:0008907",
+   "ORPHA:79318"
+  ],
+  "names": [
+   "PMM2-congenital disorder of glycosylation",
+   "CDG 1A",
+   "CDG syndrome type Ia",
+   "CDG-IA",
+   "carbohydrate deficient glycoprotein syndrome type Ia",
+   "congenital disorder of glycosylation type 1a",
+   "congenital disorder of glycosylation type Ia",
+   "phosphomannomutase 2 deficiency",
+   "congenital disorder of glycosylation 1a"
+  ]
  },
  {
   "id": "pompe",
@@ -51,6 +78,15 @@
    "edges": 1417,
    "candidates": 350,
    "papers": 120
-  }
+  },
+  "ids": [
+   "NORD:1595",
+   "ORPHA:365",
+   "OMIM:232300"
+  ],
+  "names": [
+   "Pompe Disease",
+   "Glycogen storage disease II"
+  ]
  }
 ]

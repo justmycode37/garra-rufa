@@ -14,6 +14,7 @@ Usage:
 """
 import argparse
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -77,6 +78,7 @@ def main():
             view = export_present(graph_path, args.focus, args.similar)
             entry["present"] = f"{stem}.present.json"
             entry["label"] = view["focus"]["label"]
+            entry["ids"], entry["names"] = focus_keys(view["focus"])
             entry["presentStats"] = {"items": len(view["items"]), "groups": len(view["groups"]),
                                      "links": len(view["links"])}
             size = _dump(view, args.out / entry["present"])
@@ -100,6 +102,17 @@ def main():
     index = sorted(entries.values(), key=lambda e: e["label"].lower())
     index_path.write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"-> {args.out.resolve()} ({len(index)} runs in index.json)")
+
+
+def focus_keys(focus: dict) -> tuple[list[str], list[str]]:
+    """Identifiers and names of the focus disease, so the webapp can find this run for a
+    disease picked elsewhere (the atlas lists OMIM / ORPHA records)."""
+    ids = [focus["id"]]
+    for link in focus.get("links", []):
+        m = re.search(r"orpha\.net/en/disease/detail/(\d+)", link.get("url", ""))
+        if m:
+            ids.append(f"ORPHA:{m[1]}")
+    return list(dict.fromkeys(ids)), [focus["label"], *focus.get("synonyms", [])]
 
 
 if __name__ == "__main__":

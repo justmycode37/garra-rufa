@@ -29,6 +29,7 @@ QUERY_TEST = REPO / "src" / "query-test"
 DEFAULT_ROOT = REPO / "data" / "web-graphs"
 QUERY = re.compile(r"^\w[\w\s,.;:'()+/-]{1,119}$", re.UNICODE)  # argv: never a leading '-'
 ID = re.compile(r"^[a-z0-9-]{1,60}-[0-9a-f]{8}$")
+CURIE = re.compile(r"^[A-Za-z][A-Za-z0-9_.]*:[A-Za-z0-9_.-]+$")
 MAX_QUEUED = 4
 STAGE_TIMEOUT = {"graph": 20 * 60, "overview": 5 * 60, "papers": 30 * 60,
                  "evidence": 3 * 60 * 60, "export": 10 * 60}
@@ -91,11 +92,15 @@ class GraphBuilds:
         return path if b and b["views"].get(kind) and path.exists() else None
 
     def start(self, body) -> dict:
-        if not isinstance(body, dict) or set(body) - {"query", "evidence"}:
+        if not isinstance(body, dict) or set(body) - {"query", "evidence", "label"}:
             raise InputError("Send a query and, optionally, evidence: true")
         query = " ".join(str(body.get("query") or "").split())
         if not QUERY.match(query) or "://" in query:
             raise InputError("Use a disease, symptom or gene name (2-120 characters)")
+        # a disease picked by id (atlas) keeps its name as label: main.py --label
+        label = " ".join(str(body.get("label") or "").split())[:200]
+        if label and (not CURIE.match(query) or any(ord(c) < 32 for c in label) or "://" in label):
+            raise InputError("A label is only accepted with a disease id such as ORPHA:558")
         evidence = body.get("evidence") is True
         if evidence and not _has_llm_key():
             raise InputError("The evidence graph needs OPENROUTER_API_KEY on the research service")
@@ -108,7 +113,8 @@ class GraphBuilds:
             if sum(b["state"] == "queued" for b in self.builds.values()) >= MAX_QUEUED:
                 raise InputError("Several graphs are already being built. Try again later")
             stages = ["graph", "overview"] + (["papers", "evidence", "export"] if evidence else [])
-            b = {"id": bid, "query": query, "label": query, "evidence": evidence,
+            b = {"id": bid, "query": query, "label": label or query, "input_label": label,
+                 "evidence": evidence,
                  "state": "queued", "stage": None, "stages": stages, "done": [],
                  "views": {}, "error": None, "created": time.time(), "updated": time.time()}
             self.builds[bid] = b
@@ -135,7 +141,8 @@ class GraphBuilds:
         run, papers, kg = d / "run.json", d / "run.papers.json", d / "run.kg.json"
         out = ["-o", str(d / "export")]
         commands = {
-            "graph": [str(QUERY_TEST / "main.py"), b["query"], "-o", str(run)],
+            "graph": [str(QUERY_TEST / "main.py"), b["query"], "-o", str(run),
+                      *(["--label", b["input_label"]] if b.get("input_label") else [])],
             "overview": [str(QUERY_TEST / "web_export.py"), str(run), *out],
             "papers": [str(QUERY_TEST / "literature" / "main.py"), str(run), "-o", str(papers)],
             "evidence": [str(QUERY_TEST / "evidence" / "main.py"), str(papers), "-o", str(kg),

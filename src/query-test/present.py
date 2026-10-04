@@ -8,7 +8,10 @@ patient and sorted into sections, and within a section into groups that become o
 each (the items are listed in the node and can be expanded in the viewer):
 
   Symptoms        grouped by body system (top-level HPO branches), most frequent first;
-                  frequencies from the HPO annotations
+                  frequencies from the HPO annotations. --subtype-symptoms (default on): a
+                  disease group without annotations of its own ("Batten disease" =
+                  MONDO's "juvenile neuronal ceroid lipofuscinosis") shows the symptoms
+                  its subtypes share ("in 5 of 8 subtypes"); --no-subtype-symptoms: none
   Genetics        inheritance, disease-causing genes (with their ClinVar variant counts;
                   variants never become nodes), other associated genes
   Related         the most specific broader disease groups, subtypes, closely related
@@ -66,6 +69,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from entities import normalize  # noqa: E402
 from sources import _hpoa  # noqa: E402
+from sources import _local  # noqa: E402,F401  (puts <repo>/src on sys.path: garra.local)
 from sources.base import words  # noqa: E402
 
 PRIMEKG_DB = Path(__file__).resolve().parents[2] / "data" / "primekg" / "primekg.sqlite"
@@ -201,6 +205,15 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40] or "x"
 
 
+def _ontology():
+    """garra.local's ontology index (MONDO is_a, xrefs), or None without it."""
+    try:
+        from garra.local import available, ontology
+    except Exception:
+        return None
+    return ontology if available("ontology") else None
+
+
 def freq_label(f: float | None) -> str | None:
     if f is None:
         return None
@@ -296,7 +309,7 @@ class Graph:
 
 # -- curated view ----------------------------------------------------------------------
 class Present:
-    def __init__(self, g: Graph, focus: str, similar: int = 8):
+    def __init__(self, g: Graph, focus: str, similar: int = 8, subtype_symptoms: bool = True):
         self.g = g
         self.focus = focus
         self.similar_n = similar
@@ -315,6 +328,11 @@ class Present:
         self.hpo_ids = [i for i in sorted(self.focus_ids)
                         if self.hpo and normalize(i) in self.hpo.ann]
         self.freq = self._frequencies()
+        # subtype_symptoms: subtype -> its HPO-annotated ids; HP -> share of subtypes with it
+        self.subtypes: dict[str, list[str]] = {}
+        self.subtype_share: dict[str, float] = {}
+        if subtype_symptoms and self.hpo and not self.hpo_ids:
+            self._subtype_annotations()
 
     # which nodes are the focus disease under another id (unmerged xrefs / name matches)
     def _aliases(self) -> set[str]:
@@ -336,6 +354,80 @@ class Present:
             for hp, f in self.hpo.ann[normalize(d)].items():
                 out[hp] = max(out.get(hp, 0.0), f)
         return out
+
+    def _subtype_annotations(self):
+        """A focus without HPO annotations of its own that is a group of diseases gets
+        the symptoms of its subtypes. Subtypes: the graph's has_subclass neighbours plus
+        the MONDO children (local ontology). A subtype's annotated ids are its own
+        OMIM / ORPHA ids, else those of its other MONDO parents: "juvenile neuronal
+        ceroid lipofuscinosis 3" has no annotation, but is also a "neuronal ceroid
+        lipofuscinosis 3" (OMIM:204200)."""
+        h, onto = self.hpo, _ontology()
+        subs = {o for a in self.aliases for o, rel, _, out in self.g.adj[a]
+                if self.g.nodes[o]["kind"] == "disease"
+                and ((rel == "has_subclass" and out) or (rel == "subclass_of" and not out))}
+        mondo = {i for i in self.focus_ids if _prefix(i) == "MONDO"}
+        if onto:
+            for m in sorted(mondo):
+                subs.update(onto.children(m))
+        own = {normalize(i) for i in self.focus_ids} | mondo
+
+        def annotated(ids):
+            return {normalize(i) for i in ids if normalize(i) in h.ann} - own
+
+        seen: set[frozenset] = set()  # one subtype under two ids (graph ORPHA, MONDO child)
+        for s in sorted(subs):
+            ids = set(self.g.ids(s)) if s in self.g.nodes else {s}
+            if onto:
+                ids |= {x for i in list(ids) if _prefix(i) == "MONDO" for x in onto.xrefs(i)}
+            ann = annotated(ids)
+            if not ann and onto and _prefix(s) == "MONDO":
+                for p in onto.parents(s):
+                    if p not in own:
+                        ann |= annotated([p, *onto.xrefs(p)])
+            if ann and frozenset(ann) not in seen:
+                seen.add(frozenset(ann))
+                self.subtypes[s] = sorted(ann)
+        if len(self.subtypes) < 2:
+            self.subtypes = {}
+            return
+        count: Counter = Counter()
+        for ann in self.subtypes.values():
+            count.update({hp for d in ann for hp in h.ann[d]})
+        n = len(self.subtypes)
+        self.subtype_share = {hp: c / n for hp, c in count.items()}
+        self.notes.append(f"no HPO annotation of its own: symptoms combined from {n} subtypes "
+                          f"({', '.join(sorted(self.subtypes))})")
+
+    def _add_subtype_symptoms(self, top: int = 60):
+        """subtype_symptoms: the symptoms at least a third of the subtypes share (at
+        least two), most widely shared first."""
+        if not self.subtype_share:
+            return
+        n = len(self.subtypes)
+        need = max(2, math.ceil(n / 3))
+        ranked = sorted((hp for hp, s in self.subtype_share.items() if s * n >= need - 1e-9),
+                        key=lambda hp: (-self.subtype_share[hp], -self.hpo.specificity(hp), hp))
+        added = 0
+        for hp in ranked:
+            note = f"in {round(self.subtype_share[hp] * n)} of {n} subtypes (HPO annotations)"
+            if hp in self.items:
+                self.items[hp]["notes"].append(note)
+                self.items[hp]["score"] += self.subtype_share[hp]
+                continue
+            if added >= top or hp not in self.hpo.name:
+                continue
+            node = self.g.nodes.get(hp) or {"id": hp, "label": self.hpo.name[hp],
+                                            "kind": "phenotype", "sources": ["hpo"], "info": {}}
+            rels = [("has_phenotype", "hpo", True)]
+            placed = self._classify(hp, node, rels)
+            if not placed:
+                continue  # onset / clinical modifier
+            self._add_item(hp, node, placed[0], placed[1], rels, placed[2])
+            if placed[0] == "symptoms":
+                self.items[hp]["notes"].append(note)
+                self.items[hp]["score"] += self.subtype_share[hp]
+                added += 1
 
     # -- 1. classify direct neighbours ---------------------------------------------------
     def collect(self):
@@ -371,6 +463,7 @@ class Present:
                     self.items[nid]["notes"].insert(0, searched[nid])
                     self.items[nid]["score"] += 1
         self._attach_variants(variants)
+        self._add_subtype_symptoms()
 
     def _classify(self, nid: str, n: dict, rels) -> tuple[str, str, dict] | None:
         kind, names = n["kind"], {r for r, _, _ in rels}
@@ -593,10 +686,11 @@ class Present:
 
     # -- 2. diseases with similar symptoms (HPO annotations) -----------------------------
     def add_similar(self):
-        if not self.hpo or not self.hpo_ids or self.similar_n <= 0:
+        if not self.hpo or not (self.hpo_ids or self.subtype_share) or self.similar_n <= 0:
             return
         h = self.hpo
-        mine = {hp: f for hp, f in self.freq.items() if not h.is_inheritance(hp)}
+        mine = {hp: f for hp, f in (self.freq if self.hpo_ids else self.subtype_share).items()
+                if not h.is_inheritance(hp)}
         if len(mine) < 3:
             return
         cands = h.rank_diseases(list(mine), top=60)
@@ -605,8 +699,10 @@ class Present:
         self_score = _sim_dir(h, mine, prop_mine)
         known: dict[str, str] = {}  # OMIM/ORPHA id -> graph node already in the view
         for nid in list(self.items):
-            for x in self.g.ids(nid):
+            for x in (self.g.ids(nid) if nid in self.g.nodes else {nid}):
                 known[normalize(x)] = nid
+            for x in self.subtypes.get(nid, ()):
+                known.setdefault(x, nid)
         scored = []
         for r in cands:
             ids = {r["id"], *r["xrefs"]}
@@ -652,6 +748,7 @@ class Present:
                 continue
             ids = [normalize(x) for x in self.g.ids(nid) if normalize(x) in h.ann]\
                 if nid in self.g.nodes else []
+            ids += [x for x in self.subtypes.get(nid, ()) if x not in ids]
             theirs = {}
             for d in ids:
                 theirs.update(h.ann[d])
@@ -1130,6 +1227,11 @@ def main():
                                     "focus main.py found (symptom mode: the top candidate)")
     ap.add_argument("--similar", type=int, default=8,
                     help="max diseases with similar symptoms to add (0: none)")
+    ap.add_argument("--subtype-symptoms", action=argparse.BooleanOptionalAction, default=True,
+                    help="a disease group without HPO annotations of its own (MONDO's "
+                         "'juvenile neuronal ceroid lipofuscinosis' for 'Batten disease') "
+                         "shows the symptoms its subtypes share (on by default; "
+                         "--no-subtype-symptoms switches it off)")
     ap.add_argument("--top", type=int,
                     help="symptom / gene search: profiles for this many top candidates "
                          "(default: the ones main.py expanded fully)")
@@ -1149,7 +1251,8 @@ def main():
         n = args.top or len(set(g.data.get("focus") or ())) or 3
         profiles: dict[str, Path] = {}
         for i, r in enumerate(ranked[:n], 1):
-            view = Present(g, r["node"], similar=args.similar).build()
+            view = Present(g, r["node"], similar=args.similar,
+                           subtype_symptoms=args.subtype_symptoms).build()
             path = out.with_name(f"{out.stem}.{i}-{_slug(r['name'])}{out.suffix}")
             _write(view, path)
             profiles[r["node"]] = path
@@ -1164,7 +1267,8 @@ def main():
     if not focus:
         ap.error(f"focus {args.focus!r} not found in the graph" if args.focus
                  else "the graph has no disease to present")
-    view = Present(g, focus, similar=args.similar).build()
+    view = Present(g, focus, similar=args.similar,
+                   subtype_symptoms=args.subtype_symptoms).build()
     _write(view, out)
     print(f"{view['focus']['label']} ({focus}): {len(view['items'])} items in "
           f"{len(view['groups'])} groups (from {len(g.nodes)} nodes), "

@@ -76,6 +76,18 @@ class GraphBuildTests(unittest.TestCase):
         # the same query reuses the finished build
         self.assertEqual(self.builds.start({"query": "marfan syndrome"})["id"], b["id"])
 
+    def test_disease_id_build_passes_its_label(self):
+        calls = []
+        stubbed = graphs.subprocess.run
+        graphs.subprocess.run = lambda cmd, **kw: (calls.append(cmd), stubbed(cmd, **kw))[1]
+        b = self.builds.start({"query": "OMIM:154700", "label": "Marfan syndrome"})
+        self.assertEqual(b["label"], "Marfan syndrome")
+        self.assertEqual(self.wait(b["id"])["state"], "done")
+        self.assertEqual(calls[0][-2:], ["--label", "Marfan syndrome"])
+        # a label only names a disease id, never free text
+        with self.assertRaises(InputError):
+            self.builds.start({"query": "Marfan syndrome", "label": "x"})
+
     def test_evidence_build_runs_all_stages(self):
         b = self.builds.start({"query": "PMM2", "evidence": True})
         self.assertEqual(b["stages"], ["graph", "overview", "papers", "evidence", "export"])

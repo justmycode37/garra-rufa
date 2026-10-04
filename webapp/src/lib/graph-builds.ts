@@ -51,8 +51,9 @@ export async function getGraphBuild(id: string): Promise<GraphBuild | null> {
   return graphBuildSchema.parse(await response.json());
 }
 
-export async function startGraphBuild(query: string, evidence: boolean): Promise<{ build?: GraphBuild; error?: string }> {
-  const response = await call('/api/graphs/build', { method: 'POST', body: JSON.stringify({ query, evidence }) });
+/** label: the disease name when the query is a disease id (an atlas pick). */
+export async function startGraphBuild(query: string, evidence: boolean, label?: string): Promise<{ build?: GraphBuild; error?: string }> {
+  const response = await call('/api/graphs/build', { method: 'POST', body: JSON.stringify({ query, evidence, ...(label ? { label } : {}) }) });
   const data = await response.json().catch(() => ({}));
   if (response.status === 400) return { error: typeof data.message === 'string' ? data.message.slice(0, 200) : 'Please check the query.' };
   if (!response.ok) throw new GraphBuildsUnavailable('The graph build could not be started.');

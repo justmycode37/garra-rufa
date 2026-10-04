@@ -28,8 +28,13 @@ export type GraphNode = SimulationNodeDatum & {
   /** id of a node new nodes appear next to */
   spawn?: string;
   fixed?: boolean;
+  /** region (see setGraph) whose territory this node belongs to */
+  group?: string;
   w?: number; h?: number;
 };
+
+/** A soft, labelled territory drawn under the nodes of one group. */
+export type GraphRegion = { label: string; color: string };
 
 export type GraphLink = {
   id: string;
@@ -93,6 +98,7 @@ export class ForceCanvas {
   private resize: ResizeObserver;
   private animation = 0;
   private fitted = false;
+  private regions: Record<string, GraphRegion> = {};
 
   constructor(canvas: HTMLCanvasElement, opts: ForceCanvasOptions = {}) {
     this.canvas = canvas;
@@ -144,7 +150,8 @@ export class ForceCanvas {
   }
 
   /** Replace the graph; nodes keep their positions by id, new ones appear by their spawn. */
-  setGraph(nodes: GraphNode[], links: GraphLink[], { energy = 0.6 }: { energy?: number } = {}) {
+  setGraph(nodes: GraphNode[], links: GraphLink[], { energy = 0.6, regions = {} }: { energy?: number; regions?: Record<string, GraphRegion> } = {}) {
+    this.regions = regions;
     const old = this.byId;
     this.byId = new Map();
     for (const n of nodes) {
@@ -384,6 +391,8 @@ export class ForceCanvas {
     if (focusLink) { lit.add(focusLink.source); lit.add(focusLink.target); }
     const dimming = lit.size > 0;
 
+    const territories = this.drawRegions(dimming);
+
     // links
     ctx.lineCap = 'round';
     for (const l of this.links) {
@@ -433,48 +442,124 @@ export class ForceCanvas {
       if (pill) ctx.restore();
     }
 
-    // labels: screen-size text, placed by priority without overlaps
+    // labels: screen-size text, placed by priority without overlapping each other or any node
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const font = this.opts.font ?? 'sans-serif';
+    const font = this.opts.font ?? 'sans-serif', halo = this.opts.halo ?? '#fff';
+    const placed: Box[] = [], discs: Box[] = [];
+    const inView = (sx: number, sy: number, m: number) => sx > -m && sy > -m && sx < this.width + m && sy < this.height + m;
+    for (const n of this.nodes) {
+      const [sx, sy] = t.apply([n.x!, n.y!]);
+      if (!inView(sx, sy, 60)) continue;
+      const rx = (n.shape === 'pill' ? n.w! * ps / 2 : n.shape === 'square' ? n.r * 1.2 : n.r) * t.k;
+      const ry = n.shape === 'pill' ? n.h! * ps / 2 * t.k : rx;
+      if (rx >= 2) discs.push([sx - rx, sy - ry, sx + rx, sy + ry]);
+    }
+    ctx.lineJoin = 'round';
+
+    // region names first: quiet spaced capitals on the rim of each territory
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 10.5px ${font}`;
+    setSpacing(ctx, '1.6px');
+    for (const r of territories) {
+      const [sx, sy] = t.apply([r.x, r.y]);
+      const text = r.label.toUpperCase(), w = ctx.measureText(text).width;
+      const box: Box = [sx - w / 2 - 4, sy - 9, sx + w / 2 + 4, sy + 9];
+      if (!inView(sx, sy, 0) || overlaps(box, placed)) continue;
+      placed.push(box);
+      ctx.globalAlpha = dimming ? 0.35 : 0.95;
+      ctx.strokeStyle = halo; ctx.lineWidth = 4;
+      ctx.strokeText(text, sx, sy);
+      ctx.fillStyle = blend([{ color: r.color, weight: 1 }, { color: '#141314', weight: 0.9 }]);
+      ctx.fillText(text, sx, sy);
+    }
+    setSpacing(ctx, '0px');
+
     const all = t.k >= (this.opts.labelZoom ?? 1.8);
     const candidates = this.nodes.filter(n => n.shape !== 'pill' && (all || n.pinLabel || lit.has(n.id) || (n.priority ?? 0) * t.k > 0.9));
     candidates.sort((a, b) => Number(lit.has(b.id)) - Number(lit.has(a.id)) || Number(!!b.pinLabel) - Number(!!a.pinLabel) || (b.priority ?? 0) - (a.priority ?? 0));
-    const placed: [number, number, number, number][] = [];
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.lineJoin = 'round';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     for (const n of candidates) {
       const [sx, sy] = t.apply([n.x!, n.y!]);
-      if (sx < -200 || sy < -50 || sx > this.width + 200 || sy > this.height + 50) continue;
+      if (!inView(sx, sy, 200)) continue;
       const strong = lit.has(n.id) || n.pinLabel;
       const size = n.pinLabel ? 14 : 11.5;
       ctx.font = `${strong ? 600 : 400} ${size}px ${font}`;
-      const text = n.label.length > 42 && !lit.has(n.id) ? n.label.slice(0, 40) + '…' : n.label;
-      const w = ctx.measureText(text).width;
-      const y = sy + (n.shape === 'square' ? n.r * 1.2 : n.r) * t.k + 4;
-      const box: [number, number, number, number] = [sx - w / 2 - 2, y - 1, sx + w / 2 + 2, y + size + 2];
-      if (!strong && placed.some(p => box[0] < p[2] && box[2] > p[0] && box[1] < p[3] && box[3] > p[1])) continue;
-      placed.push(box);
+      const text = n.label.length > 30 && !lit.has(n.id) && !n.pinLabel ? n.label.slice(0, 28).trimEnd() + '…' : n.label;
+      const w = ctx.measureText(text).width, r = (n.shape === 'square' ? n.r * 1.2 : n.r) * t.k;
+      // below, above, right, left: the first spot that is free wins
+      const spots: [number, number][] = [[sx - w / 2, sy + r + 3], [sx - w / 2, sy - r - 3 - size], [sx + r + 5, sy - size / 2], [sx - r - 5 - w, sy - size / 2]];
+      let spot = spots.find(([x, y]) => { const b: Box = [x - 2, y - 1, x + w + 2, y + size + 1]; return !overlaps(b, placed) && !overlaps(b, discs); });
+      if (!spot) { if (!strong) continue; spot = spots[0]; }
+      const [x, y] = spot;
+      placed.push([x - 2, y - 1, x + w + 2, y + size + 1]);
       ctx.globalAlpha = !dimming || lit.has(n.id) ? 1 : 0.25;
-      ctx.strokeStyle = this.opts.halo ?? '#fff'; ctx.lineWidth = 3.5;
-      ctx.strokeText(text, sx, y);
+      ctx.strokeStyle = halo; ctx.lineWidth = 3.5;
+      ctx.strokeText(text, x, y);
       ctx.fillStyle = '#141314';
-      ctx.fillText(text, sx, y);
+      ctx.fillText(text, x, y);
     }
+
+    // edge labels run along their edge, only where the edge is long enough to carry them
     if (this.opts.showLinkLabels?.()) {
       ctx.font = `400 10px ${font}`;
-      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       for (const l of this.links) {
         if (!l.label || (dimming && !(lit.has(l.source) && lit.has(l.target)))) continue;
         const a = this.byId.get(l.source)!, b = this.byId.get(l.target)!;
         const c = this.control(a, b, l.curve ?? 0), m = quad(a, c, b, 0.5);
         const [sx, sy] = t.apply([m.x, m.y]);
+        if (!inView(sx, sy, 0)) continue;
+        const w = ctx.measureText(l.label).width;
+        if ((Math.hypot(b.x! - a.x!, b.y! - a.y!) - this.radius(a) - this.radius(b)) * t.k < w + 18) continue;
+        const p = quad(a, c, b, 0.45), q = quad(a, c, b, 0.55);
+        let angle = Math.atan2(q.y - p.y, q.x - p.x);
+        if (angle > Math.PI / 2) angle -= Math.PI; else if (angle < -Math.PI / 2) angle += Math.PI;
+        const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle));
+        const hw = (w * cos + 12 * sin) / 2, hh = (w * sin + 12 * cos) / 2;
+        const box: Box = [sx - hw, sy - hh, sx + hw, sy + hh];
+        if (overlaps(box, placed) || overlaps(box, discs)) continue;
+        placed.push(box);
+        ctx.save();
+        ctx.translate(sx, sy); ctx.rotate(angle);
         ctx.globalAlpha = 0.9;
-        ctx.strokeStyle = this.opts.halo ?? '#fff'; ctx.lineWidth = 3;
-        ctx.strokeText(l.label, sx, sy);
+        ctx.strokeStyle = halo; ctx.lineWidth = 3;
+        ctx.strokeText(l.label, 0, 0);
         ctx.fillStyle = '#554f4d';
-        ctx.fillText(l.label, sx, sy);
+        ctx.fillText(l.label, 0, 0);
+        ctx.restore();
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  /** Territories: the union of generous discs around each region's nodes, in two soft steps. Returns where to name them. */
+  private drawRegions(dimming: boolean) {
+    const ctx = this.ctx, names: { label: string; color: string; x: number; y: number }[] = [];
+    const members = new Map<string, GraphNode[]>();
+    for (const n of this.nodes) if (n.group && this.regions[n.group]) {
+      if (!members.has(n.group)) members.set(n.group, []);
+      members.get(n.group)!.push(n);
+    }
+    for (const [id, ms] of members) {
+      const region = this.regions[id];
+      ctx.fillStyle = region.color;
+      for (const [pad, alpha] of [[34, 0.07], [14, 0.08]]) {
+        ctx.globalAlpha = alpha * (dimming ? 0.5 : 1);
+        ctx.beginPath(); // one path of same-direction arcs fills as a union, without stacking alpha
+        for (const m of ms) { const r = this.radius(m) + pad; ctx.moveTo(m.x! + r, m.y!); ctx.arc(m.x!, m.y!, r, 0, Math.PI * 2); }
+        ctx.fill();
+      }
+      // the name sits on the territory's outer rim, facing away from the graph's centre
+      let cx = 0, cy = 0;
+      for (const m of ms) { cx += m.x!; cy += m.y!; }
+      cx /= ms.length; cy /= ms.length;
+      const len = Math.hypot(cx, cy), ux = len > 1 ? cx / len : 0, uy = len > 1 ? cy / len : -1;
+      const reach = ms.map(m => (m.x! - cx) * ux + (m.y! - cy) * uy + this.radius(m)).sort((a, b) => a - b);
+      const rim = reach[Math.floor((reach.length - 1) * 0.85)] + 44;
+      names.push({ label: region.label, color: region.color, x: cx + ux * rim, y: cy + uy * rim });
+    }
+    ctx.globalAlpha = 1;
+    return names;
   }
 
   private fillStyle(n: GraphNode): string | CanvasGradient {
@@ -532,7 +617,14 @@ export class ForceCanvas {
   }
 }
 
-function quad(a: { x?: number; y?: number }, c: { x: number; y: number }, b: { x?: number; y?: number }, t: number) {
+type Box = [number, number, number, number];
+const overlaps = (b: Box, list: Box[]) => list.some(p => b[0] < p[2] && b[2] > p[0] && b[1] < p[3] && b[3] > p[1]);
+/** canvas letter-spacing where the browser has it */
+function setSpacing(ctx: CanvasRenderingContext2D, value: string) {
+  if ('letterSpacing' in ctx) (ctx as { letterSpacing: string }).letterSpacing = value;
+}
+
+function quad(a:{ x?: number; y?: number }, c: { x: number; y: number }, b: { x?: number; y?: number }, t: number) {
   const u = 1 - t;
   return { x: u * u * a.x! + 2 * u * t * c.x + t * t * b.x!, y: u * u * a.y! + 2 * u * t * c.y + t * t * b.y! };
 }

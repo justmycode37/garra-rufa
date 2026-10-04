@@ -5,13 +5,17 @@ import { usePathname } from 'next/navigation';
 import { ArrowLeft, Check, ChevronDown, LoaderCircle, Plus, Sparkles, X } from 'lucide-react';
 import { GarraMark } from '@/components/Brand';
 import type { GraphBuild } from '@/lib/graph-builds';
+import { diseaseRequest, findDiseaseRun, type DiseaseRequest } from '@/lib/organ-diseases';
 import styles from './Graphs.module.css';
 
 export type GraphRun = {
   id: string; label: string; source: 'example' | 'built';
   presentUrl?: string; evidenceUrl?: string; build?: GraphBuild;
+  ids?: string[]; names?: string[]; query?: string;
 };
-type IndexEntry = { id: string; label: string; present: string | null; evidence: string | null };
+type IndexEntry = { id: string; label: string; present: string | null; evidence: string | null; ids?: string[]; names?: string[] };
+/** A disease opened from the atlas (?disease=…&name=…) until its graph is selected. */
+type DiseaseOpen = DiseaseRequest & { message?: string; busy?: boolean };
 type BuildState = { enabled: boolean; evidence: boolean; notice?: string; builds: GraphBuild[] };
 type Ctx = { runs: GraphRun[]; run?: GraphRun; loading: boolean; error: string };
 
@@ -47,7 +51,10 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
   const [error, setError] = useState('');
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [buildsLoaded, setBuildsLoaded] = useState(false);
+  const [disease, setDisease] = useState<DiseaseOpen>();
   const pendingSelect = useRef('');
+  const diseaseHandled = useRef(false);
 
   const refreshBuilds = useCallback(async () => {
     try {
@@ -55,10 +62,13 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
       const d = await r.json();
       if (r.ok) setBuilds(d);
     } catch { /* the examples still work */ }
+    finally { setBuildsLoaded(true); }
   }, []);
 
   useEffect(() => {
-    setRunId(new URLSearchParams(window.location.search).get('run') || '');
+    const params = new URLSearchParams(window.location.search);
+    setRunId(params.get('run') || '');
+    if (!params.get('run')) setDisease(diseaseRequest(params));
     // the examples show at once; builds and the sign-in state arrive on their own
     void refreshBuilds();
     fetch('/api/auth').then(r => r.json()).then(d => setSignedIn(!!d.user && !d.user.guest)).catch(() => setSignedIn(false));
@@ -79,23 +89,44 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
   const runs = useMemo<GraphRun[]>(() => [
     ...builds.builds.filter(b => b.state !== 'failed' || b.views.present).map(b => ({
       id: b.id, label: b.label, source: 'built' as const, build: b,
-      presentUrl: b.views.present ? `/api/graphs/${b.id}/present?v=${b.done.length}` : undefined,
+      presentUrl: b.views.present ? `/api/graphs/${b.id}/present?v=${b.done.length}` : undefined, query: b.query,
       evidenceUrl: b.views.evidence ? `/api/graphs/${b.id}/evidence?v=${b.done.length}` : undefined,
     })),
     ...examples.map(e => ({
-      id: e.id, label: e.label, source: 'example' as const,
+      id: e.id, label: e.label, source: 'example' as const, ids: e.ids, names: e.names,
       presentUrl: e.present ? `/graph-data/${e.present}` : undefined,
       evidenceUrl: e.evidence ? `/graph-data/${e.evidence}` : undefined,
     })),
   ], [builds.builds, examples]);
 
-  const run = runs.find(r => r.id === runId) ?? runs.find(r => r.source === 'example') ?? runs[0];
+  // A disease from the atlas shows its own graph, never a fallback example.
+  const run = runs.find(r => r.id === runId) ?? (disease ? undefined : runs.find(r => r.source === 'example') ?? runs[0]);
   const select = (id: string) => {
-    setRunId(id);
+    setRunId(id); setDisease(undefined);
     const params = new URLSearchParams(window.location.search);
-    params.set('run', id);
+    params.set('run', id); params.delete('disease'); params.delete('name');
     window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
   };
+
+  // Open the atlas disease: its existing graph, else a new build of it (by identifier).
+  useEffect(() => {
+    if (!disease || diseaseHandled.current || loading || !buildsLoaded || signedIn === null) return;
+    diseaseHandled.current = true;
+    const found = findDiseaseRun(runs, disease);
+    if (found) { select(found.id); return; }
+    if (!builds.enabled) { setDisease({ ...disease, message: `There is no graph of ${disease.name} yet, and building graphs is unavailable right now. ${builds.notice ?? ''}` }); return; }
+    if (!signedIn) { setDisease({ ...disease, message: `There is no graph of ${disease.name} yet. Sign in to build it.` }); return; }
+    setDisease({ ...disease, busy: true, message: `Starting a graph of ${disease.name}…` });
+    const id = disease.ids.find(i => i.startsWith('ORPHA:')) ?? disease.ids[0];
+    fetch('/api/graphs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: id, label: disease.name }) })
+      .then(async r => {
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'The graph could not be started.');
+        setBuilds(s => ({ ...s, builds: [d.build, ...s.builds.filter(x => x.id !== d.build.id)] }));
+        pendingSelect.current = d.build.id;
+      })
+      .catch(e => setDisease({ ...disease, message: `The graph of ${disease.name} could not be started: ${e instanceof Error ? e.message : 'please try again.'}` }));
+  }, [disease, loading, buildsLoaded, signedIn, runs, builds.enabled, builds.notice]);
   useEffect(() => {
     if (pendingSelect.current && runs.some(r => r.id === pendingSelect.current)) { select(pendingSelect.current); pendingSelect.current = ''; }
   }, [runs]);
@@ -137,7 +168,10 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
         onOpen={id => { select(id); setBuilderOpen(false); }}/>}
       {run?.build && run.build.state !== 'done' && <BuildProgress build={run.build}/>}
       <main id="graph-content" className={styles.main}>
-        {error ? <p className={styles.notice} role="alert">{error}</p> : children}
+        {error ? <p className={styles.notice} role="alert">{error}</p>
+          : disease && !run ? <GraphMessage busy={!disease.message || disease.busy}>{disease.message ?? `Looking for the graph of ${disease.name}…`}
+            {!disease.busy && disease.message && signedIn === false && <p><Link href="/?entry=signup&role=researcher">Sign in</Link> · <Link href="/?view=atlas">Back to the atlas</Link></p>}</GraphMessage>
+          : children}
       </main>
     </div>
   </GraphsContext.Provider>;
