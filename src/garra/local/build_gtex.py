@@ -15,7 +15,6 @@ from __future__ import annotations
 import csv
 import gzip
 import io
-import json
 import sqlite3
 import sys
 import tarfile

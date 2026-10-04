@@ -19,6 +19,8 @@ ENTITY_TYPES = ("disease", "gene", "pathway", "process", "cell_type", "anatomy",
 SOLUTION_TYPES = frozenset({"drug", "therapy", "model_system", "biomarker", "assay",
                             "diagnostic", "outcome_measure", "resource", "method"})
 PREDICATES = {
+    "participates_in": "gene -> pathway or process: membership only, not a disease molecular effect",
+    "affects": "disease or gene -> pathway or process: explicitly measured molecular change; record direction and variant context",
     "treats": "drug/therapy -> disease or phenotype: reported to improve it in patients",
     "rescues": "drug/therapy -> gene, process, phenotype or model_system: corrects a defect "
                "in a model or cells",
@@ -33,7 +35,7 @@ PREDICATES = {
     "involves": "disease -> pathway, process, cell_type or anatomy: mechanism / tissue "
                 "involved",
     "has_phenotype": "disease or model_system -> phenotype",
-    "shares_mechanism_with": "disease -> disease: same gene, pathway or process affected",
+    "shares_mechanism_with": "disease -> disease: explicitly stated compatible molecular mechanism; shared gene alone is insufficient",
     "applicable_to": "method/resource/model_system -> disease: usable for studying it",
 }
 EFFECTS = ("positive", "negative", "null", "mixed", "na")
@@ -60,6 +62,13 @@ Rules:
 - Include the mechanistic links (causes, involves, has_phenotype, shares_mechanism_with)
   that connect the diseases in the paper to genes, pathways, processes, cell types and
   tissues; they decide whether a solution transfers.
+- Distinguish pathway membership from a demonstrated molecular effect. Never infer a
+  disease effect from gene membership or co-mention alone.
+- For every edge include direction (increased/decreased/unchanged/unknown), polarity
+  (asserted/negated/uncertain), tissue, model, population, variant, and limitations.
+  Direction describes the molecular quantity/process, NOT benefit or harm (effect).
+  Use unknown for context not explicitly stated. Preserve contrary findings.
+- All extraction is unreviewed; an exact quote verifies text presence, not scientific meaning.
 - Skip trivia (study logistics, generic statements). Aim for the 5-40 most informative edges.
 
 Entity types: {", ".join(ENTITY_TYPES)}
@@ -73,6 +82,9 @@ Answer with one JSON object:
   "entities": [{{"key": "e1", "name": "...", "type": "...", "synonyms": ["..."]}}],
   "edges": [{{"subject": "e1", "predicate": "...", "object": "e2", "effect": "...",
              "evidence_level": "...", "organism": "human|mouse|zebrafish|yeast|cells|...",
+             "direction": "increased|decreased|unchanged|unknown",
+             "polarity": "asserted|negated|uncertain", "tissue": "...", "model": "...",
+             "population": "...", "variant": "...", "limitations": ["..."],
              "evidence": [{{"passage": "P12", "quote": "..."}}]}}]}}"""
 
 
@@ -114,7 +126,16 @@ def clean_result(out: dict) -> tuple[dict, list[dict], dict]:
                       "effect": r.get("effect") if r.get("effect") in EFFECTS else "na",
                       "evidence_level": r.get("evidence_level")
                       if r.get("evidence_level") in LEVELS else "review",
-                      "organism": str(r.get("organism") or "")[:40],
+                      "organism": str(r.get("organism") or "unknown")[:120],
+                      "direction": r.get("direction") if r.get("direction") in
+                      {"increased", "decreased", "unchanged"} else "unknown",
+                      "polarity": r.get("polarity") if r.get("polarity") in
+                      {"asserted", "negated", "uncertain"} else "unknown",
+                      **{k: str(r.get(k) or "unknown")[:300] for k in
+                         ("tissue", "model", "population", "variant")},
+                      "limitations": [str(x)[:500] for x in r.get("limitations", [])]
+                      if isinstance(r.get("limitations"), list) else [],
+                      "reviewed": False,
                       "evidence": [{"passage": str(x.get("passage") or ""),
                                     "quote": str(x["quote"])[:600]} for x in ev[:3]]})
     stats["edges"] = len(edges)

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from garra.actions.journey import build_journey
+from garra.bridge import build_bridge
 from garra.connections import build_connections, render_connections
 from garra.explain.explain import explain_query
 from garra.graph.resolve import resolve_query
@@ -166,7 +167,31 @@ def main(argv: list[str] | None = None) -> int:
         help="Rebuild query_registry.json from cached packet.json files",
     )
 
+    bridge = sub.add_parser("bridge", help="Join source and paper graphs into disease-pair hypotheses")
+    bridge.add_argument("source_graph", type=Path)
+    bridge.add_argument("evidence_graph", type=Path)
+    bridge.add_argument("--mappings", type=Path, help="JSON list of reviewed same-entity mappings")
+    bridge.add_argument("--phenotype-threshold", type=float, default=0.5)
+    bridge.add_argument("--out", type=Path, required=True)
+
     args = parser.parse_args(argv)
+    if args.cmd == "bridge":
+        try:
+            result = build_bridge(
+                json.loads(args.source_graph.read_text()),
+                json.loads(args.evidence_graph.read_text()),
+                mappings=json.loads(args.mappings.read_text()) if args.mappings else [],
+                phenotype_threshold=args.phenotype_threshold,
+            )
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(json.dumps(result, indent=2) + "\n")
+            print(json.dumps({"candidates": len(result["candidates"]),
+                              "claims": len(result["claims"]), "issues": len(result["issues"])}))
+            return 0
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"Bridge failed: {exc}", file=sys.stderr)
+            return 2
+
 
     if args.cmd == "cache-status":
         print(json.dumps(packet_cache.cache_stats(), indent=2))

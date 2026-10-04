@@ -38,6 +38,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # src/query-test
 
 try:  # use the OS trust store; the certifi bundle fails on this machine
@@ -55,6 +56,7 @@ from evidence.fulltext import FullTextProvider  # noqa: E402
 from evidence.llm import Llm  # noqa: E402
 from evidence.normalize import Normalizer  # noqa: E402
 from evidence.verify import Verifier  # noqa: E402
+from garra.bridge import build_bridge  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -135,7 +137,8 @@ def read_paper(paper, *, llm, profile_text, fulltext, normalizer, max_chars) -> 
             quotes += 1
             pid = ver.check(q["quote"], q["passage"])
             if pid:
-                ev.append({"passage": pid, "section": passages[pid].section, "quote": q["quote"]})
+                ev.append({"passage": pid, "section": passages[pid].section, "quote": q["quote"],
+                           "verification": "exact_passage"})
             else:
                 bad_quotes += 1
         if ev:
@@ -381,6 +384,7 @@ def main():
                       for p in papers],
     }
     out.parent.mkdir(parents=True, exist_ok=True)
+    data["disease_bridge"] = build_bridge(graph, data)
     out.write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     write_md(data, out.with_suffix(".md"))
     write_html(data, out.with_suffix(".html"))

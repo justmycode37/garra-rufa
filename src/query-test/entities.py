@@ -1,8 +1,7 @@
 """Deduplication: merge nodes from different sources that are the same entity.
 
-Two nodes are the same entity when they share an identifier: their ids, their xrefs
-with an IDENTITY prefix, the two ends of an exact "xref" edge, or (for genes) the gene
-symbol. Identifiers are normalised first (ORPHANET:/Orphanet: -> ORPHA:, MONDO:17310 ->
+Two nodes are the same entity when they share an identifier: their stable ids or the two ends of an explicit exact "xref" edge. Bare xrefs
+and gene symbols are retained for display, not used as equivalence assertions. Identifiers are normalised first (ORPHANET:/Orphanet: -> ORPHA:, MONDO:17310 ->
 MONDO:0017310, ...). Merging is union-find over these identifiers.
 
 Xrefs with other prefixes (ICD, MeSH, UMLS, ...) are kept for display but never merge
@@ -131,11 +130,9 @@ class Entities:
     def _identity_keys(self, node: Node) -> list[str]:
         if node.id is None:
             return [node.key()]  # free-text term: only equal to itself
-        keys = [normalize(node.id)]
-        keys += [x for x in map(normalize, node.xrefs) if _prefix(x) in IDENTITY]
-        if node.kind == "gene" and not CURIE.match(node.label):
-            keys.append(f"SYMBOL:{node.label.upper()}")  # HGNC symbols are unique ids
-        return list(dict.fromkeys(keys))
+        # Bare cross-references and matching symbols do not prove exact equivalence.
+        # Explicit source `xref` edges are handled separately by merge_xref().
+        return [normalize(node.id)]
 
     def add(self, node: Node, via: str | None = None) -> str:
         """Register a node, merging it into any entity it shares an identifier with.

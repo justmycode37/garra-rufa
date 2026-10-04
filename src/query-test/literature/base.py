@@ -27,7 +27,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import requests
-
 from sources import _local
 
 TIMEOUT = 60

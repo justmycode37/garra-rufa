@@ -340,7 +340,7 @@ class Present:
                 return None
             if names & {"has_inheritance"} or self._is_inheritance(nid, n):
                 return "genetics", "Inheritance", {}
-            if self.hpo and nid in self.hpo.name and \
+            if self.hpo and nid in self.hpo.name and\
                     _hpoa.PHENOTYPE_ROOT not in self.hpo.ancestors(nid):
                 if ONSET_ROOT in self.hpo.ancestors(nid):  # "Congenital onset", ...
                     self.onset.append(n["label"])
@@ -605,7 +605,7 @@ class Present:
         for nid, it in self.items.items():
             if it["section"] != "related" or it["group"] == "Diseases with similar symptoms":
                 continue
-            ids = [normalize(x) for x in self.g.ids(nid) if normalize(x) in h.ann] \
+            ids = [normalize(x) for x in self.g.ids(nid) if normalize(x) in h.ann]\
                 if nid in self.g.nodes else []
             theirs = {}
             for d in ids:
@@ -655,8 +655,8 @@ class Present:
             vocab |= words(it["label"])
         vocab -= {"rare", "genetic", "hereditary", "inherited", "congenital", "human"}
         for nid, it in list(self.items.items()):
-            if it["section"] in ("research", "care") and it["kind"] != "expert_centre" and \
-                    any(n.startswith("listed for a broader group") for n in it["notes"]) and \
+            if it["section"] in ("research", "care") and it["kind"] != "expert_centre" and\
+                    any(n.startswith("listed for a broader group") for n in it["notes"]) and\
                     not words(it["label"]) & vocab:
                 del self.items[nid]
 
@@ -673,8 +673,8 @@ class Present:
             keep = self.items[seen[key]]
             keep["count"] = keep.get("count", 1) + 1
             keep["sources"] = sorted(set(keep["sources"]) | set(it["sources"]))
-            urls = {l["url"] for l in keep["links"]}
-            keep["links"] += [l for l in it["links"] if l["url"] not in urls]
+            urls = {link_item["url"] for link_item in keep["links"]}
+            keep["links"] += [link_item for link_item in it["links"] if link_item["url"] not in urls]
             keep["notes"] += [n for n in it["notes"] if n not in keep["notes"]]
             keep["score"] = max(keep["score"], it["score"])
             merged[nid] = seen[key]
@@ -810,7 +810,7 @@ class Present:
                     continue
                 if it["kind"] == "disease" and words(base) <= self.vocab:
                     continue  # "Marfan syndrome type 2" -> "Marfan syndrome": the focus itself
-                if self.hpo and it["kind"] == "phenotype" and nid in self.hpo.name and \
+                if self.hpo and it["kind"] == "phenotype" and nid in self.hpo.name and\
                         self.hpo.specificity(nid) < 0.3:
                     continue  # "Abnormality of the eye" names nothing specific
                 targets.append((nid, re.compile(rf"\b{re.escape(base)}(e?s)?\b", re.I)))
@@ -843,8 +843,8 @@ class Present:
         ordered = sorted(groups.values(), key=lambda g: (
             SECTION_ORDER[g["section"]], bool(re.search(r"\bOther\b|not stated", g["label"])),
             -g["count"], g["label"]))
-        self.links = {k: l for k, l in self.links.items()
-                      if l["a"] in self.items and l["b"] in self.items}
+        self.links = {k: link_item for k, link_item in self.links.items()
+                      if link_item["a"] in self.items and link_item["b"] in self.items}
         facts = []
         if self.onset:
             facts.append(("Onset", ", ".join(dict.fromkeys(self.onset))))
@@ -921,11 +921,11 @@ def write_md(view: dict, path: Path):
     if f["synonyms"]:
         out.append(f"- **Also known as:** {'; '.join(f['synonyms'])}")
     if f["links"]:
-        out.append("- **Read more:** " + " · ".join(f"[{l['label']}]({l['url']})" for l in f["links"]))
+        out.append("- **Read more:** " + " · ".join(f"[{link_item['label']}]({link_item['url']})" for link_item in f["links"]))
     by_item = defaultdict(list)
-    for l in view["links"]:
-        by_item[l["a"]].append((l["label"], l["b"]))
-        by_item[l["b"]].append((l["label"], l["a"]))
+    for link_item in view["links"]:
+        by_item[link_item["a"]].append((link_item["label"], link_item["b"]))
+        by_item[link_item["b"]].append((link_item["label"], link_item["a"]))
     for sec in view["sections"]:
         out += ["", f"## {sec['label']}"]
         for g in (g for g in view["groups"] if g["section"] == sec["id"]):
@@ -944,7 +944,7 @@ def write_md(view: dict, path: Path):
                 out.append(f"- {name}" + (f" — {'; '.join(bits)}" if bits else ""))
     out += ["", "---", f"{len(items)} items in {len(view['groups'])} groups, "
             f"{len(view['links'])} connections between items "
-            f"({', '.join(f'{k} {v}' for k, v in Counter(l['origin'] for l in view['links']).most_common())})."]
+            f"({', '.join(f'{k} {v}' for k, v in Counter(link_item['origin'] for link_item in view['links']).most_common())})."]
     out += [f"Note: {n}" for n in view["notes"]]
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 

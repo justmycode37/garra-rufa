@@ -32,7 +32,7 @@ not counting background ones most papers share (paper_links).
 from collections import Counter, defaultdict
 from itertools import combinations
 
-from .context import CAUSAL, GENERIC, HIERARCHY, key
+from .context import CAUSAL, GENERIC, HIERARCHY
 from .extract import SOLUTION_TYPES
 
 LEVEL_W = {"clinical_trial": 0.9, "observational": 0.7, "case_report": 0.5, "animal": 0.5,
@@ -93,46 +93,23 @@ class Graph:
                 continue
             k = (s, ed["predicate"], o)
             agg = self.edges.setdefault(k, {"from": s, "relation": ed["predicate"], "to": o,
-                                            "evidence": []})
+                                            "evidence": [], "reviewed": False,
+                                            "status": "unreviewed_extraction"})
             for q in ed["evidence"]:
                 agg["evidence"].append({
                     "paper": pk, "pmid": rec["meta"].get("pmid"), "year": rec["meta"].get("year"),
                     "title": rec["meta"].get("title"), "text": rec["text_source"],
                     "level": ed["evidence_level"], "effect": ed["effect"],
                     "organism": ed["organism"], "passage": q["passage"],
+                    **{k: ed.get(k, "unknown") for k in
+                       ("direction", "polarity", "tissue", "model", "population", "variant")},
+                    "limitations": ed.get("limitations", []), "reviewed": False,
+                    "verification": q.get("verification", "legacy_unverified"),
                     "section": q.get("section"), "quote": q["quote"]})
 
     def merge_duplicates(self) -> int:
-        """Merge nodes of one kind with the same normalised label; returns how many went."""
-        groups: dict[tuple, list[dict]] = defaultdict(list)
-        for n in self.nodes.values():
-            groups[(n["kind"], key(n["label"]))].append(n)
-        alias = {}
-        d = self.profile.id
-        for (_, k), ns in groups.items():
-            if not k or len(ns) < 2:
-                continue
-            ns.sort(key=lambda n: (n["id"] != d, not n["in_source_graph"], n["how"] == "text",
-                                   -len(n["papers"]), n["id"]))
-            keep = ns[0]
-            for n in ns[1:]:
-                alias[n["id"]] = keep["id"]
-                for f in ("names", "papers"):
-                    keep[f] += [x for x in n[f] if x not in keep[f]]
-                keep["xrefs"] += [x for x in [n["id"], *n["xrefs"]]
-                                  if x not in keep["xrefs"] and x != keep["id"]]
-                del self.nodes[n["id"]]
-        if alias:
-            edges, self.edges = self.edges, {}
-            for (s, p, o), e in edges.items():
-                s, o = alias.get(s, s), alias.get(o, o)
-                if s == o:
-                    continue
-                agg = self.edges.setdefault((s, p, o), {"from": s, "relation": p, "to": o,
-                                                        "evidence": []})
-                agg["evidence"] += e["evidence"]
-            self._nb.clear()
-        return len(alias)
+        """Stable identical IDs already share a node; labels cannot prove equivalence."""
+        return 0
 
     def paper_links(self, min_shared: int = 2, common: float = 0.2) -> list[dict]:
         """Pairs of papers that support the same edges / name the same entities (at least

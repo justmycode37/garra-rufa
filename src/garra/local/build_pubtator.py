@@ -17,7 +17,6 @@ import gzip
 import re
 import shutil
 import sqlite3
-import sys
 
 from garra.local import RAW, db_path, finish, writer
 

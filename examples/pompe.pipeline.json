@@ -1,0 +1,1077 @@
+{
+  "status": "ok",
+  "query": "Pompe disease",
+  "cache_dir": "/Users/jiaqiyu/Desktop/hack-nation7/data/cache/connections/MONDO_0009290",
+  "packet": {
+    "schema_version": 1,
+    "anchor": {
+      "id": "MONDO:0009290",
+      "name": "glycogen storage disease II",
+      "equivalent_ids": [
+        "DOID:2752",
+        "GARD:0005714",
+        "ICD10CM:E74.02",
+        "MEDGEN:5340",
+        "MedDRA:10053185",
+        "NANDO:1200138",
+        "NANDO:1200825",
+        "NANDO:2200569",
+        "NCIT:C84734",
+        "NORD:1595",
+        "Orphanet:365",
+        "SCTID:274864009"
+      ]
+    },
+    "papers": [],
+    "evidence": [
+      {
+        "id": "EV_anchor_orphadata",
+        "source": "Orphadata",
+        "url": "https://api.orphadata.com",
+        "retrieved_at": "2026-10-03T23:17:36Z",
+        "locator": "ORPHA:365 phenotypes",
+        "paper_ids": [],
+        "passage": "Anchor profile includes 72 HPO terms (Monarch + Orphadata)."
+      },
+      {
+        "id": "EV_MONDO0017694_semsim",
+        "source": "Monarch Initiative",
+        "url": "https://api.monarchinitiative.org/v3/docs",
+        "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+        "locator": "semsim/search subject=MONDO:0017694",
+        "paper_ids": [],
+        "passage": "jaccard_similarity=0.8427282541188212; matched phenotypes=72."
+      },
+      {
+        "id": "EV_MONDO0017694_hp",
+        "source": "Monarch Initiative associations",
+        "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+        "retrieved_at": "2026-10-03T23:17:36Z",
+        "locator": "HPO term intersection (anchor vs candidate)",
+        "paper_ids": [],
+        "passage": "Shared HPO: HP:0000158, HP:0000183, HP:0000297, HP:0000365, HP:0001265, HP:0001270, HP:0001284, HP:0001288…"
+      },
+      {
+        "id": "EV_MONDO0017694_pathway",
+        "source": "Open Targets Platform",
+        "url": "https://platform.opentargets.org",
+        "retrieved_at": "2026-10-03T23:19:31Z",
+        "locator": "pathwayId=R-HSA-5357609",
+        "paper_ids": [],
+        "passage": "Shared Reactome pathway IDs: R-HSA-5357609, R-HSA-6798695, R-HSA-70221"
+      },
+      {
+        "id": "EV_MONDO0017694_gene",
+        "source": "Monarch Initiative / Orphadata gene associations",
+        "url": "https://api.monarchinitiative.org/v3/docs",
+        "retrieved_at": "2026-10-03T23:17:36Z",
+        "locator": "Gene symbol intersection",
+        "paper_ids": [],
+        "passage": "Shared genes: GAA"
+      },
+      {
+        "id": "EV_MONDO0012301_semsim",
+        "source": "Monarch Initiative",
+        "url": "https://api.monarchinitiative.org/v3/docs",
+        "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+        "locator": "semsim/search subject=MONDO:0012301",
+        "paper_ids": [],
+        "passage": "jaccard_similarity=0.7690819278474639; matched phenotypes=72."
+      },
+      {
+        "id": "EV_MONDO0012301_hp",
+        "source": "Monarch Initiative associations",
+        "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+        "retrieved_at": "2026-10-03T23:17:36Z",
+        "locator": "HPO term intersection (anchor vs candidate)",
+        "paper_ids": [],
+        "passage": "Shared HPO: HP:0000365, HP:0001260, HP:0001265, HP:0001270, HP:0001288, HP:0001324, HP:0002015, HP:0002093…"
+      },
+      {
+        "id": "EV_MONDO0013390_semsim",
+        "source": "Monarch Initiative",
+        "url": "https://api.monarchinitiative.org/v3/docs",
+        "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+        "locator": "semsim/search subject=MONDO:0013390",
+        "paper_ids": [],
+        "passage": "jaccard_similarity=0.7523909859740466; matched phenotypes=72."
+      },
+      {
+        "id": "EV_MONDO0013390_hp",
+        "source": "Monarch Initiative associations",
+        "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+        "retrieved_at": "2026-10-03T23:17:36Z",
+        "locator": "HPO term intersection (anchor vs candidate)",
+        "paper_ids": [],
+        "passage": "Shared HPO: HP:0001270, HP:0001284, HP:0001371, HP:0002015, HP:0002875, HP:0003236, HP:0003324, HP:0003391…"
+      },
+      {
+        "id": "EV_MONDO0019079_semsim",
+        "source": "Monarch Initiative",
+        "url": "https://api.monarchinitiative.org/v3/docs",
+        "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+        "locator": "semsim/search subject=MONDO:0019079",
+        "paper_ids": [],
+        "passage": "jaccard_similarity=0.7481657745291337; matched phenotypes=72."
+      },
+      {
+        "id": "EV_MONDO0019079_hp",
+        "source": "Monarch Initiative associations",
+        "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+        "retrieved_at": "2026-10-03T23:17:36Z",
+        "locator": "HPO term intersection (anchor vs candidate)",
+        "paper_ids": [],
+        "passage": "Shared HPO: HP:0001270, HP:0001284, HP:0001288, HP:0001308, HP:0001371, HP:0002015, HP:0002540, HP:0002650…"
+      },
+      {
+        "id": "EV_MONDO0019079_pathway",
+        "source": "Open Targets Platform",
+        "url": "https://platform.opentargets.org",
+        "retrieved_at": "2026-10-03T23:19:31Z",
+        "locator": "pathwayId=R-HSA-6798695",
+        "paper_ids": [],
+        "passage": "Shared Reactome pathway IDs: R-HSA-6798695"
+      },
+      {
+        "id": "EV_MONDO0011281_semsim",
+        "source": "Monarch Initiative",
+        "url": "https://api.monarchinitiative.org/v3/docs",
+        "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+        "locator": "semsim/search subject=MONDO:0011281",
+        "paper_ids": [],
+        "passage": "jaccard_similarity=0.7458859408354482; matched phenotypes=72."
+      },
+      {
+        "id": "EV_MONDO0011281_hp",
+        "source": "Monarch Initiative associations",
+        "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+        "retrieved_at": "2026-10-03T23:17:36Z",
+        "locator": "HPO term intersection (anchor vs candidate)",
+        "paper_ids": [],
+        "passage": "Shared HPO: HP:0000508, HP:0001260, HP:0001265, HP:0001284, HP:0001324, HP:0002015, HP:0002093, HP:0002098…"
+      }
+    ],
+    "candidates": [
+      {
+        "id": "MONDO:0017694",
+        "name": "glycogen storage disease due to acid maltase deficiency, infantile onset",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.8427282541188212,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs"
+        },
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "33 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0017694_hp",
+              "EV_MONDO0017694_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response."
+          },
+          {
+            "id": "C_pathway",
+            "relationship": "shared_pathway",
+            "statement": "At least one shared pathway annotation links causal genes in both diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0017694_pathway"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Glycogen storage disease type II (GAA)",
+            "limitations": "Pathway co-membership is not proof of identical molecular effect."
+          },
+          {
+            "id": "C_gene",
+            "relationship": "shared_gene",
+            "statement": "Shared causal gene association(s): GAA.",
+            "assessment": "hypothesis",
+            "reviewed": false,
+            "supporting_evidence_ids": [
+              "EV_MONDO0017694_gene"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Gene overlap alone does not establish a supported biological connection.",
+            "limitations": "Variants and molecular effects may differ."
+          }
+        ],
+        "assets": []
+      },
+      {
+        "id": "MONDO:0012301",
+        "name": "mitochondrial DNA depletion syndrome, myopathic form",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.7690819278474639,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs"
+        },
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "22 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0012301_hp",
+              "EV_MONDO0012301_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response."
+          }
+        ],
+        "assets": []
+      },
+      {
+        "id": "MONDO:0013390",
+        "name": "autosomal recessive limb-girdle muscular dystrophy type 2Q",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.7523909859740466,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs"
+        },
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "13 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0013390_hp",
+              "EV_MONDO0013390_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response."
+          }
+        ],
+        "assets": []
+      },
+      {
+        "id": "MONDO:0019079",
+        "name": "proximal spinal muscular atrophy",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.7481657745291337,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs"
+        },
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "12 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0019079_hp",
+              "EV_MONDO0019079_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response."
+          },
+          {
+            "id": "C_pathway",
+            "relationship": "shared_pathway",
+            "statement": "At least one shared pathway annotation links causal genes in both diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0019079_pathway"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Neutrophil degranulation",
+            "limitations": "Pathway co-membership is not proof of identical molecular effect."
+          }
+        ],
+        "assets": []
+      },
+      {
+        "id": "MONDO:0011281",
+        "name": "congenital myasthenic syndrome 5",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.7458859408354482,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs"
+        },
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "16 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0011281_hp",
+              "EV_MONDO0011281_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response."
+          }
+        ],
+        "assets": []
+      }
+    ],
+    "fetch_meta": {
+      "query": "Pompe disease",
+      "cache_dir": "/Users/jiaqiyu/Desktop/hack-nation7/data/cache/connections/MONDO_0009290",
+      "built_at": "2026-10-03T23:19:31Z",
+      "anchor_hpo_count": 72,
+      "orpha": "ORPHA:365"
+    }
+  },
+  "connections": {
+    "schema_version": 1,
+    "status": "ok",
+    "anchor": {
+      "id": "MONDO:0009290",
+      "name": "glycogen storage disease II",
+      "equivalent_ids": [
+        "DOID:2752",
+        "GARD:0005714",
+        "ICD10CM:E74.02",
+        "MEDGEN:5340",
+        "MedDRA:10053185",
+        "NANDO:1200138",
+        "NANDO:1200825",
+        "NANDO:2200569",
+        "NCIT:C84734",
+        "NORD:1595",
+        "Orphanet:365",
+        "SCTID:274864009"
+      ]
+    },
+    "demo": false,
+    "min_score": 50.0,
+    "cards": [
+      {
+        "id": "MONDO:0017694",
+        "name": "glycogen storage disease due to acid maltase deficiency, infantile onset",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.8427282541188212,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs",
+          "display_score": 84.3,
+          "display_label": "84.3/100",
+          "threshold_applied": true,
+          "interpretation": "Phenotype similarity, not mechanism certainty or treatment probability."
+        },
+        "why_shown": "Ranked by Monarch Initiative jaccard_similarity; meets the 50/100 discovery filter.",
+        "biological_status": "supported_relationship",
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "33 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0017694_hp",
+              "EV_MONDO0017694_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response.",
+            "status": "supported"
+          },
+          {
+            "id": "C_pathway",
+            "relationship": "shared_pathway",
+            "statement": "At least one shared pathway annotation links causal genes in both diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0017694_pathway"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Glycogen storage disease type II (GAA)",
+            "limitations": "Pathway co-membership is not proof of identical molecular effect.",
+            "status": "supported"
+          },
+          {
+            "id": "C_gene",
+            "relationship": "shared_gene",
+            "statement": "Shared causal gene association(s): GAA.",
+            "assessment": "hypothesis",
+            "reviewed": false,
+            "supporting_evidence_ids": [
+              "EV_MONDO0017694_gene"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Gene overlap alone does not establish a supported biological connection.",
+            "limitations": "Variants and molecular effects may differ.",
+            "status": "hypothesis"
+          }
+        ],
+        "assets": [],
+        "papers": [],
+        "evidence": [
+          {
+            "id": "EV_MONDO0017694_gene",
+            "source": "Monarch Initiative / Orphadata gene associations",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "retrieved_at": "2026-10-03T23:17:36Z",
+            "locator": "Gene symbol intersection",
+            "paper_ids": [],
+            "passage": "Shared genes: GAA"
+          },
+          {
+            "id": "EV_MONDO0017694_hp",
+            "source": "Monarch Initiative associations",
+            "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+            "retrieved_at": "2026-10-03T23:17:36Z",
+            "locator": "HPO term intersection (anchor vs candidate)",
+            "paper_ids": [],
+            "passage": "Shared HPO: HP:0000158, HP:0000183, HP:0000297, HP:0000365, HP:0001265, HP:0001270, HP:0001284, HP:0001288…"
+          },
+          {
+            "id": "EV_MONDO0017694_pathway",
+            "source": "Open Targets Platform",
+            "url": "https://platform.opentargets.org",
+            "retrieved_at": "2026-10-03T23:19:31Z",
+            "locator": "pathwayId=R-HSA-5357609",
+            "paper_ids": [],
+            "passage": "Shared Reactome pathway IDs: R-HSA-5357609, R-HSA-6798695, R-HSA-70221"
+          },
+          {
+            "id": "EV_MONDO0017694_semsim",
+            "source": "Monarch Initiative",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+            "locator": "semsim/search subject=MONDO:0017694",
+            "paper_ids": [],
+            "passage": "jaccard_similarity=0.8427282541188212; matched phenotypes=72."
+          }
+        ],
+        "warnings": [
+          "Compatible molecular effect is not established by the reviewed claims."
+        ]
+      },
+      {
+        "id": "MONDO:0012301",
+        "name": "mitochondrial DNA depletion syndrome, myopathic form",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.7690819278474639,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs",
+          "display_score": 76.9,
+          "display_label": "76.9/100",
+          "threshold_applied": true,
+          "interpretation": "Phenotype similarity, not mechanism certainty or treatment probability."
+        },
+        "why_shown": "Ranked by Monarch Initiative jaccard_similarity; meets the 50/100 discovery filter.",
+        "biological_status": "supported_relationship",
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "22 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0012301_hp",
+              "EV_MONDO0012301_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response.",
+            "status": "supported"
+          }
+        ],
+        "assets": [],
+        "papers": [],
+        "evidence": [
+          {
+            "id": "EV_MONDO0012301_hp",
+            "source": "Monarch Initiative associations",
+            "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+            "retrieved_at": "2026-10-03T23:17:36Z",
+            "locator": "HPO term intersection (anchor vs candidate)",
+            "paper_ids": [],
+            "passage": "Shared HPO: HP:0000365, HP:0001260, HP:0001265, HP:0001270, HP:0001288, HP:0001324, HP:0002015, HP:0002093…"
+          },
+          {
+            "id": "EV_MONDO0012301_semsim",
+            "source": "Monarch Initiative",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+            "locator": "semsim/search subject=MONDO:0012301",
+            "paper_ids": [],
+            "passage": "jaccard_similarity=0.7690819278474639; matched phenotypes=72."
+          }
+        ],
+        "warnings": [
+          "Compatible molecular effect is not established by the reviewed claims."
+        ]
+      },
+      {
+        "id": "MONDO:0013390",
+        "name": "autosomal recessive limb-girdle muscular dystrophy type 2Q",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.7523909859740466,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs",
+          "display_score": 75.2,
+          "display_label": "75.2/100",
+          "threshold_applied": true,
+          "interpretation": "Phenotype similarity, not mechanism certainty or treatment probability."
+        },
+        "why_shown": "Ranked by Monarch Initiative jaccard_similarity; meets the 50/100 discovery filter.",
+        "biological_status": "supported_relationship",
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "13 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0013390_hp",
+              "EV_MONDO0013390_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response.",
+            "status": "supported"
+          }
+        ],
+        "assets": [],
+        "papers": [],
+        "evidence": [
+          {
+            "id": "EV_MONDO0013390_hp",
+            "source": "Monarch Initiative associations",
+            "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+            "retrieved_at": "2026-10-03T23:17:36Z",
+            "locator": "HPO term intersection (anchor vs candidate)",
+            "paper_ids": [],
+            "passage": "Shared HPO: HP:0001270, HP:0001284, HP:0001371, HP:0002015, HP:0002875, HP:0003236, HP:0003324, HP:0003391…"
+          },
+          {
+            "id": "EV_MONDO0013390_semsim",
+            "source": "Monarch Initiative",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+            "locator": "semsim/search subject=MONDO:0013390",
+            "paper_ids": [],
+            "passage": "jaccard_similarity=0.7523909859740466; matched phenotypes=72."
+          }
+        ],
+        "warnings": [
+          "Compatible molecular effect is not established by the reviewed claims."
+        ]
+      },
+      {
+        "id": "MONDO:0019079",
+        "name": "proximal spinal muscular atrophy",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.7481657745291337,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs",
+          "display_score": 74.8,
+          "display_label": "74.8/100",
+          "threshold_applied": true,
+          "interpretation": "Phenotype similarity, not mechanism certainty or treatment probability."
+        },
+        "why_shown": "Ranked by Monarch Initiative jaccard_similarity; meets the 50/100 discovery filter.",
+        "biological_status": "supported_relationship",
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "12 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0019079_hp",
+              "EV_MONDO0019079_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response.",
+            "status": "supported"
+          },
+          {
+            "id": "C_pathway",
+            "relationship": "shared_pathway",
+            "statement": "At least one shared pathway annotation links causal genes in both diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0019079_pathway"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Neutrophil degranulation",
+            "limitations": "Pathway co-membership is not proof of identical molecular effect.",
+            "status": "supported"
+          }
+        ],
+        "assets": [],
+        "papers": [],
+        "evidence": [
+          {
+            "id": "EV_MONDO0019079_hp",
+            "source": "Monarch Initiative associations",
+            "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+            "retrieved_at": "2026-10-03T23:17:36Z",
+            "locator": "HPO term intersection (anchor vs candidate)",
+            "paper_ids": [],
+            "passage": "Shared HPO: HP:0001270, HP:0001284, HP:0001288, HP:0001308, HP:0001371, HP:0002015, HP:0002540, HP:0002650…"
+          },
+          {
+            "id": "EV_MONDO0019079_pathway",
+            "source": "Open Targets Platform",
+            "url": "https://platform.opentargets.org",
+            "retrieved_at": "2026-10-03T23:19:31Z",
+            "locator": "pathwayId=R-HSA-6798695",
+            "paper_ids": [],
+            "passage": "Shared Reactome pathway IDs: R-HSA-6798695"
+          },
+          {
+            "id": "EV_MONDO0019079_semsim",
+            "source": "Monarch Initiative",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+            "locator": "semsim/search subject=MONDO:0019079",
+            "paper_ids": [],
+            "passage": "jaccard_similarity=0.7481657745291337; matched phenotypes=72."
+          }
+        ],
+        "warnings": [
+          "Compatible molecular effect is not established by the reviewed claims."
+        ]
+      },
+      {
+        "id": "MONDO:0011281",
+        "name": "congenital myasthenic syndrome 5",
+        "similarity": {
+          "provider": "Monarch Initiative",
+          "metric": "jaccard_similarity",
+          "value": 0.7458859408354482,
+          "release": "unknown",
+          "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+          "source_url": "https://api.monarchinitiative.org/v3/docs",
+          "display_score": 74.6,
+          "display_label": "74.6/100",
+          "threshold_applied": true,
+          "interpretation": "Phenotype similarity, not mechanism certainty or treatment probability."
+        },
+        "why_shown": "Ranked by Monarch Initiative jaccard_similarity; meets the 50/100 discovery filter.",
+        "biological_status": "supported_relationship",
+        "coverage": {
+          "phenotype": "available",
+          "pathway": "available",
+          "molecular_effect": "unknown"
+        },
+        "claims": [
+          {
+            "id": "C_phenotype",
+            "relationship": "shared_phenotype",
+            "statement": "16 shared HPO phenotype term(s) between diseases.",
+            "assessment": "supported",
+            "reviewed": true,
+            "supporting_evidence_ids": [
+              "EV_MONDO0011281_hp",
+              "EV_MONDO0011281_semsim"
+            ],
+            "contradicting_evidence_ids": [],
+            "context": "Derived from Monarch disease–phenotype associations.",
+            "limitations": "Phenotype overlap does not prove shared mechanism or treatment response.",
+            "status": "supported"
+          }
+        ],
+        "assets": [],
+        "papers": [],
+        "evidence": [
+          {
+            "id": "EV_MONDO0011281_hp",
+            "source": "Monarch Initiative associations",
+            "url": "https://api-v3.monarchinitiative.org/v3/api/association?subject=MONDO:0009290",
+            "retrieved_at": "2026-10-03T23:17:36Z",
+            "locator": "HPO term intersection (anchor vs candidate)",
+            "paper_ids": [],
+            "passage": "Shared HPO: HP:0000508, HP:0001260, HP:0001265, HP:0001284, HP:0001324, HP:0002015, HP:0002093, HP:0002098…"
+          },
+          {
+            "id": "EV_MONDO0011281_semsim",
+            "source": "Monarch Initiative",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "retrieved_at": "2026-10-03T23:17:44.351902+00:00",
+            "locator": "semsim/search subject=MONDO:0011281",
+            "paper_ids": [],
+            "passage": "jaccard_similarity=0.7458859408354482; matched phenotypes=72."
+          }
+        ],
+        "warnings": [
+          "Compatible molecular effect is not established by the reviewed claims."
+        ]
+      }
+    ],
+    "omitted": [],
+    "message": ""
+  },
+  "explanation": {
+    "status": "ok",
+    "query": "Pompe disease",
+    "journey": {
+      "status": "ambiguous",
+      "query": "Pompe disease",
+      "resolve": {
+        "status": "ambiguous",
+        "query": "Pompe disease",
+        "matches": [
+          {
+            "type": "disease",
+            "disease_key": "MONDO:0009290",
+            "name": "glycogen storage disease II",
+            "namespace": "MONDO",
+            "match": "Pompe disease"
+          },
+          {
+            "type": "disease",
+            "disease_key": "MONDO:0009291",
+            "name": "glycogen storage disease III",
+            "namespace": "MONDO",
+            "match": "Pompe disease"
+          },
+          {
+            "type": "disease",
+            "disease_key": "MONDO:0017694",
+            "name": "glycogen storage disease due to acid maltase deficiency, infantile onset",
+            "namespace": "MONDO",
+            "match": "Pompe disease"
+          },
+          {
+            "type": "disease",
+            "disease_key": "MONDO:0018485",
+            "name": "glycogen storage disease due to acid maltase deficiency, late-onset",
+            "namespace": "MONDO",
+            "match": "Pompe disease"
+          }
+        ],
+        "message": "Multiple entities match. Choose a stable disease or gene identifier before continuing."
+      },
+      "steps": []
+    },
+    "explanation": {
+      "status": "ok",
+      "source_id": "garra.explain",
+      "publisher": "garra-rufa (deterministic fallback)",
+      "license": "n/a",
+      "url": "local",
+      "retrieved_at": "2026-10-03T23:19:31Z",
+      "query": "Pompe disease",
+      "narrative": {
+        "mode": "fallback",
+        "title": "Atlas path for Pompe disease",
+        "summary_for_family": "We could not assemble a supported path from the current atlas coverage.",
+        "sections": [
+          {
+            "heading": "What we found",
+            "body": "We could not assemble a supported path from the current atlas coverage.",
+            "citations": []
+          }
+        ],
+        "uncertainties": [
+          "Phenotype (HPO) overlap not loaded in this atlas build",
+          "Pathway overlap not loaded in this atlas build"
+        ],
+        "next_step_this_week": "Rebuild the atlas after phenotype and pathway files are fetched."
+      },
+      "evidence": {
+        "query": "Pompe disease",
+        "generated_at": "2026-10-03T23:19:31Z",
+        "citations": [
+          {
+            "id": "E1",
+            "kind": "coverage_gap",
+            "label": "Phenotype (HPO) overlap not loaded in this atlas build",
+            "source": "ingest_status",
+            "url": "",
+            "detail": {}
+          },
+          {
+            "id": "E2",
+            "kind": "coverage_gap",
+            "label": "Pathway overlap not loaded in this atlas build",
+            "source": "ingest_status",
+            "url": "",
+            "detail": {}
+          },
+          {
+            "id": "E3",
+            "kind": "connections_anchor",
+            "label": "Live API anchor: glycogen storage disease II (MONDO:0009290)",
+            "source": "garra.packet (Monarch semsim profile)",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "detail": {
+              "equivalent_ids": [
+                "DOID:2752",
+                "GARD:0005714",
+                "ICD10CM:E74.02",
+                "MEDGEN:5340",
+                "MedDRA:10053185",
+                "NANDO:1200138",
+                "NANDO:1200825",
+                "NANDO:2200569",
+                "NCIT:C84734",
+                "NORD:1595",
+                "Orphanet:365",
+                "SCTID:274864009"
+              ]
+            }
+          },
+          {
+            "id": "E4",
+            "kind": "connection_card",
+            "label": "glycogen storage disease due to acid maltase deficiency, infantile onset — Monarch Initiative jaccard_similarity 84.3/100; status supported_relationship",
+            "source": "garra.connections",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "detail": {
+              "disease_id": "MONDO:0017694",
+              "warnings": [
+                "Compatible molecular effect is not established by the reviewed claims."
+              ],
+              "claims": [
+                {
+                  "relationship": "shared_phenotype",
+                  "statement": "33 shared HPO phenotype term(s) between diseases.",
+                  "status": "supported"
+                },
+                {
+                  "relationship": "shared_pathway",
+                  "statement": "At least one shared pathway annotation links causal genes in both diseases.",
+                  "status": "supported"
+                },
+                {
+                  "relationship": "shared_gene",
+                  "statement": "Shared causal gene association(s): GAA.",
+                  "status": "hypothesis"
+                }
+              ]
+            }
+          },
+          {
+            "id": "E5",
+            "kind": "connection_card",
+            "label": "mitochondrial DNA depletion syndrome, myopathic form — Monarch Initiative jaccard_similarity 76.9/100; status supported_relationship",
+            "source": "garra.connections",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "detail": {
+              "disease_id": "MONDO:0012301",
+              "warnings": [
+                "Compatible molecular effect is not established by the reviewed claims."
+              ],
+              "claims": [
+                {
+                  "relationship": "shared_phenotype",
+                  "statement": "22 shared HPO phenotype term(s) between diseases.",
+                  "status": "supported"
+                }
+              ]
+            }
+          },
+          {
+            "id": "E6",
+            "kind": "connection_card",
+            "label": "autosomal recessive limb-girdle muscular dystrophy type 2Q — Monarch Initiative jaccard_similarity 75.2/100; status supported_relationship",
+            "source": "garra.connections",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "detail": {
+              "disease_id": "MONDO:0013390",
+              "warnings": [
+                "Compatible molecular effect is not established by the reviewed claims."
+              ],
+              "claims": [
+                {
+                  "relationship": "shared_phenotype",
+                  "statement": "13 shared HPO phenotype term(s) between diseases.",
+                  "status": "supported"
+                }
+              ]
+            }
+          },
+          {
+            "id": "E7",
+            "kind": "connection_card",
+            "label": "proximal spinal muscular atrophy — Monarch Initiative jaccard_similarity 74.8/100; status supported_relationship",
+            "source": "garra.connections",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "detail": {
+              "disease_id": "MONDO:0019079",
+              "warnings": [
+                "Compatible molecular effect is not established by the reviewed claims."
+              ],
+              "claims": [
+                {
+                  "relationship": "shared_phenotype",
+                  "statement": "12 shared HPO phenotype term(s) between diseases.",
+                  "status": "supported"
+                },
+                {
+                  "relationship": "shared_pathway",
+                  "statement": "At least one shared pathway annotation links causal genes in both diseases.",
+                  "status": "supported"
+                }
+              ]
+            }
+          },
+          {
+            "id": "E8",
+            "kind": "connection_card",
+            "label": "congenital myasthenic syndrome 5 — Monarch Initiative jaccard_similarity 74.6/100; status supported_relationship",
+            "source": "garra.connections",
+            "url": "https://api.monarchinitiative.org/v3/docs",
+            "detail": {
+              "disease_id": "MONDO:0011281",
+              "warnings": [
+                "Compatible molecular effect is not established by the reviewed claims."
+              ],
+              "claims": [
+                {
+                  "relationship": "shared_phenotype",
+                  "statement": "16 shared HPO phenotype term(s) between diseases.",
+                  "status": "supported"
+                }
+              ]
+            }
+          }
+        ],
+        "facts": [
+          {
+            "cite_id": "E1",
+            "kind": "coverage_gap",
+            "label": "Phenotype (HPO) overlap not loaded in this atlas build"
+          },
+          {
+            "cite_id": "E2",
+            "kind": "coverage_gap",
+            "label": "Pathway overlap not loaded in this atlas build"
+          },
+          {
+            "cite_id": "E3",
+            "kind": "connections_anchor",
+            "label": "glycogen storage disease II"
+          },
+          {
+            "cite_id": "E4",
+            "kind": "connection_card",
+            "label": "glycogen storage disease due to acid maltase deficiency, infantile onset"
+          },
+          {
+            "cite_id": "E5",
+            "kind": "connection_card",
+            "label": "mitochondrial DNA depletion syndrome, myopathic form"
+          },
+          {
+            "cite_id": "E6",
+            "kind": "connection_card",
+            "label": "autosomal recessive limb-girdle muscular dystrophy type 2Q"
+          },
+          {
+            "cite_id": "E7",
+            "kind": "connection_card",
+            "label": "proximal spinal muscular atrophy"
+          },
+          {
+            "cite_id": "E8",
+            "kind": "connection_card",
+            "label": "congenital myasthenic syndrome 5"
+          }
+        ],
+        "rules": [
+          "Only cite using the provided citation ids (E1, E2, ...).",
+          "Do not invent trials, grants, researchers, or URLs.",
+          "State uncertainties when warnings or coverage gaps are present.",
+          "Write for a patient group leader, not a physician.",
+          "Connection cards use live Monarch phenotype similarity plus sourced pathway/gene claims; they do not replace local atlas neighbors or prove treatment response."
+        ]
+      },
+      "journey_status": "ambiguous",
+      "journey_message": null
+    }
+  },
+  "errors": []
+}

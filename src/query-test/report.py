@@ -13,7 +13,6 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import networkx as nx
-
 import quality
 from entities import IDENTITY
 from sources import Edge
@@ -258,7 +257,7 @@ def write_report(g: nx.MultiDiGraph, edges: list[Edge], ents, start, stats: Stat
             warns["Non-human / taxon node (should have been filtered)"].append(f"{lab} `{n}`")
         if lab.lower().startswith("obsolete"):
             warns["Obsolete term"].append(f"{lab} `{n}`")
-        if d["kind"] == "gene" and not n.split(":")[0] in ("HGNC", "NCBIGene", "ENSEMBL", "SYMBOL"):
+        if d["kind"] == "gene" and n.split(":")[0] not in ("HGNC", "NCBIGene", "ENSEMBL", "SYMBOL"):
             warns["Gene node with non-gene id"].append(f"{lab} `{n}`")
         if d["kind"] in ("term", "unknown"):
             warns["Untyped node (kind term/unknown)"].append(f"{lab} `{n}`")

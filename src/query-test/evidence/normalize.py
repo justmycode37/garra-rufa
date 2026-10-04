@@ -10,8 +10,7 @@ In order, first hit wins:
                  drug -> CHEBI                           process -> GO
                genes: HGNC REST by symbol / alias symbol
   3. pubtator  the paper's PubTator annotations with that name (MeSH / NCBI Gene ids)
-  4. fuzzy     OLS non-exact search, top hit only when its words match the name
-               (Jaccard >= FUZZY_MIN)
+  Ambiguous names and fuzzy matches never establish identity.
   5. text      "text:<type>:<slug>" (solutions such as model systems or outcome measures
                mostly live here; merged across papers by name)
 Diseases resolved to MONDO also get their Orphanet / OMIM / MeSH xrefs (OLS term record).
@@ -77,10 +76,14 @@ class Normalizer(Provider):
         kinds = KINDS.get(etype)
         # 1. graph
         if kinds:
-            for n in names:
-                for nid, label, kind in self.profile.index.get(key(n), []):
-                    if kind in kinds:
-                        return {"id": nid, "label": label, "how": "graph", "xrefs": []}
+            matches = {(nid, label) for n in names
+                       for nid, label, kind in self.profile.index.get(key(n), []) if kind in kinds}
+            if len({nid for nid, _ in matches}) == 1:
+                nid, label = sorted(matches)[0]
+                return {"id": nid, "label": label, "how": "graph", "xrefs": []}
+            if matches:
+                return {"id": f"text:{etype}:{slug(name)}", "label": name,
+                        "how": "text", "xrefs": [], "reason": "ambiguous_graph_identity"}
         # 2. ontology exact (also the singular: "fibroblasts" -> CL "fibroblast")
         singular = [n[:-1] for n in names if n.endswith("s") and not n.endswith("ss")
                     and len(n) > 4 and etype != "gene"]
@@ -97,25 +100,24 @@ class Normalizer(Provider):
                     continue
                 cid = db if ":" in db else (f"NCBIGene:{db}" if want == "Gene" else f"MESH:{db}")
                 return {"id": cid, "label": a["name"], "how": "pubtator", "xrefs": []}
-        # 4. fuzzy ontology
-        if etype != "gene":
-            hit = self._ols(name, etype, exact=False)
-            if hit:
-                return hit
         return {"id": f"text:{etype}:{slug(name)}", "label": name, "how": "text", "xrefs": []}
 
     # -- services ------------------------------------------------------------------
     def _ols(self, name: str, etype: str, exact: bool) -> dict | None:
         for ont in ONTOLOGIES.get(etype, []):
             params = {"q": name, "ontology": ont, "type": "class", "rows": 3,
-                      "queryFields": "label,synonym", "fieldList": "obo_id,label",
+                      "queryFields": "label,synonym", "fieldList": "obo_id,label,synonym",
                       "obsoletes": "false", "exact": "true" if exact else "false"}
             try:
                 docs = self.fetch_json(f"{OLS}/search", params)["response"]["docs"]
             except Exception as e:
                 self.fail(f"ols {ont} {name}", e)
                 continue
-            for d in docs[:1 if exact else 3]:
+            verified = [d for d in docs if key(name) in
+                        {key(x) for x in [d.get("label", ""), *(d.get("synonym") or [])]}]
+            if len({d.get("obo_id") for d in verified if d.get("obo_id")}) != 1:
+                continue
+            for d in verified[:1]:
                 cid, label = d.get("obo_id"), d.get("label") or ""
                 if not cid or ":" not in cid:
                     continue
