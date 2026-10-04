@@ -207,6 +207,48 @@ def truth_keys(case: Case) -> frozenset[str]:
     return keys_of({"id": case.disease_id, "name": case.disease_label})
 
 
+@lru_cache(maxsize=None)
+def mondo_family(mondo: str, depth: int = 1) -> frozenset[str]:
+    """MONDO is_a parents and children of `mondo` up to `depth` steps (local ontology
+    index; empty without it)."""
+    db = resolve._db("ontology")
+    if db is None:
+        return frozenset()
+    out, todo = set(), {mondo}
+    for _ in range(depth):
+        nxt = set()
+        for m in todo:
+            nxt |= {r[0] for r in db.execute(
+                "SELECT obj FROM edge WHERE subj = ? AND rel = 'is_a' AND obj LIKE 'MONDO:%'",
+                (m,))}
+            nxt |= {r[0] for r in db.execute(
+                "SELECT subj FROM edge WHERE obj = ? AND rel = 'is_a' AND subj LIKE 'MONDO:%'",
+                (m,))}
+        out |= nxt
+        todo = nxt
+    return frozenset(out - {mondo})
+
+
+@lru_cache(maxsize=None)
+def mondo_descendants(mondo: str, depth: int = 1) -> frozenset[str]:
+    db = resolve._db("ontology")
+    if db is None:
+        return frozenset()
+    out, todo = set(), {mondo}
+    for _ in range(depth):
+        todo = {r[0] for m in todo for r in db.execute(
+            "SELECT subj FROM edge WHERE obj = ? AND rel = 'is_a' AND subj LIKE 'MONDO:%'",
+            (m,))} - out
+        out |= todo
+    return frozenset(out)
+
+
+def related_keys(truth: frozenset[str]) -> frozenset[str]:
+    """The diagnosis' direct MONDO parents and children: a ranking that names "glycogen
+    storage disease II" for a patient with "Pompe disease, late-onset" is close."""
+    return frozenset().union(*(mondo_family(m) for m in truth if m.startswith("MONDO:")))
+
+
 def find_rank(ranking: list[dict], truth: frozenset[str]) -> int | None:
     """1-based rank of the first entry that is the diagnosis (shared OMIM / ORPHA / MONDO
     id or folded name), else None."""
@@ -309,6 +351,7 @@ def rank_case(case: Case, hpo, input: str = "hpo", top: int = 30, holdout_on: bo
         ranking = resolve.rank(Interpretation(case.id, parts), top, hpo=hpo)
         res["hidden"] = hidden
         res["rank"] = find_rank(ranking, truth)
+        res["rank_related"] = find_rank(ranking, truth | related_keys(truth))
         if ranking:
             t1 = ranking[0]
             res["top1"] = f"{t1['name']} ({t1['id']})"
@@ -339,6 +382,7 @@ def summarize(results: list[dict], ks=(1, 3, 10)) -> dict:
                  and not r.get("truth_contradicted")]
     return {"cases": len(rs), "diseases": len(by), "skipped": len(results) - len(rs),
             "micro": stats(rs), "macro": macro,
+            "top10_related": sum((r.get("rank_related") or 99) <= 10 for r in rs) / len(rs),
             "top1_contradicted": sum(bool(r.get("top1_contradicted")) for r in rs) / len(rs),
             "truth_contradicted": sum(bool(r.get("truth_contradicted")) for r in rs) / len(rs),
             "rescuable": len(rescuable),
@@ -476,6 +520,8 @@ def profile_parts(view: dict, data: dict) -> tuple[dict[str, float | None], set[
 def evaluate_run(path: Path, cases: list[Case], hpo) -> list[dict]:
     """Score every focus disease of a main.py graph JSON that has patients."""
     data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or "focus" not in data or "nodes" not in data:
+        return []  # not a main.py graph (papers / kg / compare JSON)
     from entities import normalize
     nodes = {n["id"]: n for n in data["nodes"]}
     by_key: dict[str, list[Case]] = defaultdict(list)
@@ -487,8 +533,18 @@ def evaluate_run(path: Path, cases: list[Case], hpo) -> list[dict]:
         if f not in nodes:
             continue
         ids = {normalize(x) for x in [f, *(nodes[f].get("xrefs") or ())]}
-        pts = list({c.id + c.disease_id: c for k in ids for c in by_key.get(k, ())}.values())
-        row = {"run": str(path), "focus": f, "label": nodes[f]["label"], "patients": len(pts)}
+        own = {c.id + c.disease_id: c for k in ids for c in by_key.get(k, ())}
+        # patients of a direct subtype (MONDO is_a child) also describe the disease
+        # (from the node's own id only: its xrefs may be over-merged, see "mondo_ids")
+        sub = {c.id + c.disease_id: c for k in mondo_descendants(normalize(f))
+               for c in by_key.get(k, ())} if f.startswith("MONDO:") else {}
+        pts = list({**sub, **own}.values())
+        row = {"run": str(path), "focus": f, "label": nodes[f]["label"], "patients": len(pts),
+               "subtype_patients": len(set(sub) - set(own)),
+               # one disease has one MONDO id; more means entities.py merged diseases
+               "mondo_ids": sorted(i for i in ids if i.startswith("MONDO:")),
+               "diagnoses": Counter(f"{c.disease_label} ({c.disease_id})"
+                                    for c in pts).most_common()}
         q = data.get("query")
         if q and q.get("ranking"):  # symptom / gene run: where this focus was ranked
             row["ranked"] = next((i for i, r in enumerate(q["ranking"], 1)
@@ -517,6 +573,8 @@ def print_rank(summary: dict, results: list[dict], worst: int = 15):
     for name, s in (("patients", mi), ("diseases", ma)):
         print(f"  {name:9s} {_pct(s['top1'])} {_pct(s['top3'])} {_pct(s['top10'])}  "
               f"{s['mrr']:.3f}")
+    print(f"top-10 counting a MONDO parent / subtype of the diagnosis: "
+          f"{_pct(summary['top10_related'])}")
     print(f"top-1 contradicted by an excluded term: {_pct(summary['top1_contradicted'])}; "
           f"diagnosis contradicted: {_pct(summary['truth_contradicted'])}; "
           f"misses an excluded-aware score could fix: {summary['rescuable']}")
@@ -535,10 +593,15 @@ def print_profile(rows: list[dict]):
         if "ranked" in r:
             head += f", ranked {r['ranked']}"
         print(head)
+        if len(r.get("mondo_ids", ())) > 1:
+            print(f"  WARNING: the node carries {len(r['mondo_ids'])} MONDO ids (over-merged "
+                  f"entity?): {', '.join(r['mondo_ids'][:6])}"
+                  + (" ..." if len(r["mondo_ids"]) > 6 else ""))
         if not r["patients"]:
             print("  no phenopacket-store patients")
             continue
-        print(f"  {r['patients']} patients, {r['profile_symptoms']} profile symptoms")
+        print(f"  {r['patients']} patients, {r['profile_symptoms']} profile symptoms; "
+              "diagnoses: " + "; ".join(f"{d} x{k}" for d, k in r["diagnoses"]))
         print(f"  feature recall {_pct(r['feature_recall'])} strict, "
               f"{_pct(r['feature_recall_lenient'])} lenient; common features "
               f"{_pct(r['common_recall'])}; supported {_pct(r['supported'])}")
