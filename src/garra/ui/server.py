@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from garra.community import CommunityCatalog
 from garra.discovery import DiscoveryEngine
+from garra.research.service import ResearchService, ResearchUnavailable
 
 from .catalog import get_catalog
 from .monarch import UpstreamError
@@ -16,10 +17,11 @@ from .service import ConnectionService, InputError
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, service, origins, communities, discovery, **kwargs):
+    def __init__(self, *args, service, origins, communities, discovery, research, **kwargs):
         self.service, self.origins = service, origins
         self.communities = communities
         self.discovery = discovery
+        self.research = research
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -71,6 +73,9 @@ class Handler(BaseHTTPRequestHandler):
                         "health": "/health",
                         "symptom_menu": "/api/body-map",
                         "communities": "/api/communities",
+                        "research": "/api/research/search",
+                        "papers": "/api/research/papers",
+                        "atlas": "/api/research/atlas",
                         "unified_search": {"method": "POST", "path": "/api/search"},
                         "clusters": "/api/clusters",
                         "explorer": "/explore",
@@ -109,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
                 else self._reply(404, {"error": "not_found"})
             )
         if path == "/health":
-            return self._reply(200, {"status": "ok", "service": "garra-ui-bridge"})
+            return self._reply(200, {"status": "ok", "service": "garra-ui-bridge", "research": True})
         if path == "/api/body-map":
             return self._reply(200, get_catalog())
         if path == "/api/communities":
@@ -133,7 +138,13 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allowed():
             return self._reply(403, {"error": "origin_not_allowed"})
         path = urlsplit(self.path).path
-        if path not in {"/api/connections/search", "/api/search"}:
+        if path not in {
+            "/api/connections/search",
+            "/api/search",
+            "/api/research/search",
+            "/api/research/papers",
+            "/api/research/atlas",
+        }:
             return self._reply(404, {"error": "not_found"})
         if self.headers.get_content_type() != "application/json":
             return self._reply(415, {"error": "content_type_must_be_application_json"})
@@ -155,8 +166,12 @@ class Handler(BaseHTTPRequestHandler):
                         card["cluster_ids"] = self.discovery.memberships.get(card["id"], [])
                 else:
                     result = self.discovery.search(body)
-            else:
+            elif path == "/api/connections/search":
                 result = self.service.search(body)
+            elif path.endswith("/atlas"):
+                result = self.research.atlas(body)
+            else:
+                result = self.research.search(body, papers=path.endswith("/papers"))
         except (InputError, json.JSONDecodeError, UnicodeError) as exc:
             return self._reply(400, {"error": "invalid_request", "message": str(exc)})
         except UpstreamError as exc:
@@ -164,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
                 504 if exc.timeout else 502,
                 {"error": "similarity_unavailable", "message": str(exc), "retryable": True},
             )
+        except ResearchUnavailable as exc:
+            return self._reply(503, {"error": "research_unavailable", "message": str(exc), "retryable": True})
         except TimeoutError:
             return self._reply(408, {"error": "request_timeout"})
         except Exception:
@@ -179,6 +196,7 @@ def create_server(
     service=None,
     communities=None,
     discovery=None,
+    research=None,
     origins=(
         "http://localhost:5173",
         "http://localhost:3000",
@@ -189,6 +207,7 @@ def create_server(
     handler = partial(
         Handler,
         service=service or ConnectionService(),
+        research=research or ResearchService(),
         origins=set(origins),
         communities=communities if communities is not None else CommunityCatalog(),
         discovery=discovery if discovery is not None else DiscoveryEngine(),

@@ -4,6 +4,33 @@ Rare-disease research atlas for Hack Nation.
 
 Approved downloaders for the rare-disease atlas. Every fetch starts from a row in `src/garra/sources/catalog.py`. A file is kept only when the host is allowlisted, the body is larger than the empty-stub floor, and the expected header is present. The saved `manifest.json` records the publisher, license, canonical URL, resolved URL, time, byte size, and sha256.
 
+## Connected web app
+
+The Next.js frontend and AI workspace live in [`webapp/`](webapp/README.md).
+Public website: **https://garra-rufa.vercel.app**. Vercel hosts the web app and
+protected research service; Supabase stores hosted workspace data. Supabase Auth supports email/password and Google sign-in; AI uses the app’s
+server-side OpenAI API key. See [Google setup](webapp/docs/GOOGLE-SIGN-IN.md).
+To run the full product locally:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[research]'
+cd webapp
+npm ci
+npm run dev:all
+```
+
+Open **http://127.0.0.1:3000**, choose **My space**, select your role, then create an
+account or sign in on the next step. The app calls this repository's graph adapters and separate
+literature pipeline, then displays retrieved records in inline frosted cards.
+The Python service binds to 127.0.0.1:8787. It exposes read-only
+`POST /api/research/search` and `POST /api/research/papers` endpoints with a short
+public `query`, optional `limit` (1–20), and `category` (`all` or `contacts`).
+Downloaded indexes are used when present; otherwise supported public sources are
+queried live. Bulk datasets, accounts, credentials, and local caches stay out of Git.
+
+See [the testing guide](docs/WEBAPP-TESTING.md) for checks and hosting limitations.
+
 ## Fetch the default slice
 
 ```bash

@@ -135,7 +135,10 @@ class MonarchSource(Source):
             ent = self.get_json(f"{API}/entity/{mid}")
         except Exception:
             ent = {}
-        src = Node(node.label, id=mid, kind=kind, source=node.source, xrefs=node.xrefs,
+        # _resolve has verified this identifier mapping. Keep the input alias so
+        # Entities merges the original focus with Monarch's canonical record.
+        aliases = tuple(dict.fromkeys((*node.xrefs, *([node.id] if node.id and node.id != mid else []))))
+        src = Node(ent.get("name") or node.label, id=mid, kind=kind, source=node.source, xrefs=aliases,
                    info=info(description=ent.get("description"),
                              synonyms=ent.get("exact_synonym"), full_name=ent.get("full_name"),
                              url=PAGE.format(mid)))
