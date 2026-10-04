@@ -91,3 +91,12 @@ ID filters, public detail pages, and project-to-community links. The default cat
 is empty; use `--communities examples/communities.demo.json` for explicitly fictional
 UI demo records. Joining and posting are not enabled. See [Community integration](docs/COMMUNITY.md)
 for the schema, endpoints, and frontend integration steps.
+
+### Unified search and clustering
+
+`POST /api/search` supports entity text search and confirmed phenotype search.
+`GET /api/clusters` exposes overlapping pathway groups and complete-link phenotype
+clusters with evidence details. Run the UI bridge with `--atlas` and `--bridge` to
+load your data, then open `/explore` for the working local search/group browser.
+See [Search and clustering](docs/SEARCH-CLUSTERING.md) for commands, API contracts,
+coverage requirements and deployment limitations.
