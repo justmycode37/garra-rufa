@@ -2,7 +2,7 @@ import type { NextConfig } from 'next';
 const config: NextConfig = {
   output: 'standalone',
   devIndicators: false,
-  logging: { incomingRequests: { ignore: [/\/api\/auth\/chatgpt\/callback/] } },
+  logging: { incomingRequests: { ignore: [/\/api\/auth\/(?:chatgpt\/)?callback/] } },
   outputFileTracingExcludes: {'*':['./data/**/*','./.env*','./tests/**/*']},
   serverExternalPackages: ['node:sqlite'],
   async headers() {

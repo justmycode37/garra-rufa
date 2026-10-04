@@ -1,13 +1,18 @@
 import 'server-only';
-
-import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { getSupabaseConfig } from './config';
 
-// This client uses the public database role. The app's local workspace session
-// is not a Supabase Auth session and must never be treated as one for RLS.
-export function createSupabaseServerClient() {
+// Used only in Route Handlers, where session refreshes can update cookies.
+// A new client per request prevents one visitor's session leaking to another.
+export async function createSupabaseServerClient() {
   const { url, publishableKey } = getSupabaseConfig();
-  return createClient(url, publishableKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  const jar = await cookies();
+  return createServerClient(url, publishableKey, {
+    cookieOptions: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/' },
+    cookies: {
+      getAll: () => jar.getAll(),
+      setAll: values => values.forEach(({ name, value, options }) => jar.set(name, value, options)),
+    },
   });
 }

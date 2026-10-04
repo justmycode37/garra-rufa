@@ -33,7 +33,7 @@ export async function createGuest(role: Role): Promise<User> {
   await data(table('guests').insert({ user_id: user.id }));
   return { ...user, guest: true };
 }
-export async function updateUserRole(id: string, role: Role) { await data(table('users').update({ role }).eq('id', id)); }
+export async function updateUserRole(id: string, role: Role) { await data(table('users').update({ role, role_selected: true }).eq('id', id)); }
 export async function updateGuestRole(id: string, role: Role): Promise<User> {
   if (!await data(table('guests').select('user_id').eq('user_id', id).maybeSingle())) throw new Error('Only guest workspaces can change perspective.');
   const name = role === 'doctor' ? 'Doctor' : role === 'patient' ? 'Patient' : 'Researcher';

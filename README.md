@@ -8,9 +8,9 @@ Approved downloaders for the rare-disease atlas. Every fetch starts from a row i
 
 The Next.js frontend and AI workspace live in [`webapp/`](webapp/README.md).
 Public website: **https://garra-rufa.vercel.app**. Vercel hosts the web app and
-protected research service; Supabase stores hosted workspace data. Public
-ChatGPT-plan sign-in awaits OpenAI hosted-app approval and OAuth integration.
-To run the full product locally with ChatGPT-plan sign-in:
+protected research service; Supabase stores hosted workspace data. Supabase Auth supports email/password and Google sign-in; AI uses the app’s
+server-side OpenAI API key. See [Google setup](webapp/docs/GOOGLE-SIGN-IN.md).
+To run the full product locally:
 
 ```bash
 python3 -m venv .venv
@@ -20,8 +20,8 @@ npm ci
 npm run dev:all
 ```
 
-Open **http://127.0.0.1:3000**, choose **My space → Continue with ChatGPT**, and
-allow plan usage. The app calls this repository's graph adapters and separate
+Open **http://127.0.0.1:3000**, choose **My space**, select your role, then create an
+account or sign in on the next step. The app calls this repository's graph adapters and separate
 literature pipeline, then displays retrieved records in inline frosted cards.
 The Python service binds to 127.0.0.1:8787. It exposes read-only
 `POST /api/research/search` and `POST /api/research/papers` endpoints with a short

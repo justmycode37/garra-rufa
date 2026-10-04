@@ -25,12 +25,11 @@ type ComposerProps = {
   compact?: boolean;
   voiceEnabled?: boolean;
   contextLabel?: string;
-  chatGPTPlan?: boolean;
 };
 
 export type ComposerContext = Pick<ComposerProps, 'user' | 'onUpload' | 'attached' | 'onDetach' | 'includeWorkspace' | 'setIncludeWorkspace'>;
 
-export function Composer({onSubmit,busy,user,onUpload,attached=[],onDetach,includeWorkspace=false,setIncludeWorkspace,placeholder,compact=false,voiceEnabled=true,contextLabel,chatGPTPlan}:ComposerProps){
+export function Composer({onSubmit,busy,user,onUpload,attached=[],onDetach,includeWorkspace=false,setIncludeWorkspace,placeholder,compact=false,voiceEnabled=true,contextLabel}:ComposerProps){
   const [text,setText]=useState('');const [voiceBusy,setVoiceBusy]=useState(false);const [voiceNotice,setVoiceNotice]=useState('');const [uploading,setUploading]=useState(false);const [error,setError]=useState('');const ref=useRef<HTMLTextAreaElement>(null);const fileRef=useRef<HTMLInputElement>(null);const voiceDraft=useRef('');
   const resizeInput=(focus=false)=>requestAnimationFrame(()=>{if(ref.current){if(focus)ref.current.focus();ref.current.style.height='auto';ref.current.style.height=Math.min(ref.current.scrollHeight,130)+'px';}});
   const putVoiceText=(transcript:string)=>{
@@ -54,7 +53,6 @@ export function Composer({onSubmit,busy,user,onUpload,attached=[],onDetach,inclu
     {voiceNotice&&<p className="voice-transcript-note" role="status">{voiceNotice}</p>}
     {error&&<p className="form-error" role="alert">{error}</p>}
     {attached.length>0&&<p className="composer-note">Attached files are sent to OpenAI only when you send your question.</p>}
-    {chatGPTPlan!==undefined&&<div className="chatgpt-plan-status"><span>{chatGPTPlan?'Using ChatGPT plan':'ChatGPT plan access is not enabled'}</span><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">Manage usage ↗</a></div>}
   </div>;
 }
 

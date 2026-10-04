@@ -1,7 +1,7 @@
 export type Role = 'researcher' | 'doctor' | 'patient';
 export type Region = 'body' | 'brain' | 'heart' | 'hands' | 'legs' | 'muscles';
 export type View = 'overview' | 'atlas' | 'projects' | 'patients' | 'documents' | 'community' | 'workbench';
-export type User = { id: string; name: string; email: string; role: Role; guest?: boolean; chatgpt?: { accountId: string; planEnabled: boolean; needsWelcome: boolean } };
+export type User = { id: string; name: string; email: string; role: Role; guest?: boolean; needsRole?: boolean; chatgpt?: { accountId: string; planEnabled: boolean; needsWelcome: boolean } };
 export type ConditionOption = { id: string; name: string; curated: boolean; aliases?: string[]; memberCount: number; postCount: number; joined?: boolean };
 export type CommunityRecommendation = Pick<ConditionOption, 'id' | 'name' | 'memberCount' | 'postCount'>;
 export type Source = { id: string; title: string; url: string; kind: 'reference' | 'paper' | 'workspace' | 'contact' | 'organization' | 'trial'; excerpt: string; year?: string; journal?: string; authors?: string[]; doi?: string; pmid?: string; providers?: string[]; retrievedAt?: string; openAccess?: boolean; preprint?: boolean; entityId?: string; recordType?: string; relations?: string[]; email?: string; phone?: string; location?: string };

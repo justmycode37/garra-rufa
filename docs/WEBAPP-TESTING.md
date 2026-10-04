@@ -1,14 +1,15 @@
 # Test the connected app
 
 Follow the setup in the root README, then run `npm run dev:all` from `webapp/`.
-Keep that terminal open and visit **http://127.0.0.1:3000**. The original
-standalone hackathon folder supports the same command with the backend checkout
-in `.backend/`. Use 127.0.0.1, because the local ChatGPT authorization callback
-requires that exact loopback host.
+Keep that terminal open and visit **http://127.0.0.1:3000**. The standalone
+hackathon folder supports the same command with the backend in `.backend/`.
+Configure Supabase Auth and the server-side OpenAI API key in `.env.local`.
 
-1. Choose **My space**, select your role, then **Continue with ChatGPT**. Complete
-   OpenAI's authorization screen and permit plan usage. The workspace should say
-   **Using ChatGPT plan**. Plan limits are respected; failures do not spend an API key.
+1. Choose **My space**, select a role, then **Continue**. The next step should
+   show the white Google sign-in button and email account form. Use the small
+   link below the submit button to switch between sign-in and registration.
+   Create a disposable test account; with confirmations disabled it should open
+   your workspace immediately. Sign out and back in to check persistence.
 2. Ask **Find two research papers about Marfan syndrome and explain what each studies.**
    The assistant calls the dedicated literature pipeline. Each cited paper should
    appear as a compact card after its paragraph, with a bold truncated title, journal/year
@@ -23,9 +24,9 @@ requires that exact loopback host.
    Try **Explore with AI** and verify the follow-up has the paper's identity.
 6. Reload a saved conversation. Its cards and publication metadata should remain.
 
-The initial landing-page assistant retains its separate, optional app API-key
-billing. To test only ChatGPT-plan billing, enter the workspace before asking.
-No API key is needed for workspace questions or the Research papers search.
+Both AI surfaces use the app's OpenAI API account. Users do not sign into ChatGPT.
+Paper search itself uses the dedicated repository pipeline. Google login requires
+the OAuth setup in [the guide](../webapp/docs/GOOGLE-SIGN-IN.md).
 
 Provider checks on 2026-10-04 returned real MONDO/Monarch/ClinicalTrials.gov
 records and literature from PubMed/Europe PMC/PubTator. Orphanet returned an
@@ -54,22 +55,18 @@ directory and its encryption key to retain accounts and workspaces.
 
 ## Public hosting
 
-The implemented ChatGPT-plan flow is OpenAI's local/open-source application flow.
-It is deliberately disabled on public origins. A public Vercel launch with user
-ChatGPT plans requires OpenAI's hosted application approval/registration and the
-corresponding OAuth integration. See [OpenAI's documentation](https://developers.openai.com/siwc/token-sharing-open-source)
-and [hosted sign-in requirements](https://developers.openai.com/siwc/website).
-
 The website is public at **https://garra-rufa.vercel.app**. Vercel hosts the Next
-app and a separate protected Python research service; production persistence uses
-Supabase, while local development keeps SQLite. No local accounts or private
-records are automatically migrated to the hosted database.
+app and a protected Python research service. Supabase stores hosted workspace
+records and authenticates users; OpenAI API billing powers the assistant.
 
-Production checks on 2026-10-04 confirmed HTTP 200 without a Vercel login, eight
-communities from Supabase, anatomical data at `/api/atlas?region=heart`, and the
-dedicated paper pipeline at `/api/research/papers?q=PMID%3A38517496`. Private
-records return 401 without an app session, and direct research-service calls
-return 401 without its server credential. The hosted landing-page assistant
-currently returns labelled database results: no OpenAI API key is deployed.
-The complete ChatGPT-plan workspace remains available locally pending OpenAI's
-hosted approval and the corresponding OAuth integration.
+After deploying, run from `webapp/`:
+
+```sh
+GARRA_TEST_ORIGIN=https://garra-rufa.vercel.app GARRA_TEST_AI=1 node --env-file=.env.local scripts/test-account-auth.mjs
+```
+
+This creates and cleans up two synthetic accounts. It checks signup, role
+persistence, login, immediate logout, record isolation, CSRF rejection, and a real
+paper answer. Google OAuth needs the owner's provider credentials before its
+interactive flow can be tested. GitHub pushes do not deploy automatically; use
+`vercel deploy --prod` from `webapp/`.

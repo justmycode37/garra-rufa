@@ -36,35 +36,20 @@ export default function LandingChat({ messages, busy, composer, onDisease, onClo
 }) {
   const expanded = messages.length > 0 || busy;
   const transcript = useRef<HTMLDivElement>(null);
-  const transcriptContent = useRef<HTMLDivElement>(null);
-  const [transcriptHeight, setTranscriptHeight] = useState(0);
   const followAnswer = useChatScroll(transcript, expanded);
   const lastQuestionIndex = messages.findLastIndex(message => message.role === 'user');
   const lastQuestionId = messages[lastQuestionIndex]?.id;
   useEffect(() => {
     followAnswer();
   }, [lastQuestionId, followAnswer]);
-  useEffect(() => {
-    const content = transcriptContent.current;
-    if (!content) return;
-    const updateHeight = () => {
-      const height = Math.ceil(content.getBoundingClientRect().height);
-      const maximum = transcript.current ? parseFloat(getComputedStyle(transcript.current).maxHeight) : height;
-      setTranscriptHeight(Math.min(height, Number.isFinite(maximum) ? maximum : height));
-    };
-    const resize = new ResizeObserver(updateHeight);
-    resize.observe(content);
-    window.addEventListener('resize', updateHeight);
-    return () => { resize.disconnect(); window.removeEventListener('resize', updateHeight); };
-  }, []);
   return <section className={`${styles.panel} ${expanded ? styles.expanded : ''}`} aria-label="Ask Garra Rufa">
     <div className={styles.expansion} inert={!expanded} aria-hidden={!expanded}>
       <div className={styles.conversation}>
         <div className={styles.toolbar}>
           <button className="icon-button" type="button" aria-label="Close conversation" onClick={onClose}><X size={17}/></button>
         </div>
-        <div className={styles.transcript} style={{ height: transcriptHeight }} ref={transcript} role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions text" tabIndex={expanded ? 0 : -1}>
-          <div className={styles.transcriptContent} ref={transcriptContent}>
+        <div className={styles.transcript} ref={transcript} role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions text" tabIndex={expanded ? 0 : -1}>
+          <div className={styles.transcriptContent}>
           {messages.map((message, index) => message.role === 'user'
             ? <div className={styles.question} key={message.id}><span className={styles.srOnly}>You: </span>{message.text}</div>
             : <div className={styles.response} key={message.id}>

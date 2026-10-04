@@ -3,7 +3,6 @@ import { handler,json,body,HttpError,requireUser } from '@/lib/http';
 import { answerQuery } from '@/lib/ai';
 import { getRecord,saveRecord,limit } from "@/lib/persistence";
 import type { Message } from '@/lib/types';
-import { chatGPTRequestUrl, localChatGPTOrigin } from '@/lib/chatgpt';
 import type { AnswerProgress, SearchResponse, SearchStreamEvent } from '@/lib/search-stream';
 import { listConditions } from "@/lib/persistence";
 import { recommendCommunities } from '@/lib/community-recommendations';
@@ -14,15 +13,15 @@ export const POST=handler(async(req)=>{
   if(input.surface==='landing'&&(input.chatId||input.fileIds.length||input.includeWorkspace))throw new HttpError(400,'Open your workspace to use private records or attachments.');
   // A process-wide anonymous budget also prevents spoofed IP headers bypassing limits.
   if(!(await limit(u?.guest?'ai:guest':u?`ai:${u.id}`:'ai:public',u&&!u.guest?40:60,10*60000)))throw new HttpError(429,'The research assistant is busy. Please try again shortly.');
+  if(!(await limit('ai:deployment',200,10*60000)))throw new HttpError(429,'The assistant is busy. Please try again shortly.');
   const previous=u&&input.chatId?(await getRecord(input.chatId,u.id)):null;
   if(input.chatId&&(!previous||previous.kind!=='chat'||previous.readOnly))throw new HttpError(404,'Conversation not found.');
   if(input.fileIds.length&&!u)throw new HttpError(401,'Sign in to review a document.');
   if(u)for(const id of input.fileIds){const r=(await getRecord(id,u.id));if(!r||r.kind!=='document')throw new HttpError(404,'Attachment not found.');}
   const history=previous?.messages||input.history;
-  let chatGPTAllowed=true;try{localChatGPTOrigin(chatGPTRequestUrl(req));}catch{chatGPTAllowed=false;}
   async function complete(signal:AbortSignal,onProgress?:(event:AnswerProgress)=>void):Promise<SearchResponse>{
     signal.throwIfAborted();
-    const result=await answerQuery({query:input.query,user:u,history,fileIds:input.fileIds,includeWorkspace:input.includeWorkspace,chatGPTAllowed,billing:input.surface==='landing'?'api':'chatgpt',onProgress,signal});
+    const result=await answerQuery({query:input.query,user:u,history,fileIds:input.fileIds,includeWorkspace:input.includeWorkspace,surface:input.surface,onProgress,signal});
     signal.throwIfAborted();
     const communities=recommendCommunities(input.query,(await listConditions()));
     const messages:Message[]=[...history,{id:crypto.randomUUID(),role:'user',text:input.query},{id:crypto.randomUUID(),role:'assistant',text:result.answer,sources:result.sources,diseases:result.diseases,steps:result.steps,mode:result.mode,model:result.model,effort:result.effort,warning:result.warning,region:result.region,suggestion:result.suggestion}];

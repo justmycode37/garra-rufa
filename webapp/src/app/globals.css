@@ -429,3 +429,15 @@ kbd { font-family: var(--font-body); font-size: 10px; color: var(--quiet); borde
 .evidence-card.answer-community { background: var(--community-color, var(--sea)); color: var(--ink); }
 @media(hover:hover) and (pointer:fine) { .evidence-card:hover { transform: scale(1.018); } }
 @media(prefers-reduced-motion:reduce) { .evidence-card { transition: none; } .evidence-card:hover { transform: none; } }
+
+/* Account sign-in */
+.account-sign-in{margin-top:20px}.auth-small{font-size:12px;line-height:1.5;color:#777;margin:10px 0}.auth-divider{display:flex;align-items:center;gap:12px;color:#969696;font-size:11px;margin:20px 0}.auth-divider:before,.auth-divider:after{content:"";flex:1;height:1px;background:#00000010}.auth-form{display:grid;gap:14px}.auth-form label{display:grid;gap:7px;font-size:12px;color:#555}.auth-form input{width:100%;box-sizing:border-box;border:1px solid #00000013;background:#ffffffa0;border-radius:10px;padding:12px 14px;font:inherit;color:#171717;outline:none}.auth-form input:focus{border-color:#777}.auth-form label small{font-size:11px;color:#888}.auth-reset{display:block;margin:12px auto 0;font-size:12px}.auth-form .primary{margin-top:3px;justify-content:center;gap:8px}
+
+.account-dialog { background: #fff; border-radius: 28px; --card: #fff; }
+.account-dialog .google-sign-in { display: block; width: 180px; height: 40px; padding: 0; margin: 0 auto; border: 0; border-radius: 24px; background: #fff; cursor: pointer; transition: box-shadow .18s ease; }
+.account-dialog .google-sign-in img { display: block; width: 180px; height: 40px; }
+.account-dialog .google-sign-in:disabled { opacity: 1; cursor: not-allowed; }
+.account-dialog .google-sign-in:not(:disabled):hover { box-shadow: 0 2px 8px #00000012; }
+.auth-switch { margin: 14px 0 0; text-align: center; color: #777; font-size: 11px; line-height: 1.6; }
+.auth-switch button { border: 0; background: none; padding: 0; color: #222; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.auth-back { display: block; margin: 20px auto 0; color: #888; font-size: 10px; }

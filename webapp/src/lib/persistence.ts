@@ -131,6 +131,7 @@ export async function releaseRefresh(...args: Parameters<typeof accounts.release
 }
 export async function updateUserRole(id: string, role: import('./types').Role) {
   if (hostedStorage()) return (await import('./supabase/persistence')).updateUserRole(id, role);
-  store.db().prepare('UPDATE users SET role=? WHERE id=?').run(role,id);
+  if (!store.db().prepare('PRAGMA table_info(users)').all().some(column=>column.name==='role_selected')) store.db().exec('ALTER TABLE users ADD COLUMN role_selected INTEGER NOT NULL DEFAULT 1');
+  store.db().prepare('UPDATE users SET role=?,role_selected=1 WHERE id=?').run(role,id);
 }
 export type { ChatGPTAccount, ChatGPTTokens, SignInAttempt } from './chatgpt-store';

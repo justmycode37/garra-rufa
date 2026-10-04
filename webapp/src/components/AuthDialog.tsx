@@ -5,7 +5,6 @@ import Dialog from './Dialog';
 import type { Message, Role, User } from '@/lib/types';
 
 export const roleMeta={researcher:{label:'Researcher',plural:'Researchers',icon:Microscope,color:'lilac',description:'Follow a question. Find a connection.',space:'Research space'},doctor:{label:'Doctor',plural:'Doctors',icon:Stethoscope,color:'sea',description:'Bring the evidence into focus.',space:'Clinical space'},patient:{label:'Patient',plural:'Patients & families',icon:Heart,color:'peach',description:'Understand more. Feel less alone.',space:'My health space'}};
-type SavedAccount = { id: string; name: string; email: string; label: string };
 
 export function RoleChoices({ value, onChange, disabled=false }: { value: Role | null; onChange: (role: Role) => void; disabled?: boolean }) {
   return <div className="entry-roles" role="radiogroup" aria-label="Your role">{(['researcher', 'doctor', 'patient'] as Role[]).map(role => {
@@ -19,55 +18,72 @@ export function RoleChoices({ value, onChange, disabled=false }: { value: Role |
   })}</div>;
 }
 
-export function ChatGPTSignIn({ role, conversation, initialError = '' }: { role: Role | null; conversation?: { messages: Message[] }; initialError?: string }) {
-  const [accounts, setAccounts] = useState<SavedAccount[]>([]);
-  const [selected, setSelected] = useState('');
-  const [available, setAvailable] = useState<boolean | null>(null);
+export const authConversationKey = 'garra:auth-conversation';
+export function AccountSignIn({ role, onSuccess, conversation, initialError = '', initialMode = 'login' }: { role: Role | null; onSuccess: (user: User) => void | Promise<void>; conversation?: { messages: Message[] }; initialError?: string; initialMode?: 'login'|'signup'|'password' }) {
+  const [mode, setMode] = useState<'login'|'signup'|'reset'|'password'>(initialMode);
+  const [google, setGoogle] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
-  useEffect(() => {
-    const abort = new AbortController();
-    fetch('/api/auth/chatgpt', { signal: abort.signal }).then(async response => {
-      if (!response.ok) throw new Error('Sign-in options could not be loaded. Please reopen this dialog.');
-      const data = await response.json(); setAccounts(data.accounts); setSelected(data.accounts[0]?.id || ''); setAvailable(data.available);
-    }).catch(error => { if (!abort.signal.aborted) setError(error instanceof Error ? error.message : 'Sign-in could not be loaded.'); });
-    return () => abort.abort();
-  }, []);
-  async function signIn() {
-    if (!role || busy) return;
-    setBusy(true); setError('');
+  const [notice, setNotice] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  useEffect(() => { const abort = new AbortController(); fetch('/api/auth', { signal: abort.signal }).then(r=>r.json()).then(d=>setGoogle(d.googleEnabled === true)).catch(()=>{}); return ()=>abort.abort(); }, []);
+  async function submit(action: typeof mode | 'google') {
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
     try {
-      const response = await fetch('/api/auth/chatgpt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, accountId: selected || undefined, conversation }) });
+      const response = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, email: email.trim(), password, name: name.trim(), role }) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to start ChatGPT sign-in.');
-      window.location.assign(data.url);
-    } catch (error) { setError(error instanceof Error ? error.message : 'Unable to start ChatGPT sign-in.'); setBusy(false); }
+      if (!response.ok) throw new Error(data.error || 'Please try again.');
+      if (data.url) {
+        try { if (conversation) sessionStorage.setItem(authConversationKey, JSON.stringify(conversation)); else sessionStorage.removeItem(authConversationKey); } catch {}
+        window.location.assign(data.url); return;
+      }
+      setPassword('');
+      if (data.user) { await onSuccess(data.user); return; }
+      setNotice(data.message || 'Check your email for the next step.');
+    } catch (error) { setError(error instanceof Error ? error.message : 'Please try again.'); }
+    finally { setBusy(false); }
   }
-  return <div className="chatgpt-sign-in">
-    {!!accounts.length && <label className="chatgpt-account-select">ChatGPT account<select value={selected} onChange={event => setSelected(event.target.value)} disabled={busy}>
-      <option value="">Use another ChatGPT account</option>
-      {accounts.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}
-    </select></label>}
-    {error && <p className="form-error" role="alert">{error}</p>}
-    {available === false && <p className="service-notice">Open Garra Rufa at <b>http://127.0.0.1:3000</b> on the computer running the app to connect ChatGPT. Hosted sign-in is not enabled.</p>}
-    <button className="primary full chatgpt-continue" type="button" onClick={signIn} disabled={!role || busy || available !== true}>
-      {busy && <LoaderCircle size={17} className="spin"/>}{busy ? 'Opening ChatGPT…' : 'Continue with ChatGPT'}
-    </button>
-    <p className="chatgpt-sign-in-note">AI answers use your ChatGPT plan and its limits. No API key needed. You choose what to share.</p>
+  function switchMode(next: typeof mode) { setMode(next); setError(''); setNotice(''); setPassword(''); }
+  return <div className="account-sign-in">
+    {(mode === 'login' || mode === 'signup') && <>
+      <button className="google-sign-in" type="button" aria-label="Sign in with Google" onClick={()=>void submit('google')} disabled={!google || busy}><img src="/brand/google-sign-in.svg" width="180" height="40" alt=""/></button>
+      {!google && <p className="auth-small">Google sign-in is coming soon. You can use email below.</p>}
+      <div className="auth-divider"><span>or use email</span></div>
+    </>}
+    <form className="auth-form" onSubmit={event=>{event.preventDefault();void submit(mode);}}>
+      {mode==='signup'&&<label>Your name<input autoComplete="name" value={name} onChange={e=>setName(e.target.value)} required maxLength={100} disabled={busy}/></label>}
+      {mode!=='password'&&<label>Email<input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required maxLength={254} disabled={busy}/></label>}
+      {mode!=='reset'&&<label>{mode==='password'?'New password':'Password'}<input type="password" autoComplete={mode==='login'?'current-password':'new-password'} value={password} onChange={e=>setPassword(e.target.value)} minLength={mode==='login'?1:10} maxLength={128} required disabled={busy}/>{mode!=='login'&&<small>At least 10 characters.</small>}</label>}
+      {mode==='reset'&&<p className="auth-small">We’ll send you a link to choose a new password.</p>}
+      {error&&<p className="form-error" role="alert">{error}</p>}
+      {notice&&<p className="service-notice" role="status">{notice}</p>}
+      <button className="primary full" type="submit" disabled={busy}>{busy?<><LoaderCircle size={16} className="spin"/>Please wait…</>:mode==='signup'?'Create account':mode==='reset'?'Send reset link':mode==='password'?'Save new password':'Sign in'}</button>
+    </form>
+    {(mode==='login'||mode==='signup')&&<p className="auth-switch">{mode==='login'?"Don’t have an account? ":'Already have an account? '}<button type="button" disabled={busy} onClick={()=>switchMode(mode==='login'?'signup':'login')}>{mode==='login'?'Sign up here':'Sign in here'}</button></p>}
+    {mode==='login'&&<button className="text-button auth-reset" type="button" disabled={busy} onClick={()=>switchMode('reset')}>Forgot password?</button>}
+    {mode==='reset'&&<button className="text-button auth-reset" type="button" onClick={()=>switchMode('login')}>Back to sign in</button>}
   </div>;
 }
 
-export default function AuthDialog({ onClose, user, onSignOut, conversation, initialRole = 'researcher', initialError }: { onClose: () => void; user: User | null; onSignOut: () => Promise<void>; conversation?: { messages: Message[] }; initialRole?: Role; initialError?: string }) {
-  const [role, setRole] = useState<Role>(user?.role || initialRole);
+export default function AuthDialog({ onClose, onSuccess, user, onSignOut, conversation, initialRole, initialError, recovery = false, initialMode = 'login' }: { onClose: () => void; onSuccess: (user: User) => void | Promise<void>; user: User | null; onSignOut: () => Promise<void>; conversation?: { messages: Message[] }; initialRole?: Role; initialError?: string; recovery?: boolean; initialMode?: 'login'|'signup' }) {
+  const [role, setRole] = useState<Role | null>(user?.role || initialRole || null);
+  const [step, setStep] = useState<'role'|'account'>('role');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  return <Dialog title={user?.chatgpt ? 'Your ChatGPT account' : 'Choose your role'} onClose={onClose}>
-    {user?.chatgpt ? <div className="chatgpt-active-account"><b>{user.name}</b><span>{user.email}</span></div> : <>
-      <p className="role-dialog-intro">A workspace that fits your perspective.</p>
-      <RoleChoices value={role} onChange={setRole}/>
+  if(!user&&!recovery&&step==='role')return <Dialog title="Choose your role" onClose={onClose} className="account-dialog">
+    <p className="role-dialog-intro">A workspace that fits your perspective.</p>
+    <RoleChoices value={role} onChange={setRole}/>
+    <button type="button" className="primary full role-continue" disabled={!role} onClick={()=>setStep('account')}>Continue</button>
+  </Dialog>;
+  return <Dialog title={recovery?'Choose a new password':user?'Your account':'Welcome to Garra Rufa'} onClose={onClose} className="account-dialog">
+    {user&&!recovery?<div className="chatgpt-active-account"><b>{user.name}</b><span>{user.email}</span></div>:<>
+      <AccountSignIn role={role} onSuccess={onSuccess} conversation={conversation} initialError={initialError} initialMode={recovery?'password':initialMode}/>
+      {!recovery&&<button className="text-button auth-back" type="button" onClick={()=>setStep('role')}>Back to role selection</button>}
     </>}
-    {!user?.chatgpt&&<ChatGPTSignIn role={role} conversation={conversation} initialError={initialError}/>}
-    {error && <p className="form-error" role="alert">{error}</p>}
-    {user && <button className="primary full chatgpt-sign-out" disabled={busy} onClick={async () => { setBusy(true); try { await onSignOut(); } catch (error) { setError(error instanceof Error ? error.message : 'Sign-out failed.'); } finally { setBusy(false); } }}><LogOut size={15}/>{busy ? 'Signing out…' : 'Sign out'}</button>}
+    {error&&<p className="form-error" role="alert">{error}</p>}
+    {user&&!recovery&&<button className="primary full chatgpt-sign-out" disabled={busy} onClick={async()=>{setBusy(true);try{await onSignOut();}catch(error){setError(error instanceof Error?error.message:'Sign-out failed.');}finally{setBusy(false);}}}><LogOut size={15}/>{busy?'Signing out…':'Sign out'}</button>}
   </Dialog>;
 }

@@ -46,7 +46,7 @@ export function hashPassword(password:string){const salt=randomBytes(16).toStrin
 export function verifyPassword(password:string,hash:string){const [salt,stored]=hash.split(':');const digest=scryptSync(password,salt,64);return stored?.length===128&&timingSafeEqual(digest,Buffer.from(stored,'hex'));}
 export function createUser(name:string,email:string,password:string,role:Role):User {
   const user={id:randomUUID(),name,email:email.toLowerCase(),role};
-  db().prepare('INSERT INTO users VALUES(?,?,?,?,?,?)').run(user.id,name,user.email,hashPassword(password),role,new Date().toISOString());return user;
+  db().prepare('INSERT INTO users(id,name,email,password,role,created_at) VALUES(?,?,?,?,?,?)').run(user.id,name,user.email,hashPassword(password),role,new Date().toISOString());return user;
 }
 export function loginUser(email:string,password:string):User|null {
   const u=db().prepare('SELECT * FROM users WHERE email=?').get(email.toLowerCase()) as (User&{password:string})|undefined;

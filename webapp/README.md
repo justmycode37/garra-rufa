@@ -3,50 +3,53 @@
 A rare disease discovery workspace with a minimal, animated landing page and researcher, doctor, and patient perspectives. The design reuses Bloom’s local fonts, sprout mark, and colour palette.
 
 Public website: **https://garra-rufa.vercel.app**. The production Next app uses
-Supabase storage and the protected `garra-rufa-research` Vercel service. Public
-pages, the anatomical atlas API, and literature search are live. Hosted
-ChatGPT-plan sign-in and workspace AI still require OpenAI approval and its
-registered hosted OAuth integration; use the local app for that complete flow.
+Supabase Auth and storage, a server-side OpenAI API key, and the protected
+`garra-rufa-research` Vercel service. Email/password accounts work with email
+confirmations disabled. Google sign-in is implemented and becomes available once
+its provider credentials are configured; follow [Google sign-in setup](docs/GOOGLE-SIGN-IN.md).
 
 ## Run locally
 
-Requires Node.js 22.13 or newer (native `node:sqlite`) and Python 3.12 or newer (excluding 3.14.1, which the graph dependency does not support).
-From the repository root, set up the backend once:
+Requires Node.js 22.13 or newer and Python 3.12 or newer (excluding 3.14.1).
+From the repository root:
 
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[research]'
 cd webapp
 npm ci
-# Copy .env.example to .env.local only if no .env.local exists.
+# Copy .env.example to .env.local only if no .env.local exists, then configure it.
 npm run dev:all
 ```
 
 Open **http://127.0.0.1:3000**. `dev:all` starts the Python research service and
-Next.js together. In the original standalone hackathon folder, it also detects a
-backend checkout in `.backend/`. Set `GARRA_BACKEND_DIR` if your backend lives
-elsewhere. Existing `.env.local`, accounts, and local data should be preserved.
-Workspace AI uses the user's ChatGPT plan; no API key is required for that flow.
+Next.js together. The standalone hackathon folder detects the backend in
+`.backend/`; set `GARRA_BACKEND_DIR` to use another checkout. Preserve existing
+`.env.local` and data. Supabase Auth is required for sign-in even when local
+workspace storage uses SQLite.
 
-Click **My space** or **Sign in**, choose a role, then **Continue with ChatGPT**. The workspace requires a verified ChatGPT sign-in; guest workspace creation and legacy password sign-in are disabled. Both entry points use the same role selector. Existing guest records remain on disk and can be adopted by a new ChatGPT registration from the same browser, but guest sessions cannot access the workspace.
+Click **My space** or **Sign in**, choose a role, and press **Continue**. The next
+step contains only the account form and Google button. A small link below the
+submit button switches between sign-in and account creation. The selected role
+is saved for new accounts; returning accounts keep their saved role. Google uses
+Supabase's PKCE OAuth flow. Passwords and provider credentials are never stored
+in application records or browser storage. Sessions use HTTP-only cookies,
+remote Auth identity verification, and a separate revocable app session.
 
-Landing-page AI questions use the app's server-side OpenAI API key, including when an already-signed-in user returns to the landing page. Workspace AI questions use that user's ChatGPT plan only, with no fallback to API billing. Private records and attachments are accepted only through authenticated workspace requests.
-
-ChatGPT subscription access uses OpenAI's documented **local-app** flow. Open the app at **http://127.0.0.1:3000**, not `localhost`. The app dynamically registers itself, so no OAuth client secret or pre-provisioned client ID is needed for local use. Public/paid hosting requires separate approval from OpenAI; this implementation deliberately disables the local OAuth/inference flow on non-loopback origins. See [OpenAI's subscription access documentation](https://developers.openai.com/siwc/token-sharing-open-source) and [hosted sign-in requirements](https://developers.openai.com/siwc/website).
-
-The app stores the stable host ID, browser-scoped registration list, encrypted tokens and one-time OAuth transactions in SQLite. It verifies state, PKCE, signature, issuer, audience, expiry and nonce, uses the verified issuer/client/subject as identity, and never merges accounts by email. Token refresh is serialized, rotating tokens are saved together, and signing out attempts revocation before finishing locally. Session cookies are HTTP-only; OAuth secrets are never stored in browser storage. The loopback HTTP flow is restricted to local use.
-
-Sign-in without the plan-use scope still authenticates the account, but cannot perform workspace inference. Plan policy failures and usage limits appear as clear notices; the plan status and **Manage usage** link appear only beneath the workspace Home prompt; they never switch to API billing. The account menu displays the signed-in identity and sign-out action, without repeating sign-in prompts throughout the workspace.
+Both landing and workspace AI use the application's OpenAI API key. Requests
+are billed to its OpenAI API account; users need no ChatGPT subscription. The old
+ChatGPT sign-in endpoints are retired. Existing private records are retained but
+never automatically adopted merely because an email matches a legacy account.
 
 ## Current experience
 
 - Sparse black 3D graphs use exclusively straight edges. A complete human figure keeps a permanent anatomical silhouette, with elliptical front/back anatomy, continuous 3D rotation, gentle breathing, and evolving short internal connections; there is no pointer control. Reduced-motion preferences are respected.
 - A common workspace shell provides global search, an assistant, recent chats, projects, documents, research papers, and community. Doctors also have patient records; patients have a journey view.
 - Individual conversations can be deleted from the sidebar; **Clear chat history** removes all chats in the current workspace after confirmation, without removing other records.
-- Projects and notes persist in SQLite. PDF, PNG, JPG, WebP, text, and CSV uploads support private storage, downloads, and explicit attachment to assistant requests.
+- Projects and notes persist in Supabase in production and SQLite locally. PDF, PNG, JPG, WebP, text, and CSV uploads support private storage, downloads, and explicit attachment to assistant requests.
 - **Related condition** accepts existing conditions or a new name. Saving a new condition creates its own community; normalized names and known aliases reuse the same community. Communities have opt-in profiles, conversations, and condition-specific published research. Members can join several communities and delete their own posts. Saving a private record does not join a community or share its contents.
 - Files are sent to OpenAI only when attached to a submitted question. Searching other workspace records requires enabling **My workspace**.
-- Landing-page search uses `gpt-6-luna` through the API. Workspace requests select `gpt-6-astra` when it appears in the signed-in account’s live model catalog, otherwise the first visible available model. Subscription inference uses streaming Responses requests with `store: false`; incomplete and failed streams are never treated as answers.
+- Landing-page search uses `gpt-6-luna` and workspace requests use `gpt-6-astra` through the OpenAI Responses API. Requests use `store: false`; incomplete and failed streams are never treated as answers.
 - Voice input is available in every composer. Tap the microphone to start dictation immediately; words appear live in the question field alongside your existing draft. Tap again to stop, then edit and send normally. Escape cancels and restores the original draft. Browser speech recognition needs no application API key and may process speech through the browser vendor’s service; cancellation cannot undo that processing. Chrome and Safari support dictation; Safari may require Siri enabled. Browsers without speech recognition can use the optional ElevenLabs fallback: tap to record, tap to stop and automatically transcribe. Garra Rufa does not save the audio. Dictation stops after two minutes and requires HTTPS or loopback.
 - AI answers show retrieved sources. Provider failures fall back to explicitly labelled database search; unavailable literature is reported rather than replaced with invented papers.
 
@@ -83,9 +86,9 @@ claim that no evidence exists. Publication and sharing require explicit UI actio
 
 ## Configuration and hosting
 
-- `OPENAI_API_KEY`: server-only API credential for landing-page AI only. Never used for workspace inference.
+- `OPENAI_API_KEY`: server-only API credential for all AI requests. Never expose this in browser configuration.
 - `OPENAI_SEARCH_MODEL`: defaults to `gpt-6-luna`.
-- `OPENAI_WORKSPACE_MODEL`: preferred ChatGPT plan model; defaults to `gpt-6-astra`, subject to the user’s live catalog.
+- `OPENAI_WORKSPACE_MODEL`: API model for authenticated workspace requests; defaults to `gpt-6-astra`.
 - `ELEVENLABS_API_KEY`: optional server-only credential with speech-to-text access. If absent, the microphone uses browser dictation without an app API key.
 - `ELEVENLABS_STT_MODEL`: defaults to `scribe_v2`.
 - `GARRA_RESEARCH_URL`: server-only backend origin, defaults to `http://127.0.0.1:8787`.
@@ -93,7 +96,7 @@ claim that no evidence exists. Publication and sharing require explicit UI actio
 - `GARRA_RESEARCH_CACHE_DIR`: optional Python cache directory, defaults to backend `data/literature-cache`.
 - `GARRA_DATA_DIR`: persistent database directory; defaults to `./data`.
 - `DATA_ENCRYPTION_KEY`: required stable 64-character hex key for hosted Supabase storage; optional locally. If omitted, a local key is generated in the data directory. Preserve the key with the database.
-- `APP_ORIGIN`: leave unset for local use, or use the exact `http://127.0.0.1:<port>` origin. A non-loopback deployment origin disables local ChatGPT sign-in and subscription inference.
+- `APP_ORIGIN`: canonical origin for authentication callbacks. Production uses `https://garra-rufa.vercel.app`; local development uses `http://127.0.0.1:3000`.
 
 ```sh
 npm run build
@@ -101,7 +104,9 @@ npm run build
 npm start
 ```
 
-For the local demo, keep the server bound to loopback and persist `GARRA_DATA_DIR` outside the deployment bundle. Public ChatGPT-plan sign-in requires OpenAI hosted access approval and its registered OAuth flow, HTTPS, and a canonical `APP_ORIGIN`. Local development uses SQLite; the live Vercel site uses the Supabase persistence adapter. Production secrets are configured on Vercel and stay out of Git. Real clinical use requires further identity, governance, consent, retention, and operational work beyond this prototype.
+Local development uses SQLite; Vercel requires the Supabase persistence adapter.
+Production secrets stay in Vercel environment variables and out of Git. Set the
+canonical Auth site URL and redirect allowlist using the Google setup guide.
 
 ## Checks
 
@@ -111,8 +116,12 @@ npm test
 npm run build
 ```
 
-Tests cover session/password handling, private-record isolation, explicit read-only sharing, publication boundaries, encryption integrity, reasoning routing, guest-session isolation, OAuth identity validation, callback replay rejection, encrypted token storage, rotating refreshes, account separation, subscription stream completion, billing-path isolation, canonical condition creation, transaction rollback, community memberships, and post ownership.
-
+Tests cover record isolation, sharing, encryption, authenticated identity mapping,
+stream completion, API billing, communities, and retained legacy storage helpers.
+Run `scripts/test-account-auth.mjs` against a running app for synthetic signup,
+login, logout, role persistence, CSRF, and private-record isolation checks. Set
+`GARRA_TEST_ORIGIN` for a deployed app and `GARRA_TEST_AI=1` to include a real
+API-billed paper answer. It removes only its own synthetic accounts and records.
 
 ## Supabase connection
 
@@ -126,7 +135,7 @@ creating users or writing any data. Supabase project management is also availabl
 through the authenticated Supabase plugin.
 
 - Browser components: `createSupabaseBrowserClient()` from `src/lib/supabase/client.ts`.
-- Public server queries: `createSupabaseServerClient()` from `src/lib/supabase/server.ts`.
+- Route Handler authentication: `createSupabaseServerClient()` from `src/lib/supabase/server.ts`.
 
 The `garra_*` tables and restricted server functions are defined in
 `supabase/migrations/20261004042901_garra_hosted_storage.sql` and applied to this
@@ -137,11 +146,12 @@ No local accounts, tokens, uploads, or records are automatically copied to Supab
 
 Set server-only `SUPABASE_SECRET_KEY` and a stable `DATA_ENCRYPTION_KEY` on the host.
 All cloud tables have RLS enabled and browser grants revoked. There are deliberately
-no browser policies: the app validates ChatGPT identities, manages its own hashed
-sessions, and checks ownership/sharing before returning decrypted data. A ChatGPT
-identity is not assumed to be a Supabase Auth user. Supabase's informational
+no browser policies: the server verifies Supabase Auth users, manages hashed app
+sessions, and checks ownership/sharing before returning decrypted data. Workspace
+ownership uses the immutable Supabase Auth user ID. The informational
 [no-policy advisor](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
-is expected for this server-only access model. Service-role credentials stay on the server.
+is expected for this server-only access model. Service-role credentials remain
+on the server. `20261004053510_garra_account_onboarding.sql` tracks role selection.
 
 Run the live synthetic-data contract checks with:
 
@@ -168,10 +178,11 @@ private-record requests, and rejection of research calls without the shared key.
 These projects were deployed with the Vercel CLI; GitHub pushes do not currently
 publish a new production release automatically.
 
-The hosted app does not enable the local dynamic-registration ChatGPT OAuth flow.
-For public ChatGPT-plan usage, complete OpenAI's
-[hosted-app interest form](https://openai.com/form/sign-in-with-chatgpt-interest/)
-and integrate the client registration/scopes granted through that process.
-Do not reuse a local dynamic client registration as a public hosted app.
-The current deployment configuration intentionally does not provide an OpenAI
-API key; it cannot silently switch workspace requests to API billing.
+Publish the current web app with:
+
+```sh
+vercel deploy --prod --yes --scope hegerbenaja-9076s-projects
+```
+
+Google sign-in still needs the project owner's Google OAuth client ID and secret
+in Supabase. No hosted ChatGPT application approval is needed for API billing.

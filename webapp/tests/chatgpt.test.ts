@@ -239,28 +239,24 @@ test('requests use subscription-compatible fields and the account-specific model
   for (const field of ['max_output_tokens', 'previous_response_id', 'temperature', 'conversation']) assert.equal(field in body, false);
 });
 
-test('anonymous and disconnected users cannot spend an API key, and plan errors never fall back to API billing', async t => {
-  let requests: string[] = [];
+test('workspace API billing requires an authenticated non-guest user and never uses subscription tokens', async t => {
+  const requests: string[] = [];
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
     requests.push(String(url));
-    assert.equal((init.headers as Record<string, string>).Authorization, 'Bearer access-secret');
-    if (String(url).endsWith('/models')) return json({ models: [{ slug: 'available', display_name: 'Available', visibility: 'list' }] });
-    return sse([{ type: 'response.failed', response: { error: { code: 'subscription_sharing_usage_limit_exceeded' } } }]);
+    assert.equal((init.headers as Record<string,string>).Authorization, 'Bearer must-never-be-used');
+    return json({ error: { code: 'insufficient_quota' } }, 429);
   });
-  const input = { query: 'hello world', history: [], fileIds: [], includeWorkspace: false, chatGPTAllowed: true, billing: 'chatgpt' as const };
-  assert.equal((await answerQuery({ ...input, user: null })).mode, 'database'); assert.equal(requests.length, 0);
-  const guest = store.createGuest('researcher');
-  assert.equal((await answerQuery({ ...input, user: guest })).mode, 'database'); assert.equal(requests.length, 0);
-  const account = connect('oaiapp_billing');
-  const user = accounts.withChatGPT(store.sessionUser(store.createSession(account.userId)))!;
+  const input = { query: 'hello world', history: [], fileIds: [], includeWorkspace: false, surface: 'workspace' as const };
+  assert.equal((await answerQuery({ ...input, user: null })).mode, 'database');
+  assert.equal((await answerQuery({ ...input, user: store.createGuest('researcher') })).mode, 'database');
+  assert.equal(requests.length, 0);
+  const user = store.createUser('API user', 'api-user@example.test', 'synthetic-password', 'researcher');
   const result = await answerQuery({ ...input, user });
   assert.equal(result.mode, 'database'); assert.match(result.warning!, /usage limit/);
-  assert.deepEqual(requests, ['https://api.openai.com/v1/models', 'https://api.openai.com/v1/responses']);
-  requests = [];
-  assert.equal((await answerQuery({ ...input, user, chatGPTAllowed: false })).mode, 'database'); assert.equal(requests.length, 0);
+  assert.deepEqual(requests, ['https://api.openai.com/v1/responses']);
 });
 
-test('subscription answers retrieve graph, paper and contact records and pass them to the model', async t => {
+test('API answers retrieve graph, paper and contact records and pass them to the model', async t => {
   const account = connect('oaiapp_answer');
   let round = 0;
   const backendCalls: string[] = [];
@@ -280,7 +276,7 @@ test('subscription answers retrieve graph, paper and contact records and pass th
       const index=papers?1:body.category==='contacts'?2:0;
       return json({status:'ok',query:body.query,pipeline:papers?'repository-literature':'repository-graph',providers:['source'],unavailableProviders:[],retrievedAt:'2026-10-04T10:00:00Z',cached:false,sources:[records[index]]});
     }
-    assert.equal((init.headers as Record<string,string>).Authorization,'Bearer access-secret');
+    assert.equal((init.headers as Record<string,string>).Authorization,'Bearer must-never-be-used');
     assert.equal(body.stream, true); assert.equal(body.store, false);
     if (++round === 1) return sse([
       ...['search_knowledge','find_papers','find_contacts'].map((name,index)=>itemDone({type:'function_call',namespace:'garra',name,call_id:'call'+index,arguments:JSON.stringify({query:'Marfan syndrome'})},index)), completed()]);
@@ -290,7 +286,7 @@ test('subscription answers retrieve graph, paper and contact records and pass th
     return sse([itemDone({ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ answer: 'Graph [1]. Paper [2]. Centre [3].', region: 'heart', sourceIds: records.map(r=>r.id), nextSteps: [], suggestion: null }) }] }), completed()]);
   });
   const user = accounts.withChatGPT(store.sessionUser(store.createSession(account.userId)))!;
-  const result = await answerQuery({ query: 'Find Marfan research and centres', user, history: [], fileIds: [], includeWorkspace: false, chatGPTAllowed: true, billing: 'chatgpt' as const });
+  const result = await answerQuery({ query: 'Find Marfan research and centres', user, history: [], fileIds: [], includeWorkspace: false, surface: 'workspace' });
   assert.equal(result.mode, 'ai'); assert.equal(round, 2); assert.equal(backendCalls.length,3);
   assert.deepEqual(result.sources,records); assert.equal(result.warning,undefined);
 });
@@ -313,7 +309,7 @@ test('landing AI uses the app API key, never the subscription token or workspace
     assert.ok(!JSON.stringify(body.tools).includes('search_workspace'));
     return sse([itemDone({ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ answer: 'Public answer.', region: 'body', sourceIds: [], nextSteps: [], suggestion: null }) }] }), completed()]);
   });
-  const result = await answerQuery({ query: 'hello world', user: null, history: [], fileIds: [], includeWorkspace: false, chatGPTAllowed: false, billing: 'api' });
+  const result = await answerQuery({ query: 'hello world', user: null, history: [], fileIds: [], includeWorkspace: false, surface: 'landing' });
   assert.equal(result.mode, 'ai'); assert.equal(requests, 1);
 });
 

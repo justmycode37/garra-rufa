@@ -1,8 +1,7 @@
 import { diseases,searchDiseases,inferRegion,reasoningEffort,diseaseSource } from './knowledge';
 import { listRecords,getRecord,getFile,publicProjects } from "./persistence";
 import type { User,Source,SearchResult,Message,Region } from './types';
-import { chatGPTAccess } from './chatgpt';
-import { chatGPTResponse, readCompletedResponse, selectChatGPTModel, subscriptionRequest, type ResponseStreamOptions } from './chatgpt-inference';
+import { apiRequest, openAIResponse, type ResponseStreamOptions } from './openai-response';
 import { createAnswerDecoder } from './streamed-answer';
 import type { AnswerProgress } from './search-stream';
 import { searchResearch, researchWarning } from './research';
@@ -24,21 +23,16 @@ const regionEnum=['body','brain','heart','hands','legs','muscles'];
 const outputSchema={type:'object',properties:{answer:{type:'string'},region:{type:'string',enum:regionEnum},sourceIds:{type:'array',items:{type:'string'}},nextSteps:{type:'array',items:{type:'string'}},suggestion:{anyOf:[{type:'null'},{type:'object',properties:{kind:{type:'string',enum:['project','note']},title:{type:'string'},content:{type:'string'}},required:['kind','title','content'],additionalProperties:false}]}},required:['answer','region','sourceIds','nextSteps','suggestion'],additionalProperties:false};
 const tool=(name:string,description:string,properties:Record<string,unknown>)=>({type:'function',name,description,parameters:{type:'object',properties,required:Object.keys(properties),additionalProperties:false},strict:true});
 
-export async function answerQuery(input:{query:string;user:User|null;history:Message[];fileIds:string[];includeWorkspace:boolean;chatGPTAllowed:boolean;billing:'api'|'chatgpt';onProgress?:(event:AnswerProgress)=>void;signal?:AbortSignal}):Promise<SearchResult>{
+export async function answerQuery(input:{query:string;user:User|null;history:Message[];fileIds:string[];includeWorkspace:boolean;surface:'landing'|'workspace';onProgress?:(event:AnswerProgress)=>void;signal?:AbortSignal}):Promise<SearchResult>{
   const {query,user,history,fileIds,includeWorkspace}=input;
   const found=searchDiseases(query);
   const evidence={diseases:found,sources:found.map(diseaseSource)};
   const notices=new Set<string>();
   const retrieved=new Map<string,Source>();
-  const subscription=input.billing==='chatgpt';
-  if(subscription&&(!input.chatGPTAllowed||!user))return fallback(query,evidence.diseases,evidence.sources,'ChatGPT plan access is unavailable. Showing database search results.');
-  if(!subscription&&!process.env.OPENAI_API_KEY)return fallback(query,evidence.diseases,evidence.sources,'The landing-page assistant is not connected. Showing database search results.');
-  let model:string;
-  const effort=subscription?undefined:reasoningEffort(query,false);
-  try {
-    if(subscription){const {accessToken}=await chatGPTAccess(user!.id);model=await selectChatGPTModel(accessToken,process.env.OPENAI_WORKSPACE_MODEL||'gpt-6-astra');}
-    else model=process.env.OPENAI_SEARCH_MODEL||'gpt-6-luna';
-  } catch(error) { return fallback(query,evidence.diseases,evidence.sources,error instanceof Error?error.message:'ChatGPT is unavailable.'); }
+  if (input.surface === 'workspace' && (!user || user.guest)) return fallback(query,evidence.diseases,evidence.sources,'Sign in to use your workspace assistant.');
+  if (!process.env.OPENAI_API_KEY) return fallback(query,evidence.diseases,evidence.sources,'AI is not configured. Showing database search results.');
+  const model = input.surface === 'workspace' ? process.env.OPENAI_WORKSPACE_MODEL || 'gpt-6-astra' : process.env.OPENAI_SEARCH_MODEL || 'gpt-6-luna';
+  const effort = reasoningEffort(query, fileIds.length > 0);
   const sources=new Map(evidence.sources.map(s=>[s.id,s]));
   const content:Record<string,unknown>[]=[{type:'input_text',text:query}];
   if(user)for(const id of fileIds.slice(0,3)){
@@ -58,8 +52,8 @@ export async function answerQuery(input:{query:string;user:User|null;history:Mes
       input.signal?.throwIfAborted();
       const decodeAnswer=createAnswerDecoder();
       const streamOptions:ResponseStreamOptions={signal:input.signal,onTextDelta:input.onProgress?(text)=>{const delta=decodeAnswer(text);if(delta)input.onProgress!({type:'delta',delta});}:undefined};
-      const request=subscriptionRequest({model,instructions,input:items,tools:round<3?tools:undefined,format:{type:'json_schema',name:'research_response',strict:true,schema:outputSchema}});
-      const response=subscription?await chatGPTResponse(user!.id,request,streamOptions):await landingAPIResponse({...request,reasoning:{effort},max_output_tokens:effort==='max'?14000:6000},streamOptions);
+      const request=apiRequest({model,instructions,input:items,tools:round<3?tools:undefined,format:{type:'json_schema',name:'research_response',strict:true,schema:outputSchema}});
+      const response=await openAIResponse({...request,reasoning:{effort},max_output_tokens:effort==='max'?14000:6000},streamOptions);
       const calls=response.output.filter(o=>o.type==='function_call');
       if(calls.length){
         input.onProgress?.({type:'reset'});
@@ -105,10 +99,4 @@ export async function answerQuery(input:{query:string;user:User|null;history:Mes
     }
     throw new Error('The research request reached its tool limit. Try a more focused question.');
   }catch(e){return fallback(query,evidence.diseases,[...sources.values()].slice(0,30),e instanceof Error&&e.name!=='TimeoutError'?e.message:'The AI request timed out. Showing source records while you retry.');}
-}
-
-async function landingAPIResponse(body: Record<string, unknown>, options: ResponseStreamOptions = {}) {
-  const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:JSON.stringify(body),signal:AbortSignal.any([AbortSignal.timeout(150000), ...(options.signal ? [options.signal] : [])]),redirect:'error'});
-  if(!response.ok)throw new Error('The landing-page AI service is temporarily unavailable. Showing source records.');
-  return readCompletedResponse(response,options.onTextDelta);
 }

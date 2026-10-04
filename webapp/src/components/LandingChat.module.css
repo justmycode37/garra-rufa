@@ -18,15 +18,16 @@
   overflow-y: auto;
   overflow-anchor: none;
   scroll-behavior: auto;
+  scroll-padding-block: 16px;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #14131422 transparent;
-  transition: height .38s cubic-bezier(.22,1,.36,1);
   font-family: Arial, Helvetica, sans-serif;
   font-size: 15px;
   line-height: 1.75;
 }
-.transcriptContent { display: flex; flex-direction: column; gap: 26px; padding: 16px 28px 24px; }
+.transcriptContent { display: flex; flex-direction: column; gap: 26px; padding: 16px 28px 28px; }
+.transcriptContent > * { flex-shrink: 0; }
 .transcript:focus-visible { outline: 2px solid #858abd; outline-offset: -4px; border-radius: 12px; }
 .question { align-self: flex-end; max-width: 85%; border-radius: 22px; padding: 11px 18px; background: #efedf0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
 .response { min-width: 0; }
@@ -56,7 +57,7 @@
   .panel { border-radius: 24px; }
   .toolbar { padding-left: 20px; }
   .transcript { max-height: min(52svh, 490px); }
-  .transcriptContent { padding: 14px 20px 22px; gap: 22px; }
+  .transcriptContent { padding: 16px 20px 28px; gap: 22px; }
   .question { max-width: 90%; padding: 10px 15px; }
   .expanded :global(.composer) { border-radius: 0 0 24px 24px; }
 }
