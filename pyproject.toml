@@ -3,11 +3,11 @@ name = "garra-rufa"
 version = "0.1.0"
 description = "Approved-source fetchers for the rare-disease atlas"
 readme = "README.md"
-requires-python = ">=3.11"
-dependencies = []
+requires-python = ">=3.12,!=3.14.1"
+dependencies = ["requests==2.34.2", "networkx==3.7", "truststore==0.10.4"]
 
 [project.optional-dependencies]
-research = ["requests>=2.32", "networkx>=3"]
+research = ["requests>=2.32", "networkx>=3", "truststore>=0.10"]
 
 [project.scripts]
 fetch-sources = "garra.sources.cli:main"

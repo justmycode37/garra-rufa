@@ -8,6 +8,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from garra.community import CommunityCatalog
+from garra.discovery import DiscoveryEngine
+from garra.discovery.regions import RegionIndex
+from garra.research.service import ResearchService, ResearchUnavailable
 
 from .catalog import get_catalog
 from .monarch import UpstreamError
@@ -15,9 +18,14 @@ from .service import ConnectionService, InputError
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, service, origins, communities, **kwargs):
+    def __init__(
+        self, *args, service, origins, communities, discovery, research, regions, **kwargs
+    ):
         self.service, self.origins = service, origins
         self.communities = communities
+        self.discovery = discovery
+        self.research = research
+        self.regions = regions
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -25,7 +33,12 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _allowed(self):
-        return not self.headers.get("Origin") or self.headers.get("Origin") in self.origins
+        origin = self.headers.get("Origin")
+        local_origins = {
+            f"http://127.0.0.1:{self.server.server_port}",
+            f"http://localhost:{self.server.server_port}",
+        }
+        return not origin or origin in self.origins or origin in local_origins
 
     def _reply(self, code, value):
         body = json.dumps(value, ensure_ascii=False, allow_nan=False).encode()
@@ -64,6 +77,12 @@ class Handler(BaseHTTPRequestHandler):
                         "health": "/health",
                         "symptom_menu": "/api/body-map",
                         "communities": "/api/communities",
+                        "research": "/api/research/search",
+                        "papers": "/api/research/papers",
+                        "atlas": "/api/research/atlas",
+                        "unified_search": {"method": "POST", "path": "/api/search"},
+                        "clusters": "/api/clusters",
+                        "explorer": "/explore",
                         "search": {
                             "method": "POST",
                             "path": "/api/connections/search",
@@ -72,8 +91,61 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 },
             )
+        if path == "/explore":
+            body = Path(__file__).with_name("explore.html").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/api/regions" or path.startswith("/api/regions/"):
+            if self.regions is None:
+                return self._reply(503, {"error": "Regional ontology data is not configured"})
+            try:
+                result = (
+                    self.regions.catalog()
+                    if path == "/api/regions"
+                    else self.regions.detail(path.removeprefix("/api/regions/"))
+                )
+                return self._reply(200, result)
+            except InputError as exc:
+                return self._reply(400, {"error": str(exc)})
+        if path == "/api/entity":
+            query = parse_qs(urlsplit(self.path).query)
+            if set(query) != {"id"} or len(query["id"]) != 1:
+                return self._reply(400, {"error": "Use one entity id"})
+            result = self.discovery.entity_graph(query["id"][0])
+            return self._reply(200, result) if result else self._reply(404, {"error": "not_found"})
+        if path == "/api/clusters":
+            query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            if set(query) - {"kind", "entity_id"} or any(len(v) != 1 for v in query.values()):
+                return self._reply(400, {"error": "invalid_cluster_filters"})
+            try:
+                return self._reply(
+                    200, self.discovery.clusters(**{k: v[0] for k, v in query.items()})
+                )
+            except InputError as exc:
+                return self._reply(400, {"error": "invalid_request", "message": str(exc)})
+        if path.startswith("/api/clusters/"):
+            result = self.discovery.cluster(path.removeprefix("/api/clusters/"))
+            return (
+                self._reply(200, result)
+                if result is not None
+                else self._reply(404, {"error": "not_found"})
+            )
         if path == "/health":
-            return self._reply(200, {"status": "ok", "service": "garra-ui-bridge"})
+            return self._reply(
+                200,
+                {
+                    "status": "ok",
+                    "service": "garra-ui-bridge",
+                    "research": True,
+                    "discovery": self.discovery.metadata(),
+                    "regions": self.regions is not None,
+                },
+            )
         if path == "/api/body-map":
             return self._reply(200, get_catalog())
         if path == "/api/communities":
@@ -96,7 +168,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._allowed():
             return self._reply(403, {"error": "origin_not_allowed"})
-        if urlsplit(self.path).path != "/api/connections/search":
+        path = urlsplit(self.path).path
+        if path not in {
+            "/api/connections/search",
+            "/api/search",
+            "/api/research/search",
+            "/api/research/papers",
+            "/api/research/atlas",
+        }:
             return self._reply(404, {"error": "not_found"})
         if self.headers.get_content_type() != "application/json":
             return self._reply(415, {"error": "content_type_must_be_application_json"})
@@ -109,13 +188,35 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(413, {"error": "request_body_must_be_1_to_16384_bytes"})
             self.connection.settimeout(30)
             body = json.loads(self.rfile.read(length))
-            result = self.service.search(body)
+            if path == "/api/search":
+                if isinstance(body, dict) and body.get("mode") == "phenotype":
+                    result = self.service.search({k: v for k, v in body.items() if k != "mode"})
+                    result["mode"] = "phenotype"
+                    result["discovery"] = self.discovery.metadata()
+                    for card in result["cards"]:
+                        card["cluster_ids"] = self.discovery.memberships.get(card["id"], [])
+                else:
+                    result = self.discovery.search(body)
+            elif path == "/api/connections/search":
+                result = self.service.search(body)
+            elif path.endswith("/atlas"):
+                result = (
+                    self.regions.atlas(body)
+                    if self.regions is not None
+                    else self.research.atlas(body)
+                )
+            else:
+                result = self.research.search(body, papers=path.endswith("/papers"))
         except (InputError, json.JSONDecodeError, UnicodeError) as exc:
             return self._reply(400, {"error": "invalid_request", "message": str(exc)})
         except UpstreamError as exc:
             return self._reply(
                 504 if exc.timeout else 502,
                 {"error": "similarity_unavailable", "message": str(exc), "retryable": True},
+            )
+        except ResearchUnavailable as exc:
+            return self._reply(
+                503, {"error": "research_unavailable", "message": str(exc), "retryable": True}
             )
         except TimeoutError:
             return self._reply(408, {"error": "request_timeout"})
@@ -131,6 +232,9 @@ def create_server(
     port=8787,
     service=None,
     communities=None,
+    discovery=None,
+    research=None,
+    regions=None,
     origins=(
         "http://localhost:5173",
         "http://localhost:3000",
@@ -141,8 +245,11 @@ def create_server(
     handler = partial(
         Handler,
         service=service or ConnectionService(),
+        research=research or ResearchService(),
+        regions=regions,
         origins=set(origins),
         communities=communities if communities is not None else CommunityCatalog(),
+        discovery=discovery if discovery is not None else DiscoveryEngine(),
     )
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
@@ -161,6 +268,19 @@ def main(argv=None):
         help="Exact UI origin; repeat for multiple origins (replaces defaults)",
     )
     parser.add_argument("--communities", type=Path, help="Public community catalog JSON")
+    parser.add_argument(
+        "--bridge", type=Path, help="Version-1 disease bridge snapshot for search/clustering"
+    )
+    parser.add_argument(
+        "--atlas", type=Path, help="Optional atlas SQLite database for disease/gene aliases"
+    )
+    parser.add_argument("--cluster-threshold", type=float, default=0.5)
+    parser.add_argument("--ontology", type=Path, help="HPO OBO file for anatomical discovery")
+    parser.add_argument(
+        "--region-map",
+        type=Path,
+        default=Path(__file__).resolve().parents[3] / "webapp/src/lib/body-regions.json",
+    )
     args = parser.parse_args(argv)
     try:
         enrichment = json.loads(args.enrichment.read_text()) if args.enrichment else None
@@ -168,7 +288,26 @@ def main(argv=None):
         communities = CommunityCatalog(
             json.loads(args.communities.read_text()) if args.communities else None
         )
-        options = {"port": args.port, "service": service, "communities": communities}
+        discovery = DiscoveryEngine(
+            json.loads(args.bridge.read_text()) if args.bridge else None,
+            atlas=args.atlas,
+            phenotype_threshold=args.cluster_threshold,
+        )
+        options = {
+            "port": args.port,
+            "service": service,
+            "communities": communities,
+            "discovery": discovery,
+        }
+        if args.ontology:
+            if not args.bridge:
+                raise ValueError("--ontology requires --bridge")
+            options["regions"] = RegionIndex(
+                discovery,
+                json.loads(args.bridge.read_text()),
+                json.loads(args.region_map.read_text()),
+                args.ontology,
+            )
         if args.allow_origin:
             for origin in args.allow_origin:
                 parsed = urlsplit(origin)

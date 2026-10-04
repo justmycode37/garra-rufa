@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "files": {
+    "bridge.json": {
+      "sha256": "122c0ac77bbc67b3ff5ba49a9ff52f563adebdb691e96dc858d628c4f5c282ec",
+      "bytes": 23344462
+    },
+    "hp.obo": {
+      "sha256": "93dace952fcb3ec4728818857f6ba76bc2d5312f4d83266519b8694b8e798f22",
+      "bytes": 10863613
+    },
+    "atlas.sqlite": {
+      "sha256": "c8b6fe5c59ac1e7662b4b4d8b10643b39e4f034819090d90fa49e8efde63b1f0",
+      "bytes": 8335360
+    },
+    "body-regions.json": {
+      "sha256": "f40737c58e34322309d7c357668dede265bf9aa98eee2636e1ddab0ecb9dd506",
+      "bytes": 3017
+    }
+  }
+}

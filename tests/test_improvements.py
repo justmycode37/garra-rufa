@@ -18,13 +18,12 @@ if HAS_REQUESTS:
         import resolve
         from entities import Entities
         from evidence import extract, gaps, screen, transfer
-        from report import Stats
-        from sources import Edge, Node
-        from evidence.build import (Graph, canon_key, is_generic, is_non_solution,
-                                    qualified_match)
+        from evidence.build import Graph, canon_key, is_generic, is_non_solution, qualified_match
         from evidence.context import Profile, build_profile, sanitize_terms, typed_symptoms
         from evidence.registries import Registries, registry_records
         from literature import plan as lit_plan
+        from report import Stats
+        from sources import Edge, Node
     finally:
         sys.path.pop(0)
 

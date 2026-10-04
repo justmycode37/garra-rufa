@@ -154,7 +154,8 @@ def build_bridge(source, evidence, *, mappings=(), phenotype_threshold=0.5):
                 gene_processes[a].add(b)
             elif a in profiles:
                 profiles[a]["mechanism"].add(b)
-        paths.append({"from": a, "to": b, "relation": rel, "source": e.get("source")})
+        paths.append({"from": a, "to": b, "relation": rel, "source": e.get("source"),
+                      **{k: e[k] for k in ("provenance", "gene_mapping") if k in e}})
     for c in claims:
         if (nodes[c["subject"]]["kind"] == "gene"
                 and nodes[c["object"]]["kind"] in MECHANISMS

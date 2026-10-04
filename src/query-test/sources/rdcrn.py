@@ -23,8 +23,8 @@ Node handling: disease -> consortia ("research_consortium"), their studies
 """
 import html
 import json
-import sys
 import re
+import sys
 import threading
 from urllib.parse import urljoin
 
