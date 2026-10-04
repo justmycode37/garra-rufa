@@ -47,7 +47,7 @@ def _slim(d: dict) -> dict:
     return out
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("clinicaltrials")
     con.executescript("""
     CREATE TABLE study(nct TEXT PRIMARY KEY, updated TEXT, status TEXT, doc BLOB);
@@ -95,5 +95,3 @@ def build(keep_raw: bool = True) -> None:
     INSERT INTO study_fts(study_fts) VALUES ('optimize');
     """)
     finish("clinicaltrials", con)
-    if not keep_raw:
-        ZIP.unlink(missing_ok=True)

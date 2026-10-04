@@ -147,7 +147,7 @@ def _product3(con):
     return len(rows)
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("orphadata")
     con.executescript("""
     CREATE TABLE disorder(code TEXT PRIMARY KEY, name TEXT, definition TEXT, type TEXT,

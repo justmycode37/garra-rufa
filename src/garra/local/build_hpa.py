@@ -27,7 +27,7 @@ def ready() -> bool:
     return FILE.is_file()
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("hpa")
     con.executescript("""
     CREATE TABLE gene(ensg TEXT PRIMARY KEY, symbol TEXT, doc TEXT);

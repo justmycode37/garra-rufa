@@ -203,9 +203,13 @@ class ExtractionTests(unittest.TestCase):
                                        "organism": "human", "model": "patient cells",
                                        "evidence": [{"passage": "P1", "quote": quote}]}]}
             doc = Doc("abstract", [Passage("P1", "Abstract", quote)])
-            normalizer = SimpleNamespace(resolve=lambda label, kind, *args:
-                {"id": {"Alpha": "MONDO:1", "Beta": "MONDO:2", "Process": "GO:1"}[label],
-                 "label": label, "how": "ontology"})
+            ids = {"Alpha": "MONDO:1", "Beta": "MONDO:2", "Process": "GO:1"}
+            normalizer = SimpleNamespace(
+                resolve=lambda label, kind, *args:
+                    {"id": ids[label], "label": label, "how": "ontology"},
+                resolve_many=lambda ents, *args:
+                    {k: {"id": ids[e["name"]], "label": e["name"], "how": "ontology",
+                         "xrefs": []} for k, e in ents.items()})
             rec = read_paper({"pmid": str(i), "title": "Synthetic test"},
                              llm=SimpleNamespace(chat=lambda *a, **kw: model_result),
                              profile_text="Synthetic test", fulltext=SimpleNamespace(get=lambda *a: doc),

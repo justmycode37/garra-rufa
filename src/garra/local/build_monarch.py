@@ -20,6 +20,7 @@ import json
 import re
 import sys
 import tarfile
+import warnings
 
 from garra.local import RAW, finish, writer
 
@@ -54,7 +55,9 @@ def _list(v: str) -> list[str]:
         return []
     if v.startswith("["):
         try:
-            return [str(x) for x in ast.literal_eval(v)]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                return [str(x) for x in ast.literal_eval(v)]
         except (ValueError, SyntaxError):
             return _LIST.findall(v)
     return [x for x in v.split("|") if x]
@@ -67,7 +70,7 @@ def _reader(tar: tarfile.TarFile, name: str):
     return csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("monarch")
     con.executescript("""
     CREATE TABLE node(id TEXT PRIMARY KEY, name TEXT, category TEXT, description TEXT,

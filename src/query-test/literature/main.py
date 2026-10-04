@@ -21,6 +21,8 @@ backing them (Edge.evidence). This script
 Papers are deduplicated by PMID / DOI / PMCID; each keeps every hit (provider, query,
 graph entity, relation, rank) that found it, for linking and sorting in a later step.
 Raw API responses are cached in data/literature-cache/ (--refresh ignores the cache).
+--improvements SPEC (../improvements.py) switches the improvements; here symptom_axis adds
+phenotype-level treatment queries for symptom-mode graphs (plan.py).
 
 Usage:
   python src/query-test/main.py "Marfan syndrome" -o runs/marfan.json
@@ -44,6 +46,7 @@ try:  # use the OS trust store; the certifi bundle fails on this machine
 except ImportError:
     pass
 
+import improvements  # noqa: E402
 from report import Stats  # noqa: E402
 
 from literature import _MODULES, load_providers  # noqa: E402
@@ -140,7 +143,9 @@ def main():
     ap.add_argument("--no-annotations", action="store_true",
                     help="skip the PubTator annotation export")
     ap.add_argument("--refresh", action="store_true", help="ignore cached API responses")
+    improvements.add_argument(ap)
     args = ap.parse_args()
+    improvements.apply_args(args)
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
@@ -170,7 +175,7 @@ def main():
         "focus": [{"id": f, "label": nodes[f]["label"]} for f in graph.get("focus") or []
                   if f in nodes],
         "settings": {"max_papers": args.max_papers, "providers": [p.name for p in providers],
-                     "harvest": use_harvest},
+                     "harvest": use_harvest, "improvements": improvements.active()},
         "queries": log,
         "concepts": {c.id: {k: v for k, v in vars(c).items() if v not in (None, [], 0, False)}
                      for q in queries for c in (q.disease, q.other) if c},

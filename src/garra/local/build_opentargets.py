@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import glob
 import json
-import shutil
 import sys
 
 from garra.local import RAW, finish, writer
@@ -32,7 +31,6 @@ GO_ASPECT = {"biological_process": "P", "molecular_function": "F", "cellular_com
 EXPRESSION_PER_TARGET = 50
 INTERACTIONS_PER_TARGET = 100
 LIT_PER_PAIR = 10
-CONSUMED = ("evidence_europepmc", "baseline_expression")  # large inputs, removable after build
 
 
 def ready() -> bool:
@@ -57,7 +55,7 @@ def _clean(v):
     return v if v is not None else []
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     import pandas as pd
     import pyarrow.parquet as pq
 
@@ -312,6 +310,3 @@ def build(keep_raw: bool = True) -> None:
     INSERT INTO name_fts SELECT coalesce(name, id), 'drug', id FROM drug;
     """)
     finish("opentargets", con)
-    if not keep_raw:
-        for ds in CONSUMED:
-            shutil.rmtree(DIR / ds, ignore_errors=True)

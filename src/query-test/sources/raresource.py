@@ -10,7 +10,8 @@ server-rendered and contain the whole catalogue as one HTML table each:
   https://raresource.nih.gov/genes/      (~4.5 MB) symbol, description, associated
       diseases ("name?id;..."), NCBI gene id, Ensembl id, HGNC id
 Both are downloaded once into <repo>/data/raresource/ (gitignored) and parsed in memory
-with the stdlib, so plain requests is enough (no JS rendering, no bot protection).
+with the stdlib, so plain requests is enough (no JS rendering, no bot protection). The
+parsed tables are kept in parsed.pickle next to them (rebuilt when the pages are newer).
 Delete the files to refresh.
 
 The disease id column is the 7-digit GARD id (0016535 = Marfan syndrome, the site links it
@@ -28,6 +29,7 @@ genes ("caused_by_gene"); HGNC:/NCBIGene:/ENSEMBL:/SYMBOL: genes -> diseases
 ("causes_disease"). RARe-SOURCE only lists genes with a known causative association.
 """
 import html
+import pickle
 import re
 import sys
 import threading
@@ -109,13 +111,39 @@ class RareSourceSource(Source):
             if self._failed:
                 raise RuntimeError("raresource data unavailable")
             try:
-                self._parse_diseases(self._download("diseases.html"))
-                self._parse_genes(self._download("genes.html"))
+                if not self._load_pickle():
+                    self._parse_diseases(self._download("diseases.html"))
+                    self._parse_genes(self._download("genes.html"))
+                    self._save_pickle()
             except Exception as e:
                 self._failed = True  # don't re-download for every node
                 print(f"raresource: load failed: {e}", file=sys.stderr)
                 raise
             self._loaded = True
+
+    _TABLES = ("_diseases", "_by_xref", "_genes", "_gene_by_id", "_gene_diseases")
+
+    def _load_pickle(self) -> bool:
+        path = DATA_DIR / "parsed.pickle"
+        pages = [DATA_DIR / f for f in PAGES]
+        if not path.exists() or not all(p.exists() for p in pages) or                 path.stat().st_mtime < max(p.stat().st_mtime for p in pages):
+            return False
+        try:
+            with open(path, "rb") as f:
+                tables = pickle.load(f)
+            for k in self._TABLES:
+                setattr(self, k, tables[k])
+            return True
+        except Exception:
+            return False
+
+    def _save_pickle(self):
+        try:
+            with open(DATA_DIR / "parsed.pickle", "wb") as f:
+                pickle.dump({k: getattr(self, k) for k in self._TABLES}, f,
+                            protocol=pickle.HIGHEST_PROTOCOL)
+        except OSError:
+            pass
 
     def _parse_diseases(self, page: str):
         for c in _rows(page):

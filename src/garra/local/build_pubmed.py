@@ -4,11 +4,12 @@ E-utilities esearch / efetch / esummary for db=pubmed.
 
 All of PubMed (~40M records) with a phrase-capable full-text index would need ~35-45 GB
 and hours to index, so only papers about rare diseases are indexed. A paper is kept when
-  - PubTator tags it with a disease concept that Orphanet / Mondo mark as rare
-    (MeSH ids with an exact or narrower Orphanet mapping, OMIM ids of rare diseases), or
-  - one of its MeSH headings / supplementary concepts is such a MeSH id, or
-  - its title or abstract contains a rare-disease name (Orphanet preferred terms and
-    synonyms, Mondo "rare" labels and exact synonyms; abbreviations excluded).
+  - one of its MeSH headings / supplementary concepts is a rare disease (MeSH ids with an
+    exact or narrower Orphanet mapping), or
+  - its title contains a rare-disease name (Orphanet preferred terms and synonyms, Mondo
+    "rare" labels and exact synonyms; abbreviations excluded), or
+  - PubTator tags it with a rare disease concept (such a MeSH id, or the OMIM id of a
+    rare disease) and its title or abstract contains a rare-disease name.
 Every literature query plan.py builds is anchored on a disease, so the subset answers
 them; papers outside it (e.g. PMIDs cited by graph sources) fall back to the API.
 
@@ -16,6 +17,9 @@ them; papers outside it (e.g. PMIDs cited by graph sources) fall back to the API
                                         MeSH with major / qualifiers, types, keywords, ids)
   paper_fts(tiab, mesh, majr, pt, supp) contentless FTS5, rowid = PMID
   meta(key, value)
+  pubmed_year.bin                       one byte per PMID: publication year - 1800 (0 =
+                                        unknown), memory-mapped by pubmed.search() for
+                                        the recency bonus instead of a join on paper
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ import time
 import xml.etree.ElementTree as ET
 import zlib
 
-from garra.local import RAW, db_path, finish, writer
+from garra.local import LOCAL_DIR, RAW, db_path, finish, writer
 from garra.paths import DATA_DIR
 
 BASELINE = DATA_DIR / "pubmed-nih-gov" / "baseline"
@@ -261,7 +265,7 @@ def _parse(path: str) -> tuple[str, list, list[int], int]:
     return path, out, deleted, seen
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     t0 = time.time()
     mesh_ids, concepts, names = vocabulary()
     print(f"  vocabulary: {len(mesh_ids)} MeSH ids, {len(concepts)} PubTator concepts, "
@@ -313,3 +317,21 @@ def build(keep_raw: bool = True) -> None:
     con.execute("INSERT INTO paper_fts(paper_fts) VALUES ('optimize')")
     con.execute("CREATE INDEX paper_year ON paper(year)")
     finish("pubmed", con)
+    write_years()
+
+
+YEARS = LOCAL_DIR / "pubmed_year.bin"
+
+
+def write_years() -> None:
+    """pubmed_year.bin from pubmed.sqlite (see the module docstring)."""
+    con = sqlite3.connect(f"file:{db_path('pubmed').as_posix()}?mode=ro", uri=True)
+    top = con.execute("SELECT max(pmid) FROM paper").fetchone()[0] or 0
+    buf = bytearray(top + 1)
+    for pmid, year in con.execute("SELECT pmid, year FROM paper INDEXED BY paper_year "
+                                  "WHERE year > 1800 AND year < 2055"):
+        buf[pmid] = year - 1800
+    con.close()
+    tmp = YEARS.with_suffix(".tmp")
+    tmp.write_bytes(buf)
+    tmp.replace(YEARS)

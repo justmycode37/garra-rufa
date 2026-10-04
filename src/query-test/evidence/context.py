@@ -10,10 +10,13 @@ index      every graph node by normalised name (label, synonyms, aliases, the li
            the ids the graph already uses before asking any ontology service.
 adjacency  undirected neighbours per node over the graph's biomedical edges (no xrefs,
            organisations, trials), used by build.py to find shared mechanisms.
+symptoms   symptom_axis (../improvements.py): the phenotypes the user typed in symptom mode
+           (graph["query"]), listed in text() and bridged with SYMPTOM_W by build.py.
 """
 import re
 from dataclasses import dataclass, field
 
+import improvements
 from sources.base import WORD
 
 # relations that say nothing about biology (identity, organisations, ...)
@@ -31,6 +34,25 @@ GENERIC = ("OTAR:", "DOID:0050737", "DOID:4", "MONDO:0000001", "MONDO:0700096",
 def key(name: str) -> str:
     """Normalised lookup key of a name: lower-case alphanumeric words."""
     return " ".join(WORD.findall((name or "").lower().replace("'s", "s")))
+
+
+BAD_CHARS = re.compile(r"[\\\"“”«»`\x00-\x1f\x7f]")
+
+
+def sanitize_terms(names, min_len: int = 4) -> list[str]:
+    """query_hygiene: names safe to put into a quoted Europe PMC / ClinicalTrials.gov term:
+    backslashes, quotes and control characters removed ("Alstrom\\" -> "Alstrom"),
+    whitespace collapsed, stray punctuation trimmed; names with a ";" (several items) or
+    shorter than min_len letters/digits dropped; duplicates (by key) dropped."""
+    out, seen = [], set()
+    for n in names or []:
+        t = " ".join(BAD_CHARS.sub(" ", str(n or "")).split()).strip(" ,.:;-/'")
+        k = key(t)
+        if not t or ";" in t or len(k.replace(" ", "")) < min_len or k in seen:
+            continue
+        seen.add(k)
+        out.append(t)
+    return out
 
 
 def is_placeholder(n: dict) -> bool:
@@ -64,6 +86,12 @@ class Profile:
     adjacency: dict[str, dict[str, set[str]]] = field(default_factory=dict)  # a -> b -> rels
     kinds: dict[str, str] = field(default_factory=dict)
     labels: dict[str, str] = field(default_factory=dict)
+    # symptom_axis: the phenotypes the user typed (symptom mode), {id, label}
+    symptoms: list[dict] = field(default_factory=list)
+    # input_identity: graph diseases that are the input's unqualified parent ("Rett
+    # syndrome" for "Atypical Rett syndrome"), {id, label, names, xrefs}; registries.py
+    # also queries trials / known drugs with them
+    identity: list[dict] = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -89,7 +117,46 @@ class Profile:
         block("KNOWN DRUGS / TRIALS", self.drugs, lambda x: f"{x['label']} [{x['relation']}]")
         block("RELATED DISEASES (from the knowledge graph)", self.related,
               lambda x: f"{x['label']} [{x['relation']}]")
+        block("SYMPTOMS THE USER SEARCHED BY (treatments of these symptoms are solutions "
+              "too)", self.symptoms, lambda x: x["label"])
         return "\n".join(lines)
+
+
+def typed_symptoms(graph: dict) -> list[dict]:
+    """{id, label, names} of the phenotypes a symptom-mode query was read as
+    (graph["query"]); names: the HPO label and the text the user typed."""
+    q = graph.get("query") or {}
+    if q.get("mode") != "candidates":
+        return []
+    out = []
+    for p in q.get("parts") or []:
+        if p.get("kind") == "phenotype" and p.get("id") and \
+                all(x["id"] != p["id"] for x in out):
+            label = p.get("label") or p.get("text") or p["id"]
+            out.append({"id": p["id"], "label": label,
+                        "names": list(dict.fromkeys(x for x in (label, p.get("text")) if x))})
+    return out
+
+
+def parents(graph: dict, prof: Profile, concepts: dict | None = None,
+            limit: int = 3) -> list[dict]:
+    """input_identity: graph disease nodes whose label is the input label / name without
+    its qualifiers (build.qualified_match "parent"), most connected first."""
+    from .build import qualified_match  # build imports this module
+    d = prof.disease
+    names = [d["label"], *(d.get("names") or [])]
+    deg = {i: len(nb) for i, nb in prof.adjacency.items()}
+    out = []
+    for n in graph["nodes"]:
+        if n["kind"] != "disease" or n["id"] == d["id"] or is_placeholder(n) or \
+                n["id"].startswith(GENERIC):
+            continue
+        if qualified_match(n["label"], names) == "parent":
+            out.append({"id": n["id"], "label": n["label"],
+                        "names": node_names(n, (concepts or {}).get(n["id"])),
+                        "xrefs": [x for x in n.get("xrefs") or [] if not x.startswith("UMLS")]})
+    out.sort(key=lambda x: (-deg.get(x["id"], 0), x["id"]))
+    return out[:limit]
 
 
 def build_profile(graph: dict, papers: dict) -> Profile:
@@ -151,6 +218,19 @@ def build_profile(graph: dict, papers: dict) -> Profile:
     seen = set()
     prof.related = [r for r in prof.related if not r["id"].startswith(GENERIC)
                     and key(r["label"]) not in seen and not seen.add(key(r["label"]))][:25]
+    if improvements.on("symptom_axis"):
+        prof.symptoms = typed_symptoms(graph)
+    if improvements.on("input_identity"):
+        prof.identity = parents(graph, prof, concepts)
+        have = {key(x["label"]) for x in prof.drugs}
+        for p in prof.identity:  # the parent's known drugs / trial drugs are the input's
+            for oid, rels in adj.get(p["id"], {}).items():
+                n = nodes.get(oid)
+                if n and n["kind"] == "drug" and not is_placeholder(n) and \
+                        key(n["label"]) not in have:
+                    have.add(key(n["label"]))
+                    prof.drugs.append({"id": oid, "label": n["label"],
+                                       "relation": f"{sorted(rels)[0]} (of {p['label']})"})
 
     # name index over all graph nodes
     for n in graph["nodes"]:

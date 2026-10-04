@@ -2,25 +2,52 @@
 """Evidence-first knowledge graph of existing solutions for a rare disease (third pipeline).
 
 Input is the papers JSON of ../literature/main.py (and, through its "graph" field, the
-graph JSON of ../main.py). Two LLM passes (OpenRouter, llm.py; OPENROUTER_API_KEY):
+graph JSON of ../main.py). LLM passes (OpenRouter, llm.py; OPENROUTER_API_KEY):
 
   1. screen   titles + abstracts in batches: which papers connect an existing solution
               (drug, therapy, disease model, biomarker, assay, diagnostic, outcome
               measure, resource, method) to the input disease or to a disease sharing
               its mechanism (screen.py) -> the --max-fulltext most relevant
   2. extract  each selected paper's full text (Europe PMC / PMC BioC, else abstract;
-              fulltext.py) -> entities and edges, each with verbatim quotes (extract.py)
+              fulltext.py) -> entities and edges, each with verbatim quotes and where the
+              result was obtained (disease / model; extract.py)
+  registries  ClinicalTrials.gov trials of the disease with their interventions, Open
+              Targets drug candidates, and drugs acting on the mechanism genes
+              (registries.py; no LLM)
+  3. transfer the mechanisms the graph establishes in the disease -> an LLM-planned
+              literature search OUTSIDE the disease per mechanism, screened and read like
+              pass 1 + 2 (transfer.py; --transfer-nodes 0 skips it)
+  4. gaps     transfer interventions acting on a mechanism of the disease that no paper or
+              trial tests in it, checked against Europe PMC / ClinicalTrials.gov and
+              reviewed by one LLM call (gaps.py; --no-gaps skips it)
 
 Quotes are checked against the text (verify.py; edges without a verified quote are
 dropped), entities mapped to graph / MONDO / Orphanet / HP / UBERON / CL / CHEBI / GO /
-HGNC ids (normalize.py), and the edges merged, scored and turned into ranked candidate
-solutions for the input disease with the path that justifies each (build.py).
+HGNC ids (normalize.py: expanded abbreviations, one LLM confirmation per paper), and the
+edges merged, scored and turned into ranked candidate solutions for the input disease with
+the path that justifies each (build.py). "direct" = tested in the disease, its patients'
+cells or its models (or registered for it); "transfer" = never tested there.
 
 Outputs: <out>.json (everything, incl. all screening decisions and the links between
 papers), <out>.md (ranked candidates with quotes, papers and their related papers),
 <out>.html (evidence/viewer.html: graph with quotes per edge, candidates, papers as
 optional nodes and their links). LLM and HTTP responses are cached in
 data/literature-cache/, so a rerun costs no calls (--refresh ignores the cache).
+
+Improvements (src/query-test/improvements.py; all on, switch with --improvements SPEC or
+$GARRA_IMPROVEMENTS: "none" = old behaviour, "-x,-y" = all but, "none,+x" = only x; the
+active set is written to settings.improvements):
+  input_identity     xref-id nodes merged into the input; qualified / parent names of the
+                     input ("late-onset Pompe disease", "Rett syndrome") count as the input
+  canonicalize       one node per concept: case / Greek / salt forms, drug + therapy, an LLM
+                     grouping of same-concept labels per kind
+  paper_scoring      score = noisy-OR over papers x evidence tier; n_papers, best_level
+  generic_penalty    generic techniques and other diseases' endpoints down-weighted
+  gap_check          gaps tested against the graph's direct candidates and core names
+  query_hygiene      sanitised query names, retry of thin transfer searches, warnings
+  symptom_axis       typed symptoms of a symptom-mode query bridge with a high weight
+  diverse_selection  full-text selection covers distinct solutions
+  (symptom_anchor acts in ../main.py, symptom_axis also in ../literature/plan.py)
 
 Usage:
   python src/query-test/literature/main.py runs/pmm2.json -o runs/pmm2.papers.json
@@ -49,7 +76,10 @@ except ImportError:
 
 from literature.base import Cache  # noqa: E402
 
-from evidence import extract, screen  # noqa: E402
+from literature.europepmc import EuropePmcProvider  # noqa: E402
+
+import improvements  # noqa: E402
+from evidence import extract, gaps, registries, screen, transfer  # noqa: E402
 from evidence.build import Graph  # noqa: E402
 from evidence.context import build_profile  # noqa: E402
 from evidence.fulltext import FullTextProvider  # noqa: E402
@@ -123,10 +153,11 @@ def pass_screen(llm, profile_text, papers, batch_size, workers) -> dict[str, dic
 
 
 # -- pass 2 ------------------------------------------------------------------------
-def read_paper(paper, *, llm, profile_text, fulltext, normalizer, max_chars) -> dict:
+def read_paper(paper, *, llm, profile_text, fulltext, normalizer, max_chars,
+               origin: str = "core", mechanism: str | None = None) -> dict:
     key = screen.paper_key(paper)
     doc = fulltext.get(paper, max_chars)
-    out = llm.chat(extract.SYSTEM, extract.prompt(profile_text, paper, doc), max_tokens=64000)
+    out = llm.chat(extract.system(), extract.prompt(profile_text, paper, doc), max_tokens=64000)
     ents, edges, st = extract.clean_result(out)
     ver = Verifier(doc)
     passages = doc.by_id()
@@ -143,12 +174,14 @@ def read_paper(paper, *, llm, profile_text, fulltext, normalizer, max_chars) -> 
                 bad_quotes += 1
         if ev:
             kept.append({**e, "evidence": ev})
-    used = {k for e in kept for k in (e["subject"], e["object"])}
-    ann = paper.get("annotations") or []
+    used = {k for e in kept for k in (e["subject"], e["object"], e["context_disease"],
+                                      e["context_model"]) if k}
+    norms = normalizer.resolve_many({k: ents[k] for k in used}, paper.get("annotations") or [],
+                                    re.sub(r"<[^>]+>", "", paper.get("title") or ""))
     for k in used:
-        ents[k]["norm"] = normalizer.resolve(ents[k]["name"], ents[k]["type"],
-                                             ents[k]["synonyms"], ann)
-    return {"key": key, "text_source": doc.source, "truncated": doc.truncated,
+        ents[k]["norm"] = norms[k]
+    return {"key": key, "origin": origin, "mechanism": mechanism,
+            "text_source": doc.source, "truncated": doc.truncated,
             "chars": doc.chars(), "summary": str((out or {}).get("summary") or "")[:800],
             "meta": {k: paper.get(k) for k in ("pmid", "pmcid", "doi", "title", "year",
                                                "journal", "cited_by")},
@@ -164,7 +197,8 @@ def write_html(data: dict, path: Path):
     cands = {c["id"]: c for c in data["candidates"]}
     top = data["candidates"][:40]
     papers = [{"key": r["key"], **r["meta"], "title": re.sub(r"<[^>]+>", "", r["meta"].get("title") or ""),
-               "text_source": r["text_source"], "summary": r["summary"]} for r in data["papers"]]
+               "text_source": r["text_source"], "summary": r["summary"],
+               "origin": r.get("origin", "core")} for r in data["papers"]]
     view = {
         "start": data["profile"]["disease"]["id"],
         "disease": data["profile"]["disease"]["label"],
@@ -182,11 +216,15 @@ def write_html(data: dict, path: Path):
                                   for ev in e["evidence"]]}
                   for e in data["edges"]]
         + [{"from": c["id"], "to": data["profile"]["disease"]["id"], "relation": "may_accelerate",
-            "level": "inferred", "confidence": c["score"], "papers": len(c["papers"]),
+            "level": "inferred", "confidence": c["score"],
+            "papers": c.get("n_papers", len(c["papers"])),
             "negative_papers": 0, "mostly_negative": False, "evidence": []} for c in top],
-        "candidates": [{k: c[k] for k in ("id", "label", "kind", "score", "category",
-                                          "tested_without_benefit_in_input", "papers", "paths")}
+        "candidates": [{k: c.get(k) for k in ("id", "label", "kind", "score", "category",
+                                              "tested_without_benefit_in_input", "found_by",
+                                              "papers", "paths", "n_papers", "best_level",
+                                              "tier", "generic", "other_disease_endpoint")}
                        for c in data["candidates"]],
+        "gaps": data.get("gaps") or [],
         "papers": papers,
         "paper_links": data["paper_links"],
     }
@@ -204,8 +242,10 @@ def write_md(data: dict, path: Path):
          f"{len(data['edges'])} evidence edges · {len(data['candidates'])} candidates · "
          f"{len(data['paper_links'])} paper links", "",
          "Scores combine edge evidence (level, number of papers) with how the solution's "
-         "target connects to the input disease. *direct*: already applied to the input "
-         "disease; *transfer*: from a related disease / shared mechanism.", ""]
+         "target connects to the input disease. *direct*: tested in the input disease, its "
+         "patients' cells or its models, or registered for it; *transfer*: never tested "
+         "there, from a related disease / shared mechanism.", ""]
+    L += gap_md(data) + transfer_md(data) + registry_md(data)
     for cat, title in (("direct", "Already applied to the input disease"),
                        ("transfer", "Transfer candidates")):
         cs = [c for c in data["candidates"] if c["category"] == cat]
@@ -215,8 +255,19 @@ def write_md(data: dict, path: Path):
         for i, c in enumerate(cs[:40], 1):
             flag = " — **tested without benefit in the input disease**" \
                 if c["tested_without_benefit_in_input"] else ""
-            L.append(f"### {i}. {c['label']} ({c['kind']}, score {c['score']}){flag}")
-            L.append(f"`{c['id']}` · papers: {', '.join(c['papers'][:8])}")
+            via = [x for x in c.get("found_by") or [] if x != "core"]
+            via = f" — via {', '.join(via)}" if via else ""
+            if c.get("generic"):
+                flag += " — generic technique (down-weighted)"
+            if c.get("other_disease_endpoint"):
+                flag += " — endpoint of another disease (down-weighted)"
+            L.append(f"### {i}. {c['label']} ({c['kind']}, score {c['score']}){flag}{via}")
+            ev = ""
+            if "n_papers" in c:
+                ev = (f" · {c['n_papers']} supporting paper(s), best evidence "
+                      f"{c['best_level'] or 'none'}, tier {c['tier']}/3"
+                      + (" — **single paper**" if c["n_papers"] == 1 else ""))
+            L.append(f"`{c['id']}` · papers: {', '.join(c['papers'][:8])}{ev}")
             L.append("")
             for x in c["paths"][:4]:
                 neg = f", {x['negative_papers']} negative/null" if x["negative_papers"] else ""
@@ -267,6 +318,102 @@ def write_md(data: dict, path: Path):
     path.write_text("\n".join(L), encoding="utf-8")
 
 
+def gap_md(data: dict) -> list[str]:
+    gs = data.get("gaps") or []
+    if not gs:
+        return []
+    open_ = [x for x in gs if x["status"] != "tested"]
+    L = [f"## Research gaps ({len(open_)} open, {len(gs) - len(open_)} already tested)", "",
+         "A mechanism established in the input disease, an intervention acting on it "
+         "elsewhere, and no paper (Europe PMC, title/abstract) or registered trial testing "
+         "the intervention in the input disease.", ""]
+    for i, x in enumerate(open_[:30], 1):
+        pl = f", plausibility {x['plausibility']}/3" if x.get("plausibility") is not None else ""
+        L.append(f"### {i}. {x['intervention_label']} → {x['mechanism_label']} "
+                 f"({x['status'].replace('_', ' ')}{pl})")
+        lit = x["literature"]
+        L.append(f"Papers naming both: {lit['count']}"
+                 + (f" ({', '.join(lit['papers'])})" if lit["papers"] else "")
+                 + f" · trials: {len(x['trials'])} · score {x['score']}")
+        L.append("")
+        for q in x["mechanism_evidence"][:1]:
+            L.append(f"- mechanism in the disease: {q}")
+        L.append(f"- intervention ({x['level']}, {x['how']}): {x['intervention_edge']}")
+        for q in x["intervention_evidence"][:1]:
+            L.append(f"  - {q}")
+        for f in ("rationale", "caveat", "experiment", "reason"):
+            if x.get(f):
+                L.append(f"- {f}: {x[f]}")
+        L.append("")
+    tested = [x for x in gs if x["status"] == "tested"]
+    if tested:
+        L += ["Already tested (not gaps): " + "; ".join(
+            f"{x['intervention_label']} ({x['literature']['count']} papers, "
+            f"{len(x['trials'])} trials" + (f"; {x['reason']}" if x.get("reason") else "")
+            + ")" for x in tested[:20]), ""]
+    return L
+
+
+def transfer_md(data: dict) -> list[str]:
+    t = data.get("transfer") or {}
+    if not t.get("plan"):
+        return []
+    L = ["## Transfer search outside the disease", ""]
+    for m in t["plan"]:
+        L.append(f"- **{m['label']}** ({m['kind']}): {m['why']}")
+        for q in [x for x in t["queries"] if x["mechanism"] == m["id"]]:
+            L.append(f"  - {q['description']} — {q['hits']} hits")
+        sel = [k for k, v in t["selected"].items() if v == m["id"]]
+        L.append(f"  - read: {', '.join(sel) or 'none'}")
+    w = t.get("warnings") or {}
+    if w.get("thin_searches") or w.get("mechanisms_without_hits"):
+        L.append(f"\n**Warning:** {w['thin_searches']} searches returned fewer than 5 hits; "
+                 "mechanisms without any hit: "
+                 + (", ".join(w["mechanisms_without_hits"]) or "none"))
+    L.append("")
+    return L
+
+
+def registry_md(data: dict) -> list[str]:
+    r = data.get("registries") or {}
+    trials = r.get("trials") or []
+    L = []
+    if trials:
+        L += [f"## Registered trials of the disease ({len(trials)})", ""]
+        for t in trials[:40]:
+            ints = ", ".join(i["name"] for i in t["interventions"]) or "no drug/therapy arm"
+            L.append(f"- [{t['nct']}](https://clinicaltrials.gov/study/{t['nct']}) "
+                     f"{t['title']} — {', '.join(t['phases']) or t['type'] or ''}, "
+                     f"{t['status']}: {ints}")
+        L.append("")
+    if r.get("open_targets_candidates"):
+        L += ["Open Targets drug candidates: " + "; ".join(
+            f"{c['name']} ({c['stage']})" for c in r["open_targets_candidates"]), ""]
+    return L
+
+
+def warn_failures(what: str, errors: list[str]) -> None:
+    """query_hygiene: one summary line on stderr for the failed requests of a step (so a
+    query broken by a malformed synonym does not pass as "0 results")."""
+    if errors:
+        print(f"  ! {what}: {len(errors)} failed request(s), e.g. {errors[0][:200]}"
+              + (f" | {errors[-1][:200]}" if len(errors) > 1 else ""),
+              file=sys.stderr, flush=True)
+
+
+def build_graph(profile, records, llm=None):
+    """Graph of the records, duplicates merged (canonicalize: also the LLM grouping of
+    same-concept labels), edges scored; (graph, merged node count)."""
+    g = Graph(profile)
+    for r in records:
+        g.add_paper(r)
+    merged = g.merge_duplicates()
+    if improvements.on("canonicalize") and llm is not None and llm.key:
+        merged += g.canonicalize_llm(llm)
+    g.score_edges()
+    return g, merged
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -286,12 +433,26 @@ def main():
     ap.add_argument("--min-relevance", type=int, default=2)
     ap.add_argument("--max-fulltext", type=int, default=50, help="papers read in pass 2")
     ap.add_argument("--max-chars", type=int, default=150_000, help="text per paper in pass 2")
+    ap.add_argument("--transfer-nodes", type=int, default=5,
+                    help="mechanism nodes for the transfer search outside the disease "
+                         "(0 = no transfer search)")
+    ap.add_argument("--transfer-papers", type=int, default=6,
+                    help="papers read per transfer mechanism")
+    ap.add_argument("--transfer-hits", type=int, default=25,
+                    help="Europe PMC results per transfer search")
+    ap.add_argument("--no-registries", action="store_true",
+                    help="skip ClinicalTrials.gov / Open Targets / ChEMBL")
+    ap.add_argument("--no-gaps", action="store_true", help="skip the gap-finding pass")
+    ap.add_argument("--no-confirm", action="store_true",
+                    help="accept ontology matches without the LLM confirmation call")
     ap.add_argument("--workers", type=int, default=8,
                     help="parallel LLM calls (agents); rate limits pause all of them")
     ap.add_argument("--refresh", action="store_true", help="ignore cached API/LLM responses")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the profile and first prompt of each pass; no LLM calls")
+    improvements.add_argument(ap)
     args = ap.parse_args()
+    improvements.apply_args(args)
     load_env()
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
@@ -308,7 +469,8 @@ def main():
     cache = Cache(refresh=args.refresh)
     llm = Llm(cache, args.model, reasoning=args.reasoning)
     fulltext = FullTextProvider(cache)
-    normalizer = Normalizer(cache, profile)
+    normalizer = Normalizer(cache, profile, None if args.no_confirm else llm)
+    reg = registries.Registries(cache)
     papers = papers_doc["papers"][:args.max_screen] if args.max_screen else papers_doc["papers"]
     print(f"input disease: {profile.disease['label']} ({profile.id}); graph {graph_path}")
     print(f"model: {llm.model}; {len(papers)} papers to screen")
@@ -320,7 +482,7 @@ def main():
               + screen.prompt(ptext, papers[:args.batch])[:6000])
         p = next((x for x in papers if x.get("pmcid") and x.get("open_access")), papers[0])
         doc = fulltext.get(p, args.max_chars)
-        print(f"\n=== pass 2 system ===\n{extract.SYSTEM}")
+        print(f"\n=== pass 2 system ===\n{extract.system()}")
         print(f"\n=== pass 2 prompt ({screen.paper_key(p)}, {doc.source}, "
               f"{len(doc.passages)} passages, {doc.chars()} chars) ===\n"
               + extract.prompt(ptext, p, doc)[:6000] + "\n...")
@@ -331,7 +493,8 @@ def main():
     # pass 1
     print(f"\n== pass 1: screening {len(papers)} abstracts ==")
     decisions = pass_screen(llm, ptext, papers, args.batch, args.workers)
-    selected = screen.select(papers, decisions, args.min_relevance, args.max_fulltext)
+    selected = screen.select(papers, decisions, args.min_relevance, args.max_fulltext,
+                             known=[x["label"] for x in profile.drugs])
     inc = sum(d["include"] for d in decisions.values())
     print(f"screened {len(decisions)}/{len(papers)}: {inc} included, "
           f"{len(selected)} selected for full text")
@@ -347,13 +510,88 @@ def main():
     else:
         failed = []
 
-    g = Graph(profile)
-    for r in records:
-        g.add_paper(r)
-    merged = g.merge_duplicates()
-    g.score_edges()
+    # registries: trials and drug candidates of the disease
+    reg_raw = {}
+    if not args.no_registries and args.passes == "all":
+        print("\n== registries: ClinicalTrials.gov, Open Targets ==")
+        rec_reg, reg_raw = registries.registry_records(reg, profile, normalizer)
+        records += rec_reg
+        print(f"  {len(reg_raw['trials'])} trials, "
+              f"{len(reg_raw['open_targets_candidates'])} Open Targets candidates")
+        if improvements.on("query_hygiene"):
+            warn_failures("registries", reg.errors)
+
+    g, merged = build_graph(profile, records, llm)
+
+    # pass 3: transfer search outside the disease
+    tinfo = {"plan": [], "queries": [], "selected": {}, "screened": 0, "target_drugs": []}
+    if args.passes == "all" and args.transfer_nodes > 0:
+        mechs = g.mechanisms()
+        n_reg = len(reg.errors)
+        print(f"\n== pass 3: transfer search ({len(mechs)} mechanism nodes) ==")
+        try:
+            tinfo["plan"] = transfer.plan(llm, ptext, mechs, args.transfer_nodes)
+        except Exception as e:
+            print(f"  ! transfer plan: {type(e).__name__} {str(e)[:200]}", file=sys.stderr)
+        epmc = EuropePmcProvider(cache)
+        done = {r["key"] for r in records}
+        jobs = []
+        for m in tinfo["plan"]:
+            found, log = transfer.search(epmc, m, profile, args.transfer_hits)
+            tinfo["queries"] += log
+            found = [p for p in found if screen.paper_key(p) not in done]
+            mtext = transfer.context(ptext, m)
+            dec = pass_screen(llm, mtext, found, args.batch, args.workers)
+            tinfo["screened"] += len(dec)
+            sel = screen.select(found, dec, args.min_relevance, args.transfer_papers)
+            for p in sel:
+                done.add(screen.paper_key(p))
+                tinfo["selected"][screen.paper_key(p)] = m["id"]
+                jobs.append((p, m, mtext))
+            print(f"  {m['label']}: {len(found)} new papers, {len(sel)} selected")
+        if not args.no_registries:
+            genes = [m for m in tinfo["plan"] if m["kind"] == "gene"]
+            genes += [{"id": x["id"], "label": x["label"]} for x in profile.genes
+                      if x["causal"] and all(x["id"] != m["id"] for m in genes)]
+            rec_t, tinfo["target_drugs"] = registries.target_drug_records(reg, genes, normalizer)
+            records += rec_t
+        if jobs:
+            res = run_pool(lambda j: read_paper(j[0], llm=llm, profile_text=j[2],
+                                                fulltext=fulltext, normalizer=normalizer,
+                                                max_chars=args.max_chars, origin="transfer",
+                                                mechanism=j[1]["id"]),
+                           jobs, args.workers, "transfer paper")
+            records += [r for r in res if isinstance(r, dict)]
+            failed += [screen.paper_key(j[0]) for j, r in zip(jobs, res)
+                       if not isinstance(r, dict)]
+        if improvements.on("query_hygiene"):
+            thin = [q for q in tinfo["queries"] if q["hits"] < transfer.MIN_HITS]
+            empty = [m["label"] for m in tinfo["plan"] if not any(
+                q["hits"] for q in tinfo["queries"] if q["mechanism"] == m["id"])]
+            tinfo["warnings"] = {"thin_searches": len(thin), "mechanisms_without_hits": empty}
+            if thin or empty:
+                print(f"  ! transfer: {len(thin)}/{len(tinfo['queries'])} searches with < "
+                      f"{transfer.MIN_HITS} hits; mechanisms without any hit: "
+                      f"{', '.join(empty) or 'none'}", file=sys.stderr, flush=True)
+            warn_failures("transfer search", epmc.errors)
+            warn_failures("registries (target drugs)", reg.errors[n_reg:])
+        g, merged = build_graph(profile, records, llm)
+
     candidates = g.candidates()
     links = g.paper_links()
+
+    # pass 4: gaps
+    gap_list = []
+    if args.passes == "all" and not args.no_gaps:
+        print("\n== pass 4: gaps ==")
+        n_reg = len(reg.errors)
+        gap_list = gaps.find(g, candidates, reg, profile)
+        if improvements.on("query_hygiene"):
+            warn_failures("gap checks", reg.errors[n_reg:])
+        gaps.review(llm, ptext, gap_list)
+        gap_list = gaps.rank(gap_list)
+        print(f"  {sum(x['status'] != 'tested' for x in gap_list)} open gaps of "
+              f"{len(gap_list)} checked")
 
     rstats = Counter()
     for r in records:
@@ -362,7 +600,7 @@ def main():
         "papers_file": str(args.papers), "graph": str(graph_path),
         "settings": {"model": llm.model, "reasoning": llm.reasoning, "max_screen": args.max_screen,
                      "min_relevance": args.min_relevance, "max_fulltext": args.max_fulltext,
-                     "max_chars": args.max_chars},
+                     "max_chars": args.max_chars, "improvements": improvements.active()},
         "profile": {k: getattr(profile, k) for k in ("disease", "genes", "phenotypes",
                                                        "pathways", "drugs", "related")},
         "stats": {"seconds": round(time.time() - t0), "screened": len(decisions),
@@ -372,8 +610,13 @@ def main():
                   "extraction": dict(rstats), "normalization": normalizer.counts,
                   "merged_duplicate_nodes": merged,
                   "http": {"requests": cache.misses, "cache_hits": cache.hits},
-                  "errors": (fulltext.errors + normalizer.errors)[:30]},
+                  "origins": dict(Counter(r.get("origin", "core") for r in records)),
+                  "errors": (fulltext.errors + normalizer.errors + reg.errors)[:30]},
         "candidates": candidates,
+        **({"non_solutions": g.non_solutions} if improvements.on("generic_penalty") else {}),
+        "gaps": gap_list,
+        "transfer": tinfo,
+        "registries": reg_raw,
         "nodes": sorted(g.nodes.values(), key=lambda n: (n["kind"], n["label"])),
         "edges": sorted(g.edges.values(), key=lambda e: -e["confidence"]),
         "papers": [{k: v for k, v in r.items() if k not in ("entities", "edges")}
@@ -400,6 +643,9 @@ def main():
     for c in candidates[:15]:
         print(f"  {c['score']:.3f} {c['category']:8s} {c['kind']:15s} {c['label'][:40]:40s} "
               f"{c['paths'][0]['edge'][:60]}")
+    for x in [x for x in gap_list if x["status"] != "tested"][:10]:
+        print(f"  gap: {x['intervention_label'][:35]:35s} -> {x['mechanism_label'][:35]:35s} "
+              f"{x['status']} (plausibility {x.get('plausibility', '?')})")
     print(f"\n-> {out.resolve()} (+ .md, .html)  ({time.time() - t0:.0f}s)")
 
 

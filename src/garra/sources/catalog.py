@@ -256,7 +256,8 @@ QUERY_SOURCES: dict[str, Source] = {
         url="https://clinicaltrials.gov/api/v2/studies",
         hosts=("clinicaltrials.gov",),
         role="Studies and registries for one condition",
-        note="No API key. Search one disease; do not download the full study catalog.",
+        note="No API key. Search one disease. garra.local indexes the full export for "
+             "local answers (docs/LOCAL_DATA.md).",
     ),
     "nih_reporter": Source(
         id="nih_reporter",

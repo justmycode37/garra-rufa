@@ -53,6 +53,13 @@ def connect(name: str) -> sqlite3.Connection | None:
     return con
 
 
+def close_all() -> None:
+    """Close this thread's read connections (e.g. before replacing an index file)."""
+    for con in (getattr(_tls, "conns", None) or {}).values():
+        con.close()
+    _tls.conns = {}
+
+
 def writer(name: str) -> sqlite3.Connection:
     """Fresh database for a build: written to <name>.sqlite.tmp, see finish()."""
     LOCAL_DIR.mkdir(parents=True, exist_ok=True)

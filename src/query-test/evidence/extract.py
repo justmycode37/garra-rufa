@@ -3,9 +3,16 @@
 The LLM gets the disease profile, the paper as numbered passages ([P12 | Results] ...)
 and a controlled vocabulary, and returns
 
-  entities  {key, name, type, synonyms}
+  entities  {key, name, expanded, defined_in_paper, type, synonyms}
+            expanded: the full form of an abbreviation ("alanine aminotransferase" for
+            "ALT"), which normalize.py resolves on instead of the bare abbreviation
   edges     {subject, predicate, object (entity keys), effect, evidence_level, organism,
+             context_disease, context_model (entity keys: where the result was obtained),
              evidence: [{passage: "P12", quote: "<verbatim sentence>"}]}
+
+context_disease / context_model decide whether a solution counts as already applied to the
+input disease (tested in its patients, patient cells or models) or as a transfer candidate,
+whatever the edge's object is (build.py).
 
 Every edge needs at least one verbatim quote; verify.py checks them against the text and
 drops edges without a verified one, so an edge in the final graph always points at the
@@ -56,6 +63,17 @@ Rules:
   characters). Never paraphrase a quote. Edges without a verbatim quote will be discarded.
 - Name entities precisely and canonically ("PMM2", "epalrestat", "PMM2-CDG",
   "Purkinje cell", "Pmm2 R137H/F115L knock-in mouse"); give common synonyms/abbreviations.
+- Abbreviations: "expanded" is the full name the abbreviation stands for IN THIS PAPER
+  ("ALT" -> "alanine aminotransferase", "MAD" -> "mitral annulus disjunction"); set
+  "defined_in_paper" true when the paper spells it out. For names that are not
+  abbreviations, "expanded" equals "name". Gene symbols stay symbols (expanded = full gene
+  name if the paper gives it).
+- For every edge, say WHERE the result was obtained: "context_disease" is the key of the
+  disease whose patients, patient-derived cells or models were studied (the input disease
+  if the experiment used its patients, cells or models, even when the edge's object is a
+  gene, pathway or process); "context_model" is the key of the model_system used (mouse
+  line, patient fibroblasts, iPSC, cell line, ...). Use "" when not applicable. Add the
+  disease / model as entities if needed.
 - Record negative and null results too; they matter. effect "negative"/"null" means the
   paper's data show harm / no benefit on the measured outcome; a limitation (e.g. "treats
   symptoms but not the root cause") or a mere plan is not a null result.
@@ -79,13 +97,30 @@ evidence_level: {" | ".join(LEVELS)}
 
 Answer with one JSON object:
 {{"summary": "2 sentences: what the paper shows",
-  "entities": [{{"key": "e1", "name": "...", "type": "...", "synonyms": ["..."]}}],
+  "entities": [{{"key": "e1", "name": "...", "expanded": "...", "defined_in_paper": false,
+                 "type": "...", "synonyms": ["..."]}}],
   "edges": [{{"subject": "e1", "predicate": "...", "object": "e2", "effect": "...",
              "evidence_level": "...", "organism": "human|mouse|zebrafish|yeast|cells|...",
              "direction": "increased|decreased|unchanged|unknown",
              "polarity": "asserted|negated|uncertain", "tissue": "...", "model": "...",
              "population": "...", "variant": "...", "limitations": ["..."],
+             "context_disease": "e3 or empty", "context_model": "e4 or empty",
              "evidence": [{{"passage": "P12", "quote": "..."}}]}}]}}"""
+
+
+NON_SOLUTIONS = ("- Study designs (\"randomized double-blind trial\"), statistical methods "
+                 "(\"Fisher's exact test\", \"Kaplan-Meier method\"), trial names or registry "
+                 "ids (\"LUMINA-1\", \"NCT01234567\") and patient groups / cohorts (\"Rett "
+                 "syndrome patients\") are NOT solution entities: do not extract them as "
+                 "drug, therapy, model_system, assay, outcome_measure, resource or method.\n")
+# generic_penalty (../improvements.py): the rule above joins the prompt; with the flag off
+# the prompt is the old string, so cached replies stay valid
+SYSTEM_NON_SOLUTIONS = SYSTEM.replace("- Skip trivia", NON_SOLUTIONS + "- Skip trivia", 1)
+
+
+def system() -> str:
+    import improvements
+    return SYSTEM_NON_SOLUTIONS if improvements.on("generic_penalty") else SYSTEM
 
 
 def prompt(profile_text: str, paper: dict, doc) -> str:
@@ -99,6 +134,12 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")
 
 
+def _ctx(k, ents: dict, etype: str) -> str:
+    """An edge's context key when it names an entity of the expected type, else ""."""
+    k = str(k or "").strip()
+    return k if k in ents and ents[k]["type"] == etype else ""
+
+
 def clean_result(out: dict) -> tuple[dict, list[dict], dict]:
     """(entities by key, edges, counters) with unknown types/predicates/keys removed."""
     stats = {"entities": 0, "edges": 0, "bad_edges": 0}
@@ -110,7 +151,10 @@ def clean_result(out: dict) -> tuple[dict, list[dict], dict]:
         t = e.get("type") if e.get("type") in ENTITY_TYPES else None
         if t is None:
             continue
-        ents[k] = {"name": str(e["name"]).strip(), "type": t,
+        name = str(e["name"]).strip()
+        ents[k] = {"name": name, "type": t,
+                   "expanded": str(e.get("expanded") or "").strip() or name,
+                   "defined": bool(e.get("defined_in_paper")),
                    "synonyms": [str(s) for s in e.get("synonyms") or []][:8]}
     stats["entities"] = len(ents)
     edges = []
@@ -136,6 +180,8 @@ def clean_result(out: dict) -> tuple[dict, list[dict], dict]:
                       "limitations": [str(x)[:500] for x in r.get("limitations", [])]
                       if isinstance(r.get("limitations"), list) else [],
                       "reviewed": False,
+                      "context_disease": _ctx(r.get("context_disease"), ents, "disease"),
+                      "context_model": _ctx(r.get("context_model"), ents, "model_system"),
                       "evidence": [{"passage": str(x.get("passage") or ""),
                                     "quote": str(x["quote"])[:600]} for x in ev[:3]]})
     stats["edges"] = len(edges)

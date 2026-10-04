@@ -14,9 +14,13 @@ Papers go to the LLM in batches (BATCH) with the disease profile. Per paper it r
   why            one sentence
 
 select() keeps include && relevance >= min_relevance, best first (relevance, full text
-available, citations), up to max_fulltext papers for pass 2.
+available, citations), up to max_fulltext papers for pass 2. diverse_selection
+(../improvements.py): within each relevance level a paper naming a solution not covered
+yet goes first (diverse()), so the read set is not 30 papers on one drug.
 """
 import re
+
+import improvements
 
 from .fulltext import clean
 
@@ -74,13 +78,14 @@ def render(p: dict) -> str:
     mesh = [m.lstrip("*").split("/")[0] for m in p.get("mesh") or [] if m.startswith("*")]
     head = [f"key: {paper_key(p)}", f"title: {clean(p.get('title')) or '(none)'}"]
     meta = ", ".join(str(x) for x in [p.get("year"), p.get("journal"),
-                                      "/".join((p.get("pub_types") or [])[:3])] if x)
+                                      "/".join(str(t) for t in (p.get("pub_types") or [])[:3]
+                                               if t)] if x)
     if meta:
         head.append(f"meta: {meta}")
     if mesh:
         head.append("mesh: " + "; ".join(mesh[:10]))
     if p.get("keywords"):
-        head.append("keywords: " + "; ".join(p["keywords"][:10]))
+        head.append("keywords: " + "; ".join(str(k) for k in p["keywords"][:10] if k))
     ab = clean(p.get("abstract"))
     head.append("abstract: " + (ab[:ABSTRACT_CHARS] + (" ..." if len(ab) > ABSTRACT_CHARS
                                                         else "") if ab else "(no abstract)"))
@@ -127,10 +132,74 @@ def screen_batch(llm, profile_text: str, batch: list[dict]) -> dict[str, dict]:
 
 
 def select(papers: list[dict], decisions: dict[str, dict], min_relevance: int,
-           max_fulltext: int) -> list[dict]:
+           max_fulltext: int, known: list[str] = ()) -> list[dict]:
+    """known: the profile's known drugs / trial drugs (diverse_selection reserves a paper
+    for each first)."""
     keep = [p for p in papers if (d := decisions.get(paper_key(p))) and d["include"]
             and d["relevance"] >= min_relevance]
     keep.sort(key=lambda p: (-decisions[paper_key(p)]["relevance"],
                              not (p.get("pmcid") and p.get("open_access")),
                              not p.get("abstract"), -(p.get("cited_by") or 0)))
+    if improvements.on("diverse_selection"):
+        return diverse(keep, decisions, max_fulltext, known)
     return keep[:max_fulltext]
+
+
+def solution_keys(d: dict) -> set[str]:
+    """What a screened paper is about: its solutions' names (canonical keys), else its
+    solution types ("type:drug")."""
+    from .build import canon_key
+    ks = {canon_key(s, "drug") for s in d.get("solutions") or []} - {""}
+    return ks or {f"type:{t}" for t in d.get("solution_types") or []} or {"none"}
+
+
+def reserved(ranked: list[dict], decisions: dict[str, dict], n: int,
+             known: list[str] = ()) -> list[dict]:
+    """Papers diverse() picks first (at most 2/3 of n): the best paper naming each known
+    drug / trial drug of the profile, then the best paper per solution of the papers
+    screened as solutions tested in the input itself (same_disease, relevance 3)."""
+    from .build import canon_key
+    keys = {paper_key(p): solution_keys(decisions[paper_key(p)]) for p in ranked}
+    out: list[dict] = []
+    cap = max(1, n * 2 // 3)
+
+    def take(want: str) -> None:
+        for p in ranked:
+            if len(out) >= cap or p in out:
+                continue
+            ks = keys[paper_key(p)]
+            if want in ks or any(f" {want} " in f" {k} " for k in ks if not k.startswith(
+                    "type:")):
+                out.append(p)
+                return
+    for k in dict.fromkeys(canon_key(x, "drug") for x in known):
+        if k and len(k) >= 4:
+            take(k)
+    tested = [k for p in ranked for k in sorted(keys[paper_key(p)])
+              if decisions[paper_key(p)]["relevance"] == 3 and not k.startswith("type:")
+              and decisions[paper_key(p)].get("connection") == "same_disease"]
+    covered = {k for p in out for k in keys[paper_key(p)]}
+    for k in dict.fromkeys(tested):
+        if k not in covered:
+            take(k)
+            covered |= {x for p in out for x in keys[paper_key(p)]}
+    return out
+
+
+def diverse(ranked: list[dict], decisions: dict[str, dict], n: int,
+            known: list[str] = ()) -> list[dict]:
+    """diverse_selection: up to n papers of `ranked` (best first): the reserved() ones,
+    then level by level of relevance the best paper that names a solution not covered
+    yet, else the best remaining one, so the read set covers more distinct solutions."""
+    out = reserved(ranked, decisions, n, known)[:n]
+    covered = {k for p in out for k in solution_keys(decisions[paper_key(p)])}
+    for rel in sorted({decisions[paper_key(p)]["relevance"] for p in ranked}, reverse=True):
+        pool = [p for p in ranked if decisions[paper_key(p)]["relevance"] == rel
+                and p not in out]
+        keys = {paper_key(p): solution_keys(decisions[paper_key(p)]) for p in pool}
+        while pool and len(out) < n:
+            p = next((x for x in pool if keys[paper_key(x)] - covered), pool[0])
+            pool.remove(p)
+            covered |= keys[paper_key(p)]
+            out.append(p)
+    return out

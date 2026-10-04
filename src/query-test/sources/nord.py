@@ -15,12 +15,16 @@ Organizations" section, which lists the organisations NORD associates with the d
 robots.txt of 2026-05 allows all agents (Content-Signal: search=yes, ai-input=yes,
 ai-train=no). The page is ~5 MB (menus), so it is streamed and closed after that
 section. Organisations become NORD.ORG:<slug> ("patient_organisation").
-Requests are throttled to respect the site's Crawl-delay.
+Requests are throttled to respect the site's Crawl-delay. Records looked up by NORD id and
+the organisations section of their pages are kept in data/nord/ across runs (delete to
+refresh); free-text searches always go to the site.
 """
 import html
+import json
 import re
 import time
 
+from . import _groups
 from .base import Edge, Node, Source
 
 API = "https://rarediseases.org/wp-json/wp/v2/rare-diseases"
@@ -30,6 +34,8 @@ _ORG = re.compile(r'<div class="single-rd-resource-headline">\s*<h5[^>]*>\s*'
                   r'<a href="https://rarediseases\.org/organizations/([^/"]+)/?">(.*?)</a>', re.S)
 _SECTION = 'data-id="orgs" class="rdd-single-section"'
 _NEXT = 'class="rdd-single-section"'
+_RECORDS = _groups.PageCache("nord/records", "json")
+_SECTIONS = _groups.PageCache("nord/organisations")
 
 
 class NordSource(Source):
@@ -65,7 +71,13 @@ class NordSource(Source):
 
     def _query(self, node: Node, limit: int) -> list[Edge]:
         for cand in self.ids_for(node):
-            d = self._get(f"{API}/{cand.split(':', 1)[1]}")
+            nid = cand.split(":", 1)[1]
+            cached = _RECORDS.get(nid)
+            if cached is not None:
+                d = json.loads(cached)
+            else:
+                d = self._get(f"{API}/{nid}")
+                _RECORDS.put(nid, json.dumps(d))
             edges = [Edge(node, self._mk(d), "matches", self.name)]
             try:
                 orgs = self._organisations(d["link"])
@@ -80,6 +92,22 @@ class NordSource(Source):
 
     def _organisations(self, url: str) -> list[Node]:
         """Patient organisations listed on a NORD report page."""
+        key = url.rstrip("/").rsplit("/", 1)[-1]
+        section = _SECTIONS.get(key)
+        if section is None:
+            section = self._section(url)
+            _SECTIONS.put(key, section)
+        out, seen = [], set()
+        for slug, name in _ORG.findall(section):
+            if slug not in seen:
+                seen.add(slug)
+                out.append(Node(html.unescape(re.sub(r"<[^>]+>", "", name)).strip(),
+                                f"NORD.ORG:{slug}", "patient_organisation", self.name,
+                                info={"url": f"https://rarediseases.org/organizations/{slug}/"}))
+        return out
+
+    def _section(self, url: str) -> str:
+        """The "Patient Organizations" section of a report page ("" when it has none)."""
         wait = MIN_INTERVAL - (time.monotonic() - self._last)
         if wait > 0:
             time.sleep(wait)
@@ -97,14 +125,6 @@ class NordSource(Source):
             self._last = time.monotonic()
         i = buf.find(_SECTION)
         if i < 0:
-            return []
+            return ""
         end = buf.find(_NEXT, i + len(_SECTION))
-        section = buf[i: end if end >= 0 else len(buf)]
-        out, seen = [], set()
-        for slug, name in _ORG.findall(section):
-            if slug not in seen:
-                seen.add(slug)
-                out.append(Node(html.unescape(re.sub(r"<[^>]+>", "", name)).strip(),
-                                f"NORD.ORG:{slug}", "patient_organisation", self.name,
-                                info={"url": f"https://rarediseases.org/organizations/{slug}/"}))
-        return out
+        return buf[i: end if end >= 0 else len(buf)]

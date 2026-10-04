@@ -17,6 +17,7 @@ import importlib
 import json
 import os
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlsplit
@@ -161,6 +162,7 @@ def route(method: str, url: str, params=None, data=None, json_body=None) -> Repl
     req = Req(method.upper(), f"{u.scheme}://{u.netloc}{u.path}", u.hostname or "", u.path,
               _params(u.query, params, data), body)
     for r in routes:
+        t0 = time.perf_counter()
         try:
             reply = r.handler(req)
         except Exception as e:  # a broken local answer must never break the caller
@@ -168,9 +170,25 @@ def route(method: str, url: str, params=None, data=None, json_body=None) -> Repl
             print(f"[local] {r.handler.__module__}.{r.handler.__name__} failed on "
                   f"{url}: {e!r}", file=sys.stderr)
             reply = None
+        if _PROFILE:
+            _profile(r, req, reply, time.perf_counter() - t0)
         if reply is not None:
             return reply
     return None
+
+
+# GARRA_LOCAL_PROFILE=<file>: append one TSV line per handler call (seconds, handler,
+# answered, method, url, params, body) for finding slow queries (see `bench`)
+_PROFILE = os.environ.get("GARRA_LOCAL_PROFILE")
+
+
+def _profile(r: Route, req: Req, reply, dt: float) -> None:
+    body = (req.body or b"").decode("utf-8", "replace")
+    line = "\t".join((f"{dt:.4f}", r.handler.__module__.rsplit(".", 1)[-1],
+                      "1" if reply is not None else "0", req.method, req.url,
+                      json.dumps(req.params), json.dumps(body)))
+    with _lock, open(_PROFILE, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 
 try:

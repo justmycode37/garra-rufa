@@ -23,6 +23,7 @@ Node handling: disease -> consortia ("research_consortium"), their studies
 """
 import html
 import json
+import sys
 import re
 import threading
 from urllib.parse import urljoin
@@ -109,11 +110,26 @@ class RdcrnSource(Source):
         return self._pages[did]
 
     def prefetch(self) -> int:
-        """Download every disease page not cached yet (about 260); returns the count."""
+        """Download every disease page not cached yet (about 260); returns the count.
+        Uses urllib: the site omits its intermediate certificate, which the system trust
+        store resolves but requests' certifi bundle does not."""
+        import urllib.request
         n = 0
+        PAGES.mkdir(parents=True, exist_ok=True)
         for d in self._list.json():
-            if not (PAGES / f"{d['id']}.html").exists() and self._page(d["id"], d["slug"]):
+            path = PAGES / f"{d['id']}.html"
+            if path.exists():
+                continue
+            THROTTLE.wait()
+            req = urllib.request.Request(f"{BASE}/diseases/{d['id']}/{d['slug']}",
+                                         headers={"User-Agent": self.session.headers[
+                                             "User-Agent"]})
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    path.write_text(r.read().decode("utf-8", "replace"), encoding="utf-8")
                 n += 1
+            except Exception as e:
+                print(f"  {d['id']}: {e}", file=sys.stderr)
         return n
 
     def _query(self, node: Node, limit: int) -> list[Edge]:
@@ -170,6 +186,5 @@ class RdcrnSource(Source):
 
 
 if __name__ == "__main__":
-    import sys
     if "--prefetch" in sys.argv:
         print(f"{RdcrnSource().prefetch()} pages downloaded into {PAGES}")

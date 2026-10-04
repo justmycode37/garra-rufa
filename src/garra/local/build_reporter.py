@@ -44,7 +44,7 @@ def _fy(path) -> int:
     return int(digits[:4]) if digits else 0
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("reporter")
     con.executescript("""
     CREATE TABLE project(appl_id TEXT PRIMARY KEY, core TEXT, project_num TEXT, fy INTEGER,

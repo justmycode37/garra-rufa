@@ -10,6 +10,7 @@ search finds a tenth of what PubMed does), so queries use the names in title/abs
   disease_preprints   the same, preprints only
   disease+<kind>      <disease> AND TITLE_ABS:"<symbol / drug / phenotype name>"
   subtype             the subtype's names
+  symptom_treatment   a typed symptom's names AND (treatment | therapy | drug)
 enrich() looks up every paper of the collection that has no citation count yet (batches
 of EXT_ID / DOI / PMCID queries), so all papers get cited_by, open_access, PMCID / DOI.
 """
@@ -55,11 +56,15 @@ class EuropePmcProvider(Provider):
     name = "europepmc"
     throttle = Throttle(0.1)
     relations = frozenset({"disease", "disease_most_cited", "disease_preprints", "disease+gene",
-                           "disease+drug", "disease+phenotype", "subtype"})
+                           "disease+drug", "disease+phenotype", "subtype",
+                           "symptom_treatment"})
 
     def term(self, q: Query) -> tuple[str, str] | None:
         """(query, sort)"""
         d = q.disease
+        if q.relation == "symptom_treatment":  # q.disease is the typed phenotype
+            return (f"{names_term(d, 4)} AND (TITLE_ABS:\"treatment\" OR "
+                    f"TITLE_ABS:\"therapy\" OR TITLE_ABS:\"drug\")"), ""
         if q.relation == "disease":
             return names_term(d), ""
         if q.relation == "disease_most_cited":

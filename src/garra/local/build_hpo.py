@@ -57,7 +57,7 @@ def _categories(ont: sqlite3.Connection) -> dict[str, str]:
     return {hp: c for hp in parents if (c := cat(hp))}
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     ont = sqlite3.connect(db_path("ontology"))
     cats = _categories(ont)
     alt = dict(ont.execute("SELECT alt_id, curie FROM alt WHERE alt_id LIKE 'HP:%'"))

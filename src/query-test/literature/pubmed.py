@@ -11,6 +11,7 @@ always OR-ed with the names in title/abstract so recent, not yet indexed papers 
   disease_reviews       <disease> AND review[pt]
   disease+<kind>        <disease> AND <gene symbol / drug / phenotype names>[tiab]
   subtype               the subtype's own names / heading
+  symptom_treatment     a typed symptom AND (treatment | therapy | drug)[tiab]
 enrich() runs efetch for every PMID in the collection that lacks an abstract or MeSH
 terms, so papers found by other providers (and those cited by the graph sources) get
 title, abstract, journal, year, authors, MeSH, publication types, DOI and PMCID.
@@ -58,10 +59,13 @@ class PubmedProvider(Provider):
     name = "pubmed"
     throttle = ncbi.EUTILS
     relations = frozenset({"disease", "disease_subheading", "disease_reviews", "disease+gene",
-                           "disease+drug", "disease+phenotype", "subtype"})
+                           "disease+drug", "disease+phenotype", "subtype",
+                           "symptom_treatment"})
 
     def term(self, q: Query) -> str | None:
         d = q.disease
+        if q.relation == "symptom_treatment":  # q.disease is the typed phenotype
+            return f"{disease_term(d)} AND (treatment[tiab] OR therapy[tiab] OR drug[tiab])"
         if q.relation == "disease":
             return disease_term(d, major=True)
         if q.relation == "disease_subheading":

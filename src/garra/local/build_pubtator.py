@@ -9,13 +9,13 @@ pubmed.sqlite (build that first); variant mentions are kept for all of PubMed.
   rel(pmid, type, a, b)                     PubTator relations (concept ids)
   relcount(a, b, type, n)                   papers per relation
   mut(pmid, rs, hgvs, gene)                 variant mentions (rsID and/or HGVS + gene)
+  rscount(rs, n)                            papers per rsID
 """
 
 from __future__ import annotations
 
 import gzip
 import re
-import shutil
 import sqlite3
 
 from garra.local import RAW, db_path, finish, writer
@@ -46,7 +46,7 @@ def _lines(name):
                 yield p
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     pm = sqlite3.connect(db_path("pubmed"))
     subset = {r[0] for r in pm.execute("SELECT pmid FROM paper")}
     pm.close()
@@ -164,6 +164,16 @@ def build(keep_raw: bool = True) -> None:
     CREATE INDEX mut_rs ON mut(rs);
     CREATE INDEX mut_gene ON mut(gene, hgvs);
     """)
+    add_rscount(con)
     finish("pubtator", con)
-    if not keep_raw:
-        shutil.rmtree(DIR, ignore_errors=True)
+
+
+def add_rscount(con: sqlite3.Connection) -> None:
+    """rscount(rs, n): papers per rsID, for LitVar's gene variant list."""
+    con.executescript("""
+    DROP TABLE IF EXISTS rscount;
+    CREATE TABLE rscount(rs TEXT PRIMARY KEY, n INTEGER) WITHOUT ROWID;
+    INSERT INTO rscount SELECT rs, count(DISTINCT pmid) FROM mut WHERE rs IS NOT NULL
+        GROUP BY rs;
+    """)
+    con.commit()

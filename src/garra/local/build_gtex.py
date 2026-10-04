@@ -68,7 +68,7 @@ def _qtls(kind: str):
     return df, egenes
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("gtex")
     con.executescript("""
     CREATE TABLE gene(gencode TEXT PRIMARY KEY, symbol TEXT, entrez TEXT);
@@ -132,6 +132,3 @@ def build(keep_raw: bool = True) -> None:
     CREATE INDEX rsid_rs ON rsid(rs);
     """)
     finish("gtex", con)
-    if not keep_raw:
-        for p in (*TARS.values(), LOOKUP):
-            p.unlink(missing_ok=True)

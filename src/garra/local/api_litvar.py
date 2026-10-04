@@ -113,9 +113,20 @@ def litvar(req: Req) -> Reply | None:
             rs_ids |= {r[0] for r in db().execute(
                 "SELECT DISTINCT rs FROM mut WHERE gene=? AND rs IS NOT NULL", (gid,))}
         lines = []
-        for rs in sorted(rs_ids):
-            n = db().execute("SELECT count(DISTINCT pmid) FROM mut WHERE rs=?",
-                             (rs,)).fetchone()[0]
+        ids = sorted(rs_ids)
+        counts: dict[str, int] = {}
+        if db().execute("SELECT 1 FROM sqlite_master WHERE name='rscount'").fetchone():
+            for i in range(0, len(ids), 900):
+                chunk = ids[i:i + 900]
+                counts.update(db().execute(
+                    f"SELECT rs, n FROM rscount WHERE rs IN ({','.join('?' * len(chunk))})",
+                    chunk))
+        else:  # index built before rscount existed
+            for rs in ids:
+                counts[rs] = db().execute("SELECT count(DISTINCT pmid) FROM mut WHERE rs=?",
+                                          (rs,)).fetchone()[0]
+        for rs in ids:
+            n = counts.get(rs)
             if n:
                 lines.append(f"{{'_id': 'litvar@{rs}##', 'pmids_count': {n}, 'rsid': '{rs}'}}")
         return Reply("\n".join(lines), content_type="text/plain")

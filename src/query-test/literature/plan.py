@@ -16,6 +16,8 @@ entities the graph links to them:
   gene_variants         LitVar: most published variants of causal genes     cap 150, <= 3
   subtype               subclasses of the disease                              cap 30, <= 5
 Further focus diseases (symptom mode) get the core queries and a few gene/drug combos.
+symptom_axis (../improvements.py), symptom mode only:
+  symptom_treatment     each typed phenotype AND (treatment | therapy | drug)  cap 40, <= 6
 
 Concept names are the label plus exact synonyms (abbreviations such as "MFS" are left out:
 as search terms they mostly hit other things). The MeSH heading comes from the mesh
@@ -25,6 +27,7 @@ under a broader descriptor.
 """
 import re
 
+import improvements
 import quality
 from sources.base import WORD
 
@@ -33,9 +36,9 @@ from .base import Concept, Provider, Query, Throttle
 CAPS = {"disease": 200, "disease_most_cited": 100, "disease_reviews": 50,
         "disease_preprints": 50, "disease_subheading": 40, "disease+gene": 50,
         "disease+drug": 50, "disease+phenotype": 30, "variant": 30, "gene_variants": 150,
-        "subtype": 30}
+        "subtype": 30, "symptom_treatment": 40}
 MAX = {"gene": 10, "drug": 10, "phenotype": 10, "variant": 20, "subtype": 5,
-       "gene_variants": 3}
+       "gene_variants": 3, "symptom_treatment": 6}
 MAX_SECONDARY = {"gene": 3, "drug": 3, "phenotype": 0, "subtype": 0}
 SUBHEADINGS = ["genetics", "therapy", "diagnosis", "physiopathology", "drug therapy",
                "surgery"]
@@ -232,4 +235,28 @@ def plan(graph: dict, mesh: MeshLookup) -> list[Query]:
     mixed = []
     for i in range(max((len(g) for g in combos), default=0)):
         mixed += [g[i] for g in combos if i < len(g)]
-    return core + extra + mixed + variants + gene_vars + subtypes
+    symptoms = symptom_queries(graph, nodes, mesh) if improvements.on("symptom_axis") else []
+    return core + extra + symptoms + mixed + variants + gene_vars + subtypes
+
+
+def symptom_queries(graph: dict, nodes: dict, mesh: MeshLookup) -> list[Query]:
+    """symptom_axis: for a symptom-mode graph (query.mode "candidates"), one query per
+    typed phenotype (at most MAX["symptom_treatment"]): "<symptom> AND (treatment OR
+    therapy OR drug)", so treatments of the symptom itself (acquired HO, cataplexy, ...)
+    reach the evidence graph whatever the disease."""
+    q = graph.get("query") or {}
+    if q.get("mode") != "candidates":
+        return []
+    out, seen = [], set()
+    for p in q.get("parts") or []:
+        if p.get("kind") != "phenotype" or not p.get("id") or p["id"] in seen:
+            continue
+        seen.add(p["id"])
+        n = nodes.get(p["id"]) or {"id": p["id"], "label": p.get("label") or p["text"],
+                                   "kind": "phenotype", "xrefs": [], "info": {}}
+        c = concept({**n, "kind": "phenotype"}, mesh)
+        if not c.names:
+            c.names = [p.get("label") or p["text"]]
+        out.append(Query(f"symptom_treatment:{p['id']}", "symptom_treatment", c, None,
+                         CAPS["symptom_treatment"]))
+    return out[:MAX["symptom_treatment"]]

@@ -40,10 +40,18 @@ Connections between kept items (not just item -> disease) come from:
             gene, disease or symptom
 In the viewer, connections of collapsed groups are drawn between the groups.
 
+Symptom / gene searches (main.py "FBN1", "tall stature, arachnodactyly", ...) have several
+candidate diseases: then a Markdown overview is written (how the input was read, the
+ranked candidates and why, the symptoms that tell the top candidates apart) together with
+one profile per top candidate (<out>.<rank>-<name>.<suffix>, linked from the overview).
+The searched symptoms and genes are marked in each profile.
+
 Usage:
   python src/query-test/present.py runs/marfan.json                 # -> runs/marfan.present.html
+  python src/query-test/present.py runs/fbn1.json -o runs/fbn1.present.md  # overview + profiles
   python src/query-test/present.py runs/pmm2.json -o runs/pmm2.present.md
   python src/query-test/present.py runs/sym.json --focus MONDO:0009352 -o sym.present.json
+                                                                    # one candidate only
 """
 import argparse
 import json
@@ -62,6 +70,7 @@ from sources.base import words  # noqa: E402
 
 PRIMEKG_DB = Path(__file__).resolve().parents[2] / "data" / "primekg" / "primekg.sqlite"
 CURIE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*:\S+$")
+ID_LABEL = re.compile(r"^(?:[A-Za-z][A-Za-z0-9_.-]*:\S+|[A-Z]+_\d+)$")  # "HP:0005113", "HP_0005113"
 
 SECTIONS = [  # id, label, colour (viewer)
     ("symptoms", "Symptoms & signs", "#e15759"),
@@ -305,10 +314,12 @@ class Present:
                     continue
                 neigh[o].append((rel, src, out))
         symptom_query = self.g.nodes.get(self.g.data.get("start"), {}).get("kind") == "query"
-        searched = set()
+        searched: dict[str, str] = {}
         if symptom_query:
-            searched = {o for o, rel, _, out in self.g.adj[self.g.data["start"]]
-                        if out and rel == "has_symptom"}
+            searched = {o: ("one of the searched symptoms" if rel == "has_symptom"
+                            else "the searched gene")
+                        for o, rel, _, out in self.g.adj[self.g.data["start"]]
+                        if out and rel in ("has_symptom", "has_gene")}
             for o, rel, src, out in self.g.adj[self.g.data["start"]]:
                 if rel == "candidate_disease" and o not in self.aliases:
                     neigh[o].append(("candidate_disease", src, True))
@@ -323,14 +334,14 @@ class Present:
                 section, group, extra = placed
                 self._add_item(nid, n, section, group, rels, extra)
                 if nid in searched:
-                    self.items[nid]["notes"].insert(0, "one of the searched symptoms")
+                    self.items[nid]["notes"].insert(0, searched[nid])
                     self.items[nid]["score"] += 1
         self._attach_variants(variants)
 
     def _classify(self, nid: str, n: dict, rels) -> tuple[str, str, dict] | None:
         kind, names = n["kind"], {r for r, _, _ in rels}
         srcs = {s for _, s, _ in rels}
-        if kind in DROP_KINDS or (CURIE.match(n["label"]) and kind != "variant"):
+        if kind in DROP_KINDS or (ID_LABEL.match(n["label"]) and kind != "variant"):
             return None
         if n["label"].strip().title() in COUNTRY_SET or n["label"].strip() in COUNTRY_SET:
             return None  # e.g. an Orphanet trial-network entry named "BELGIUM"
@@ -949,6 +960,132 @@ def write_md(view: dict, path: Path):
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
+# -- candidate overview (symptom / gene input) -------------------------------------------
+def _disease_ann(h, ids) -> dict[str, float]:
+    """HPO annotations of a disease over all its entries (OMIM and Orphanet)."""
+    out: dict[str, float] = {}
+    for i in ids:
+        for hp, f in h.ann.get(normalize(i), {}).items():
+            out[hp] = max(out.get(hp, 0.0), f)
+    return out
+
+
+def distinguishing(h, cands: list[dict], n: int = 5, min_freq: float = 0.3) -> dict[str, list]:
+    """Per candidate: frequent, specific symptoms (HPO annotations) that none of the
+    other candidates has, not even as a more specific or broader-but-informative term:
+    what to look for to tell the candidates apart. Returns {ranking id: [(hp, name,
+    freq)]}; the searched symptoms are left out."""
+    searched = {m["query"] for r in cands for m in r["matches"]}
+    anns = {r["id"]: _disease_ann(h, [r["id"], *r["xrefs"]]) for r in cands}
+    props = {k: _propagate(h, a) for k, a in anns.items()}
+    out = {}
+    for r in cands:
+        others = [props[o["id"]] for o in cands if o["id"] != r["id"]]
+        rows = []
+        for hp, f in anns[r["id"]].items():
+            if f < min_freq or hp in searched or hp not in h.name or h.is_inheritance(hp):
+                continue
+            if _hpoa.PHENOTYPE_ROOT not in h.ancestors(hp) or h.specificity(hp) < 0.35:
+                continue
+            # another candidate has it (or a more specific form of it): not distinguishing
+            if any(hp in o for o in others):
+                continue
+            rows.append((h.specificity(hp) * (0.5 + f), hp, h.name[hp], f))
+        rows.sort(reverse=True)
+        out[r["id"]] = [(hp, name, f) for _, hp, name, f in rows[:n]]
+    return out
+
+
+def write_overview(g: Graph, query: dict, profiles: dict[str, Path], path: Path,
+                   top_n: int):
+    """Markdown overview of a symptom / gene search: how the input was read, the ranked
+    candidates with the reasons, what tells the top ones apart, links to the profiles."""
+    h = _hpoa.load()
+    out = [f"# Candidate diseases for: {query['text']}", ""]
+    out += ["## How the input was read", "", "| input | read as | term | match |",
+            "|---|---|---|---|"]
+    for p in query["parts"]:
+        if p["kind"] == "unknown":
+            sugg = "; ".join(f"{name} `{hp}`" for hp, name in p.get("suggestions") or ())
+            out.append(f"| {p['text']} | **not recognised** (not used) | closest HPO terms: "
+                       f"{sugg or '-'} | |")
+        else:
+            alt = f" — {p['alternative']}" if p.get("alternative") else ""
+            out.append(f"| {p['text']} | {p['kind']} | {p.get('label')} `{p.get('id')}` | "
+                       f"{p.get('how')}{alt} |")
+    phen = [p for p in query["parts"] if p["kind"] == "phenotype"]
+    genes = [p for p in query["parts"] if p["kind"] == "gene"]
+    out += ["", "## Ranked candidates", "",
+            "Ranked by: " + ", ".join(x for x in (
+                "diseases named in the input first" if any(r["pinned"] for r in query["ranking"])
+                else "",
+                "diseases caused by the searched gene(s) first, then other gene links" if genes
+                else "",
+                "how well the disease's HPO annotations cover the symptoms (specific "
+                "symptoms count more; ✓ has the symptom, ~ only a related broader one)" if phen
+                else "",
+                "better characterised diseases (more HPO annotations) on ties") if x) + ".",
+            "", "| # | disease | why | profile |", "|---|---|---|---|"]
+    first: dict[str, int] = {}  # graph node -> rank of its first entry
+    heads: list[dict] = []  # first entry of each graph node
+    for i, r in enumerate(query["ranking"], 1):
+        why = []
+        if r["pinned"]:
+            why.append("named in the input")
+        assoc = {}
+        for x in r["genes"]:
+            assoc.setdefault(x["symbol"], x["association"])
+        why += [f"{sym}: {a.lower()}" for sym, a in assoc.items()]
+        if phen:
+            full = sum(m["full"] for m in r["matches"])
+            ms = [f"{'✓' if m['full'] else '~'} {m['query_label']}"
+                  + ("" if m["full"] else f" (via {m['matched_label']})")
+                  + f" {m['frequency']:.0%}" for m in r["matches"]]
+            why.append(f"{full}/{len(phen)} symptoms (score {r['score']:.1f}): "
+                       + "; ".join(ms))
+        ids = ", ".join([r["id"], *r["xrefs"]])
+        if r["node"] in first:  # merged into the same entity as a better-ranked entry
+            cell = f"same entity as #{first[r['node']]}"
+        else:
+            first[r["node"]] = i
+            prof = profiles.get(r["node"])
+            cell = f"[profile]({prof.name})" if prof else "-"
+            heads.append(r)
+        out.append(f"| {i} | {r['name']} `{ids}` | {'<br>'.join(why) or '-'} | {cell} |")
+    top = [r for r in heads if r["node"] in profiles] or heads[:top_n]
+    if h and len(top) > 1:
+        diff = distinguishing(h, top)
+        out += ["", "## Telling the top candidates apart", "",
+                "Frequent (≥30%), specific symptoms annotated for one candidate and for none "
+                "of the others (HPO annotations): worth checking for.", ""]
+        for r in top:
+            rows = diff.get(r["id"]) or []
+            out.append(f"- **{r['name']}**: " + ("; ".join(
+                f"{name} ({freq_label(f)})" for _, name, f in rows)
+                if rows else "no distinguishing symptom annotated"))
+    if profiles:
+        out += ["", "## Profiles", ""]
+        for r in heads:
+            if r["node"] in profiles:
+                out.append(f"- [{r['name']}]({profiles[r['node']].name})")
+    rest = len(heads) - len(profiles)
+    if rest > 0:
+        out += ["", f"{rest} candidates without a profile here: main.py queried them only "
+                "briefly (raise --focus-candidates there, or present.py --top for a thinner "
+                "profile)."]
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def _write(view: dict, out: Path):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.suffix == ".md":
+        write_md(view, out)
+    elif out.suffix == ".json":
+        out.write_text(json.dumps(view, ensure_ascii=False, indent=1), encoding="utf-8")
+    else:
+        write_html(view, out)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -959,23 +1096,42 @@ def main():
                                     "focus main.py found (symptom mode: the top candidate)")
     ap.add_argument("--similar", type=int, default=8,
                     help="max diseases with similar symptoms to add (0: none)")
+    ap.add_argument("--top", type=int,
+                    help="symptom / gene search: profiles for this many top candidates "
+                         "(default: the ones main.py expanded fully)")
     args = ap.parse_args()
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
     g = Graph(json.loads(args.graph.read_text(encoding="utf-8")))
+    out = args.out or args.graph.with_suffix(".present.html")
+    query = g.data.get("query")
+    if query and query.get("ranking") and not args.focus:
+        # symptom / gene search: an overview of the candidates + a profile for the top ones
+        by_node: dict[str, dict] = {}  # entries merged into one entity: the best-ranked one
+        for r in query["ranking"]:
+            if r["node"] in g.nodes:
+                by_node.setdefault(r["node"], r)
+        ranked = list(by_node.values())
+        n = args.top or len(set(g.data.get("focus") or ())) or 3
+        profiles: dict[str, Path] = {}
+        for i, r in enumerate(ranked[:n], 1):
+            view = Present(g, r["node"], similar=args.similar).build()
+            path = out.with_name(f"{out.stem}.{i}-{_slug(r['name'])}{out.suffix}")
+            _write(view, path)
+            profiles[r["node"]] = path
+            print(f"{i}. {view['focus']['label']} ({r['node']}): {len(view['items'])} items in "
+                  f"{len(view['groups'])} groups -> {path.resolve()}")
+        overview = out if out.suffix == ".md" else out.with_suffix(".md")
+        query = {**query, "ranking": [r for r in query["ranking"] if r["node"] in g.nodes]}
+        write_overview(g, query, profiles, overview, n)
+        print(f"candidate overview -> {overview.resolve()}")
+        return
     focus = g.pick_focus(args.focus)
     if not focus:
         ap.error(f"focus {args.focus!r} not found in the graph" if args.focus
                  else "the graph has no disease to present")
     view = Present(g, focus, similar=args.similar).build()
-    out = args.out or args.graph.with_suffix(".present.html")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if out.suffix == ".md":
-        write_md(view, out)
-    elif out.suffix == ".json":
-        out.write_text(json.dumps(view, ensure_ascii=False, indent=1), encoding="utf-8")
-    else:
-        write_html(view, out)
+    _write(view, out)
     print(f"{view['focus']['label']} ({focus}): {len(view['items'])} items in "
           f"{len(view['groups'])} groups (from {len(g.nodes)} nodes), "
           f"{len(view['links'])} connections -> {out.resolve()}")
@@ -984,7 +1140,7 @@ def main():
     cands = [o for o, rel, _, out in g.adj.get(g.data.get("start"), ())
              if out and rel == "candidate_disease" and o != focus]
     if cands and not args.focus:
-        print("other candidate diseases of the symptom search (present one with --focus):")
+        print("other candidate diseases of the search (present one with --focus):")
         for o in cands:
             print(f"  {o}  {g.nodes[o]['label']}")
 

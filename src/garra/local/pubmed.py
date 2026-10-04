@@ -3,11 +3,15 @@ FTS5, search, and stored records."""
 
 from __future__ import annotations
 
+import functools
+import heapq
 import json
+import mmap
 import re
+import threading
 import zlib
 
-from garra.local import available, connect
+from garra.local import LOCAL_DIR, available, connect, db_path
 
 # PubMed field tag -> FTS columns
 FIELDS = {"tiab": "tiab", "title/abstract": "tiab", "ti": "tiab", "title": "tiab",
@@ -30,6 +34,29 @@ class Unsupported(ValueError):
 
 def db():
     return connect("pubmed")
+
+
+# publication year per PMID for ranking, read from pubmed_year.bin (one byte per PMID,
+# build_pubmed.write_years) instead of joining every match to the large paper table
+YEARS = LOCAL_DIR / "pubmed_year.bin"
+_years: mmap.mmap | None = None
+_years_lock = threading.Lock()
+
+
+def _year_map() -> mmap.mmap | None:
+    """The memory-mapped year file, if it is at least as new as pubmed.sqlite."""
+    global _years
+    if _years is None:
+        with _years_lock:
+            if _years is None:
+                try:
+                    if YEARS.stat().st_mtime < db_path("pubmed").stat().st_mtime:
+                        return None
+                    with open(YEARS, "rb") as f:
+                        _years = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+                except (OSError, ValueError):
+                    return None
+    return _years
 
 
 def has(pmids) -> set[str]:
@@ -129,9 +156,41 @@ def to_fts(term: str) -> str:
     return " ".join(out)
 
 
+@functools.lru_cache(maxsize=512)
 def search(term: str, n: int, sort: str = "relevance") -> tuple[int, list[str]]:
+    """(number of matches, top n PMIDs). Relevance is BM25 (title/abstract 1, MeSH 2,
+    major topic 4, publication type 0.1, supplementary concept 2) plus 0.02 per year
+    after 2000; date order is newest year first, then highest PMID."""
     q = to_fts(term)
     con = db()
+    years = _year_map()
+    if years is None:
+        return _search_join(con, q, n, sort)
+    size = len(years)
+    count = 0
+    if sort == "relevance":
+        def scored():
+            nonlocal count
+            for pmid, score in con.execute(
+                    "SELECT rowid, bm25(paper_fts, 1.0, 2.0, 4.0, 0.1, 2.0) FROM paper_fts "
+                    "WHERE paper_fts MATCH ?", (q,)):
+                count += 1
+                v = years[pmid] if pmid < size else 0
+                yield (score - 0.02 * (v - 200) if v else score), pmid
+        top = heapq.nsmallest(n, scored())
+    else:
+        def dated():
+            nonlocal count
+            for (pmid,) in con.execute("SELECT rowid FROM paper_fts WHERE paper_fts MATCH ?",
+                                       (q,)):
+                count += 1
+                yield (years[pmid] if pmid < size else 0), pmid
+        top = heapq.nlargest(n, dated())
+    return count, [str(pmid) for _, pmid in top]
+
+
+def _search_join(con, q: str, n: int, sort: str) -> tuple[int, list[str]]:
+    """search() without pubmed_year.bin: years from the paper table."""
     count = con.execute("SELECT count(*) FROM paper_fts WHERE paper_fts MATCH ?",
                         (q,)).fetchone()[0]
     if sort == "relevance":

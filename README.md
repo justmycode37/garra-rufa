@@ -33,6 +33,19 @@ search_pubmed("Pompe disease")
 
 Set `NCBI_EMAIL` before calling PubMed. Patient-organization directories (NORD, Global Genes, EURORDIS, Orphanet patient orgs) are listed as manual sources and are not downloaded.
 
+## Local data
+
+Most API lookups (ontologies, Orphadata, HPO, Monarch, Open Targets, ClinVar, GTEx, HPA,
+MeSH, ClinicalTrials.gov, RePORTER, a rare-disease PubMed subset, PubTator, LitVar) can be
+answered from local indexes in `data/local/` instead of the network:
+
+```bash
+PYTHONPATH=src python -m garra.local download
+PYTHONPATH=src python -m garra.local build
+```
+
+Without the indexes everything falls back to the live APIs. See [docs/LOCAL_DATA.md](docs/LOCAL_DATA.md).
+
 ## Backend (graph + journey, no UI)
 
 See [docs/BACKEND.md](docs/BACKEND.md). After raw files are fetched:

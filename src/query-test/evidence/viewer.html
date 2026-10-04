@@ -66,7 +66,7 @@
   <input type="search" id="q" placeholder="entity, paper title or ID…">
   <div id="results" class="list"></div>
   <h2>Candidate solutions</h2>
-  <div class="tabs"><button data-cat="direct" class="on">Direct</button><button data-cat="transfer">Transfer</button></div>
+  <div class="tabs"><button data-cat="direct" class="on">Direct</button><button data-cat="transfer">Transfer</button><button data-cat="gaps">Gaps</button></div>
   <div id="cands" class="list"></div>
   <h2>Entity kind</h2>
   <div id="kinds"></div>
@@ -222,10 +222,20 @@ function renderCounts() {
 
 let candCat = "direct";
 function renderCands() {
+  if (candCat === "gaps") {
+    const gs = (DATA.gaps || []).filter(g => g.status !== "tested");
+    document.getElementById("cands").innerHTML = gs.slice(0, 60).map((g, i) =>
+      `<div class="cand" data-id="${esc(g.intervention)}" title="${esc([g.rationale, g.caveat, g.experiment].filter(Boolean).join("\n"))}">
+       <span>${i + 1}. ${esc(g.intervention_label)} → ${esc(g.mechanism_label)}
+       <span class="small muted">${esc(g.status.replace("_", " "))} · ${g.literature.count ?? "?"} papers · ${g.trials.length} trials${g.reason ? " · " + esc(g.reason) : ""}</span></span>
+       <span class="score">${g.plausibility != null ? g.plausibility + "/3" : ""}</span></div>`).join("")
+      || '<span class="muted">none</span>';
+    return;
+  }
   const cs = DATA.candidates.filter(c => c.category === candCat);
   document.getElementById("cands").innerHTML = cs.slice(0, 60).map((c, i) =>
     `<div class="cand" data-id="${esc(c.id)}"><span class="dot" style="background:${color(c.kind)}"></span>
-     <span>${i + 1}. ${esc(c.label)}${c.tested_without_benefit_in_input ? ' <span class="neg" title="tested without benefit in the input disease">✕</span>' : ""}</span>
+     <span>${i + 1}. ${esc(c.label)}${c.tested_without_benefit_in_input ? ' <span class="neg" title="tested without benefit in the input disease">✕</span>' : ""}${c.n_papers != null ? ` <span class="small muted" title="supporting papers · best evidence level">${c.n_papers} paper${c.n_papers === 1 ? "" : "s"} · ${esc(c.best_level || "")}</span>` : ""}${c.generic ? ' <span class="small muted" title="generic technique, down-weighted">generic</span>' : ""}</span>
      <span class="score">${c.score.toFixed(2)}</span></div>`).join("")
     + (cs.length > 60 ? `<div class="muted small">… ${cs.length - 60} more (see JSON / MD)</div>` : "")
     || '<span class="muted">none</span>';
@@ -273,6 +283,7 @@ function showNode(id) {
       ${n.xrefs.length ? `<tr><td>Xrefs</td><td>${n.xrefs.map(x => `<code>${esc(x)}</code>`).join(" ")}</td></tr>` : ""}
     </table>
     ${c ? `<h2>Candidate solution · ${esc(c.category)} · score ${c.score}</h2>
+      ${c.n_papers != null ? `<div class="small">${c.n_papers} supporting paper(s) · best evidence ${esc(c.best_level || "none")} · tier ${c.tier}/3${c.n_papers === 1 ? ' · <span class="neg">single paper</span>' : ""}${c.generic ? " · generic technique (down-weighted)" : ""}${c.other_disease_endpoint ? " · endpoint of another disease (down-weighted)" : ""}</div>` : ""}
       ${c.tested_without_benefit_in_input ? '<div class="neg">Tested without benefit in the input disease.</div>' : ""}
       ${c.paths.map(pathHtml).join("")}` : ""}
     <h2>Evidence edges (${es.length})</h2>${es.map(e => edgeRow(e, id)).join("") || '<span class="muted">none</span>'}

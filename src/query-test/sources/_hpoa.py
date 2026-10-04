@@ -1,14 +1,16 @@
 """Local copy of the Human Phenotype Ontology and its disease annotations (helper, not a Source).
 
 Files (official HPO release, downloaded once into <repo>/data/hpo/, gitignored):
-  hp.obo           ontology: names, synonyms, is_a parents, alt ids
-  phenotype.hpoa   disease -> phenotype annotations (OMIM / ORPHA / DECIPHER) with frequency
+  hp.obo                ontology: names, synonyms, is_a parents, alt ids
+  phenotype.hpoa        disease -> phenotype annotations (OMIM / ORPHA / DECIPHER) with frequency
+  genes_to_disease.txt  gene -> disease (OMIM: Mendelian / polygenic, ORPHA: Orphanet links)
 Parsed once into hpo.pickle. Delete the folder to refresh. The purl redirects to GitHub
 release assets; when github.com is unreachable the GitHub API asset route is tried.
 
 Used for:
-  - symptom search (main.py --symptoms): resolve free-text symptoms to HP terms and rank
-    diseases by how well their annotations cover the symptoms (rank_diseases)
+  - candidate search (main.py with symptoms / genes, resolve.py): resolve free-text
+    symptoms to HP terms and rank diseases by how well their annotations cover the
+    symptoms and whether they are linked to the given genes (rank_diseases)
   - specificity of a phenotype (information content, ic): "Arachnodactyly" is informative,
     "Autosomal dominant inheritance" or "Failure to thrive" are not
   - frequency labels -> numbers (freq_value), also for JAX / Monarch frequency strings
@@ -19,7 +21,9 @@ Scoring (rank_diseases): for each query symptom q, a disease gets the informatio
 of the most informative term it shares with q's ancestors (q itself, or one of q's
 descendants, counts as a full match; a shared ancestor such as "Abnormality of the
 lens" counts as a partial match), scaled by how frequent that phenotype is in the
-disease. Rare, specific symptoms therefore weigh more than common ones.
+disease. Rare, specific symptoms therefore weigh more than common ones. Diseases linked to
+a query gene rank above all others (a gene is much stronger evidence than a symptom); among
+themselves they are ordered by the symptom score, then by how well characterised they are.
 """
 import csv
 import math
@@ -34,7 +38,8 @@ import requests
 DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "hpo"
 PICKLE = DATA_DIR / "hpo.pickle"
 FILES = {"hp.obo": "https://purl.obolibrary.org/obo/hp.obo",
-         "phenotype.hpoa": "https://purl.obolibrary.org/obo/hp/hpoa/phenotype.hpoa"}
+         "phenotype.hpoa": "https://purl.obolibrary.org/obo/hp/hpoa/phenotype.hpoa",
+         "genes_to_disease.txt": "https://purl.obolibrary.org/obo/hp/hpoa/genes_to_disease.txt"}
 GH_RELEASE = "https://api.github.com/repos/obophenotype/human-phenotype-ontology/releases/latest"
 INHERITANCE = "HP:0000005"  # "Mode of inheritance": generic, never a useful symptom/hub
 PHENOTYPE_ROOT = "HP:0000118"  # "Phenotypic abnormality"
@@ -66,6 +71,11 @@ def freq_value(f) -> float:
     if m:
         return float(m[1]) / 100
     return UNKNOWN_FREQ
+
+
+def causal(assoc: str) -> bool:
+    """A gene-disease association that means "mutations in the gene cause the disease"."""
+    return assoc == "MENDELIAN" or assoc.startswith("Disease-causing")
 
 
 def _words(s: str) -> frozenset[str]:
@@ -113,6 +123,9 @@ class HpoData:
         self.count: dict[str, int] = d["count"]  # term -> diseases annotated (propagated)
         # (disease, hp) -> PMIDs of the annotation
         self.refs: dict[tuple[str, str], tuple[str, ...]] = d["refs"]
+        # gene symbol -> [(disease, association: MENDELIAN / POLYGENIC / UNKNOWN)]
+        self.g2d: dict[str, list[tuple[str, str]]] = d["g2d"]
+        self.gene_ids: dict[str, str] = d["gene_ids"]  # NCBIGene:<n> -> symbol
         self.n = len(self.ann)
         self.children: dict[str, set[str]] = {}
         for c, ps in self.parents.items():
@@ -230,6 +243,17 @@ class HpoData:
                 break
         return list(out.values())
 
+    # -- genes ------------------------------------------------------------------
+    def gene_symbol(self, text: str) -> str | None:
+        """The symbol of a gene with disease annotations, given as symbol or NCBIGene id."""
+        t = text.strip()
+        if t.upper().startswith(("NCBIGENE:", "ENTREZ:")):
+            return self.gene_ids.get("NCBIGene:" + t.split(":", 1)[1])
+        return t.upper() if t.upper() in self.g2d else None
+
+    def gene_diseases(self, symbol: str) -> list[tuple[str, str]]:
+        return self.g2d.get(symbol.upper(), [])
+
     # -- disease ranking ----------------------------------------------------------
     def _propagated(self, dis: str) -> dict[str, float]:
         out: dict[str, float] = {}
@@ -239,18 +263,26 @@ class HpoData:
                     out[a] = f
         return out
 
-    def rank_diseases(self, hps: list[str], top: int = 20) -> list[dict]:
-        """Diseases best explaining the symptoms, best first. Each result: id, name,
-        score, xrefs (same-named entries from other databases), matches
-        [(query hp, matched hp, full match?, freq)]."""
+    def rank_diseases(self, hps: list[str], top: int = 20, genes: list[str] = (),
+                      gene_assoc=None) -> list[dict]:
+        """Diseases best explaining the symptoms and genes, best first. Each result: id,
+        name, score, xrefs (same-named entries from other databases), matches
+        [(query hp, matched hp, full match?, freq)], genes [(symbol, association)].
+        gene_assoc(disease, symbol) may name the association more precisely than this
+        file does (it calls every Orphanet link UNKNOWN), e.g. Orphanet's
+        "Disease-causing germline mutation(s) in" or "Major susceptibility factor in"."""
         hps = [h for h in dict.fromkeys(hps) if h in self.name]
-        cands: set[str] = set()
+        by_gene: dict[str, list[tuple[str, str]]] = {}
+        for g in dict.fromkeys(genes):
+            for dis, assoc in self.gene_diseases(g):
+                by_gene.setdefault(dis, []).append((g.upper(), assoc))
+        cands: set[str] = set(by_gene)
         for q in hps:
             for t in self.descendants(q):
                 cands |= self.by_term.get(t, set())
         scored = []
         for dis in cands:
-            p = self._propagated(dis)
+            p = self._propagated(dis) if dis in self.ann else {}
             score, matches = 0.0, []
             for q in hps:
                 best = None
@@ -262,22 +294,29 @@ class HpoData:
                 if best and best[0] > 0:
                     score += best[0]
                     matches.append((q, best[1], best[2], best[3]))
+            genes_of = [(g, gene_assoc(dis, g) or a if gene_assoc else a)
+                        for g, a in by_gene.get(dis, [])]
             scored.append({"id": dis, "name": self.dname.get(dis, dis), "score": score,
-                           "matches": matches, "xrefs": []})
-        scored.sort(key=lambda r: (-r["score"], r["id"]))
+                           "matches": matches, "xrefs": [], "genes": genes_of})
         # OMIM and Orphanet often both annotate one disease: merge entries with equal names
-        out: list[dict] = []
+        # (the best-scoring one represents them, the genes of all count)
+        scored.sort(key=lambda r: (-r["score"], r["id"]))
         by_name: dict[str, dict] = {}
         for r in scored:
             key = " ".join(sorted(_words(r["name"])))
             if key in by_name:
                 by_name[key]["xrefs"].append(r["id"])
-                continue
-            by_name[key] = r
-            out.append(r)
-            if len(out) >= top:
-                break
-        return out
+                by_name[key]["genes"] = list(dict.fromkeys(by_name[key]["genes"] + r["genes"]))
+            else:
+                by_name[key] = r
+        # causally gene-linked first, then other gene links (susceptibility, candidate,
+        # polygenic), then symptom score, then the better characterised disease (more
+        # annotations over all its entries): "FBN1" -> Marfan syndrome first
+        out = sorted(by_name.values(), key=lambda r: (
+            -len({g for g, a in r["genes"] if causal(a)}), -len({g for g, _ in r["genes"]}),
+            -r["score"], -sum(len(self.ann.get(i, ())) for i in (r["id"], *r["xrefs"])),
+            r["id"]))
+        return out[:top]
 
 
 def _parse(session: requests.Session) -> dict:
@@ -343,8 +382,18 @@ def _parse(session: requests.Session) -> dict:
             d = ann.setdefault(dis, {})
             d[hp] = max(d.get(hp, 0), fv)
 
+    g2d: dict[str, list[tuple[str, str]]] = {}
+    gene_ids: dict[str, str] = {}
+    with open(_download(session, "genes_to_disease.txt"), encoding="utf-8") as f:
+        for r in csv.DictReader(f, delimiter="	"):
+            sym, dis = r["gene_symbol"].upper(), r["disease_id"].replace("ORPHANET:", "ORPHA:")
+            gene_ids[r["ncbi_gene_id"]] = sym
+            if (dis, r["association_type"]) not in g2d.setdefault(sym, []):
+                g2d[sym].append((dis, r["association_type"]))
+
     data = {"name": name, "parents": parents, "alt": alt, "exact": exact, "related": related,
-            "ann": ann, "dname": dname, "count": {}, "refs": refs}
+            "ann": ann, "dname": dname, "count": {}, "refs": refs, "g2d": g2d,
+            "gene_ids": gene_ids}
     tmp = HpoData(data)
     count: dict[str, int] = {}
     for dis in ann:
@@ -370,7 +419,7 @@ def load(session: requests.Session | None = None) -> HpoData | None:
             if PICKLE.exists():
                 with open(PICKLE, "rb") as f:
                     d = pickle.load(f)
-                if "refs" not in d:  # pickle from before references were kept: re-parse
+                if "g2d" not in d:  # pickle from before refs / genes were kept: re-parse
                     d = None
             if d is not None:
                 _data = HpoData(d)

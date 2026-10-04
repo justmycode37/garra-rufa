@@ -43,7 +43,7 @@ def _terms(el, ui, rows):
                 rows.append((norm(s), ui, s, int(t.get("RecordPreferredTermYN") == "Y")))
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("mesh")
     con.executescript("""
     CREATE TABLE rec(ui TEXT PRIMARY KEY, name TEXT, note TEXT, kind TEXT);

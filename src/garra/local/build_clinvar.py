@@ -60,7 +60,7 @@ def _index_key(xref: dict) -> tuple[str, str] | None:
     return None
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("clinvar")
     con.executescript("""
     CREATE TABLE variant(vid INTEGER PRIMARY KEY, name TEXT, rs TEXT, germline TEXT,

@@ -1,7 +1,8 @@
 """Readable Markdown report of a run (main.py -o run.md), meant for reviewing data quality.
 
 Sections: per-source stats (calls, edges, time, HTTP failures), how the input term was
-resolved (or, in symptom mode, the symptom-based disease ranking), the profile of the
+resolved (or, for a symptom / gene input, how it was read and the disease ranking), the
+profile of the
 focus entity (its neighbours grouped by relation, with the sources that agree on each),
 convergence hubs (nodes linking several diseases, weighted by how specific they are),
 what the filters dropped, and automatic quality warnings (placeholder labels,
@@ -43,7 +44,8 @@ class Stats:
         self.depth: dict[int, int] = {}  # id(edge) -> iteration it was found in
         self.focus: list[str] = []  # entity roots the query is about (main.run)
         self.dropped: list[tuple[Edge, str]] = []  # edges removed by main._filter
-        self.symptoms = None  # symptom mode: (resolved symptoms, disease ranking)
+        self.candidates = None  # symptom / gene input: (resolve.Interpretation, ranking)
+        self.focus_keys: list[str] | None = None  # symptom_anchor: gated focus candidates
         self.started = time.time()
 
     def instrument(self, src):
@@ -134,22 +136,27 @@ def write_report(g: nx.MultiDiGraph, edges: list[Edge], ents, start, stats: Stat
                 w(f"- ~~{e.dst.label}~~ `{e.dst.id}` <{e.source}>")
         w("")
 
-    # -- symptom ranking -------------------------------------------------
-    if stats.symptoms:
-        resolved, ranking = stats.symptoms
-        w("## Symptom search\n")
-        for text, r, sugg in resolved:
-            w(f"- '{text}' → " + (f"{r[1]} `{r[0]}` ({r[2]})" if r else
-                                  "**not found**, not used. Closest HPO terms (pass one as "
-                                  "an HP id to use it): " + "; ".join(
-                                      f"{name} `{hp}`" for hp, name, _ in sugg)))
-        n = sum(1 for _, r, _ in resolved if r)
-        w("\nDiseases ranked by how well their HPO annotations cover the symptoms "
-          "(specific symptoms weigh more; ✓ = has the symptom or a more specific one, "
-          "~ = only a related broader term; % = annotated frequency).\n")
-        w("| # | disease | score | symptoms |")
-        w("|---|---|---|---|")
-        names = {r[0]: r[1] for _, r, _ in resolved if r}
+    # -- candidate search (symptom / gene input) -------------------------
+    if stats.candidates:
+        interp, ranking = stats.candidates
+        w("## Candidate search\n")
+        w("How the input was read (resolve.py):\n")
+        for p in interp.parts:
+            if p.kind == "unknown":
+                w(f"- '{p.text}' → **not recognised**, not used. Closest HPO terms (pass one "
+                  "as a name or HP id to use it): "
+                  + "; ".join(f"{name} `{hp}`" for hp, name in p.suggestions))
+            else:
+                w(f"- '{p.text}' → {p.kind} {p.label} `{p.id}` ({p.how})"
+                  + (f" — {p.alternative}" if p.alternative else ""))
+        n = len(interp.of("phenotype"))
+        w("\nDiseases ranked: causally linked to a searched gene first, then other gene "
+          "links, then by how well their HPO annotations cover the symptoms (specific "
+          "symptoms weigh more; ✓ = has the symptom or a more specific one, ~ = only a "
+          "related broader term; % = annotated frequency).\n")
+        w("| # | disease | genes | score | symptoms |")
+        w("|---|---|---|---|---|")
+        names = {p.id: p.label for p in interp.of("phenotype")}
         hpo = quality._hpoa.load()
         for i, r in enumerate(ranking, 1):
             ms = []
@@ -157,8 +164,10 @@ def write_report(g: nx.MultiDiGraph, edges: list[Edge], ents, start, stats: Stat
                 via = "" if full else f" (via {hpo.name.get(t, t) if hpo else t})"
                 ms.append(f"{'✓' if full else '~'} {names.get(q, q)}{via} {f:.0%}")
             ids = ", ".join([r["id"], *r["xrefs"]])
-            w(f"| {i} | {r['name']} `{ids}` | {r['score']:.1f} | "
-              f"{sum(m[2] for m in r['matches'])}/{n}: {'; '.join(ms)} |")
+            genes = "; ".join(f"{g} ({a.lower()})" for g, a in dict(r["genes"]).items())
+            pin = " (named in the input)" if r.get("pinned") else ""
+            sym = f"{sum(m[2] for m in r['matches'])}/{n}: {'; '.join(ms)}" if n else ""
+            w(f"| {i} | {r['name']} `{ids}`{pin} | {genes} | {r['score']:.1f} | {sym} |")
         w("")
 
     # -- focus entity profile ------------------------------------------------

@@ -134,7 +134,9 @@ def _load_obo(con, ont: str, path) -> int:
                     stanza["def"] = _unescape(m[1])
                     refs = re.match(r"\[(.*?)\]", m[2])
                     if refs and refs[1].strip():
-                        stanza["def_refs"] = [x.strip() for x in refs[1].split(",") if x.strip()]
+                        # OBO escapes ("url:https\://...") -> plain references
+                        stanza["def_refs"] = [x.strip().replace("\\:", ":").removeprefix("url:")
+                                              for x in refs[1].split(",") if x.strip()]
             elif k == "comment":
                 stanza["comment"] = v
             elif k == "synonym":
@@ -257,7 +259,7 @@ def _load_hgnc(con, path) -> int:
     return len(rows)
 
 
-def build(keep_raw: bool = True) -> None:
+def build() -> None:
     con = writer("ontology")
     _schema(con)
     d = RAW / "ontology"

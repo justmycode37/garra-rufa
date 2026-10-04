@@ -11,6 +11,7 @@ expert centres, networks, research projects/consortia, trial sponsors). Not a so
                       the same organisation carries on different sites
   Throttle            polite per-host request spacing
   CachedFile          one-time download into <repo>/data/<source>/ (gitignored)
+  PageCache           per-entity pages kept in <repo>/data/<source>/<kind>/ across runs
 
 Node kinds used by the groups sources: patient_organisation, expert_centre,
 expert_network, ern, healthcare_provider, research_project, research_consortium,
@@ -235,6 +236,29 @@ class CachedFile:
 
     def json(self):
         return json.loads(self.text())
+
+
+class PageCache:
+    """Text pages kept on disk across runs (data/<subdir>/<key>.<ext>); delete the folder
+    to refresh. Only successful fetches are stored."""
+
+    def __init__(self, subdir: str, ext: str = "html"):
+        self.dir = DATA_ROOT / subdir
+        self.ext = ext
+
+    def _path(self, key: str) -> Path:
+        return self.dir / f"{re.sub(r'[^A-Za-z0-9._-]+', '_', key)}.{self.ext}"
+
+    def get(self, key: str) -> str | None:
+        p = self._path(key)
+        return p.read_text(encoding="utf-8") if p.exists() else None
+
+    def put(self, key: str, text: str) -> None:
+        p = self._path(key)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        part = p.with_suffix(p.suffix + ".part")
+        part.write_text(text, encoding="utf-8")
+        part.replace(p)
 
 
 def interleave(groups: list[list], limit: int) -> list:

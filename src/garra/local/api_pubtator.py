@@ -12,6 +12,7 @@ Only papers in the local PubMed subset carry disease / gene / chemical annotatio
 
 from __future__ import annotations
 
+import functools
 import re
 
 from garra.local import available, connect
@@ -64,7 +65,8 @@ def autocomplete(query: str, biotype: str, limit: int) -> list[dict]:
     return out[:limit]
 
 
-def _ranked(pids: list[str]) -> list[int] | None:
+@functools.lru_cache(maxsize=64)  # the provider pages through the same search
+def _ranked(pids: tuple[str, ...]) -> list[int] | None:
     sets, names = [], []
     con = db()
     for pid in pids:
@@ -87,13 +89,14 @@ def _ranked(pids: list[str]) -> list[int] | None:
             phrases.append('{tiab} : "' + " ".join(ws) + '"')
     first: list[int] = []
     if phrases and available("pubmed"):
+        # one MATCH over the whole index, intersected here: FTS5 does not use a
+        # "rowid IN (...)" filter to narrow a phrase match, so chunked filtering
+        # re-ran the full match per chunk
         q = " AND ".join(phrases)
-        pcon = P.db()
-        for i in range(0, len(cand), 900):
-            chunk = cand[i:i + 900]
-            first += [r[0] for r in pcon.execute(
-                f"SELECT rowid FROM paper_fts WHERE paper_fts MATCH ? AND rowid IN "
-                f"({','.join('?' * len(chunk))}) ORDER BY bm25(paper_fts)", (q, *chunk))]
+        want = set(cand)
+        first = [r[0] for r in P.db().execute(
+            "SELECT rowid FROM paper_fts WHERE paper_fts MATCH ? ORDER BY bm25(paper_fts)",
+            (q,)) if r[0] in want]
     seen = set(first)
     return first + sorted((c for c in cand if c not in seen), reverse=True)
 
@@ -117,7 +120,7 @@ def pubtator(req: Req) -> Reply | None:
         pids = [p.strip() for p in text.split(" AND ")]
         if not pids or not all(p.startswith("@") for p in pids):
             return None
-        ranked = _ranked(pids)
+        ranked = _ranked(tuple(pids))
         if ranked is None:
             return None
         size = int(req.get("size") or 10)
