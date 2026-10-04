@@ -89,7 +89,7 @@ def graph(query, category, deadline):
 
     names = ["mondo", "monarch", "clinicaltrials"]
     if category == "contacts":
-        names = ["mondo", "orphanet_groups", "ern", "clinicaltrials"]
+        names = ["monarch", "mondo", "orphanet_groups", "ern", "clinicaltrials"]
     sources, stats, ents = [], Stats(), Entities()
     for name in names:
         module = importlib.import_module("sources." + name)
@@ -113,6 +113,18 @@ def graph(query, category, deadline):
         bound_requests(source, deadline, stats)
         sources.append(source)
     start = parse_input(query, None)
+    if start.id and start.id.startswith(("OMIM:", "ORPHA:", "DECIPHER:")):
+        # The downloaded annotation carries the reviewed label; contacts/trials
+        # need it, while identifier resolution remains the source of identity.
+        from garra.research.atlas import AtlasIndex
+        try:
+            index = AtlasIndex()
+            index._load()
+            label = index.names.get(start.id)
+            if label:
+                start = replace(start, label=label, kind="disease")
+        except OSError:
+            pass
     edges = run(start, sources, 3 if category == "contacts" else 2, 5, 2, ents, stats, focus_limit=12)
     g = build_graph(edges, ents)
     data = {
@@ -170,6 +182,24 @@ def graph_sources(data, limit, retrieved, contacts=False):
         if len(result) >= limit:
             break
     return result
+
+
+def atlas_graph(data):
+    """Keep actual edge endpoints and provider evidence for the visual atlas."""
+    nodes = []
+    for node in data["nodes"]:
+        if node["kind"] in {"term", "unknown"}:
+            continue
+        details = node.get("info") or {}
+        nodes.append({"id": node["id"], "label": clean(node["label"], 2000), "kind": node["kind"],
+                      "xrefs": node.get("xrefs", []),
+                      "description": clean(details.get("description") or next(iter((details.get("descriptions") or {}).values()), "")),
+                      "url": entity_url(node), "providers": node.get("sources", []),
+                      "email": clean(details.get("email"), 254) or None, "phone": clean(details.get("phone"), 100) or None,
+                      "location": clean(details.get("country") or details.get("location"), 300) or None})
+    ids = {node["id"] for node in nodes}
+    return {"nodes": nodes, "edges": [edge for edge in data["edges"] if edge["from"] in ids and edge["to"] in ids],
+            "focus": [ident for ident in data.get("focus", []) if ident in ids]}
 
 
 def papers(query, limit, deadline, retrieved):
@@ -280,6 +310,7 @@ def research(payload):
         pipeline = "repository-graph"
     status = "partial" if sources and failed else "ok" if sources else "unavailable" if failed else "empty"
     return {"status": status, "query": query, "sources": sources, "pipeline": pipeline,
+            **({"graph": atlas_graph(data)} if payload["mode"] != "papers" else {}),
             "providers": succeeded, "unavailableProviders": failed, "retrievedAt": retrieved,
             "cached": False, "notice": "Research evidence, not a diagnosis or a recommendation of a clinician."}
 

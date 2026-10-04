@@ -1,5 +1,5 @@
 import { handler, json, currentUser, HttpError } from '@/lib/http';
-import { limit } from '@/lib/store';
+import { limit } from "@/lib/persistence";
 import { readAudioUpload, transcribeAudio, VoiceError } from '@/lib/voice';
 
 export const runtime = 'nodejs';
@@ -8,7 +8,7 @@ export const GET = handler(async () => json({ available: Boolean(process.env.ELE
 export const POST = handler(async req => {
   const user = await currentUser();
   // Guest and public callers share a budget, so creating sessions cannot bypass it.
-  if (!limit(user && !user.guest ? `voice:${user.id}` : 'voice:public', 15, 10 * 60000)) {
+  if (!(await limit(user && !user.guest ? `voice:${user.id}` : 'voice:public', 15, 10 * 60000))) {
     throw new HttpError(429, 'Voice input is busy. Please try again shortly.');
   }
   try {

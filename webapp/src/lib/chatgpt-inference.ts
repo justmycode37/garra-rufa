@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { accountById, saveAccount } from './chatgpt-store';
+import { accountById, saveAccount } from "./persistence";
 import { chatGPTAccess, CHATGPT_RESOURCE } from './chatgpt';
 
 export class ChatGPTInferenceError extends Error {
@@ -105,8 +105,8 @@ export async function chatGPTResponse(userId: string, body: ReturnType<typeof su
   } catch (error) {
     // Only confirmed invalid subscriber context invalidates credentials; preserve them on infrastructure errors.
     if (error instanceof ChatGPTInferenceError && error.code === 'subscription_sharing_invalid_user') {
-      const account = accountById(accountId);
-      if (account?.tokens?.accessToken === accessToken) saveAccount({ ...account, tokens: undefined });
+      const account = (await accountById(accountId));
+      if (account?.tokens?.accessToken === accessToken) (await saveAccount({ ...account, tokens: undefined }));
     }
     throw error;
   }

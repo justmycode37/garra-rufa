@@ -1,8 +1,8 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { workspaceUser } from './chatgpt-store';
+import { workspaceUser } from "./persistence";
 export class HttpError extends Error { constructor(public status:number,message:string){super(message);} }
-export async function currentUser(){return workspaceUser((await cookies()).get('garra_session')?.value||'');}
+export async function currentUser(){return (await workspaceUser((await cookies()).get('garra_session')?.value||''));}
 export async function requireUser(){const user=await currentUser();if(!user)throw new HttpError(401,'Please sign in to continue.');return user;}
 export function checkOrigin(req:Request){
   const origin=req.headers.get('origin');

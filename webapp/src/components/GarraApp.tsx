@@ -156,7 +156,7 @@ export default function GarraApp(){
     {!workspace?<main className="landing" id="main-content">
       
       <header className="landing-nav"><Brand onClick={closeLandingChat}/><div className="nav-right"><AboutLink/><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?.chatgpt?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></div></header>
-      <div className={`landing-intro ${messages.length||region!=='body'?'searching':''}`}><h1>A way forward.</h1><p>Rare disease knowledge, connected.</p></div>
+      <div className={`landing-intro ${messages.length||region!=='body'?'searching':''}`}><h1>A way forward.<br/>Together.</h1><p>Rare disease knowledge, connected.</p></div>
       <BodyGraph/>
       <div className="landing-search"><LandingChat onCommunity={openCommunity} messages={messages} busy={busy} composer={composer} onDisease={viewDisease} onClose={closeLandingChat} onContinue={()=>setAuth({mode:'signup',continueChat:true})}/></div>
     </main>:user&&<div className={`workspace-shell ${view==='atlas'?'atlas-shell':''}`}>
@@ -175,8 +175,8 @@ export default function GarraApp(){
       </aside>
       <div className="workspace-main">
         <header className="workspace-topbar"><div><button className="mobile-only icon-button" aria-label="Open navigation" onClick={()=>setSidebarOpen(true)}><Menu size={21}/></button><b>{navItems.find(n=>n.id===view)?.label||'Home'}</b></div><button className="text-button chatgpt-account-button" onClick={()=>setAccountOpen(true)}>{user.name}<ChevronDown size={14}/></button></header>
-        <div className={`workspace-scroll ${view==='overview'&&!homeHasConversation?'home-scroll':''} ${view==='atlas'?'atlas-scroll':''}`} ref={scrollRef} id="main-content">{recordError&&<div className="service-notice">{recordError}<button onClick={loadRecords}>Retry</button></div>}<Workspace communityId={communityId} onCommunity={openCommunity} user={user} view={view} records={records} region={region} setRegion={setRegion} setView={navigate} onDisease={viewDisease} onNew={kind=>setRecordDialog({kind})} onRecord={r=>setRecordDialog({record:r,kind:r.kind})} onUpload={upload} onAsk={ask} onBookmark={bookmark} messages={messages} busy={busy} onSave={saveSuggestion} composer={composer} composerContext={composerContext} onAskWithContext={askWithAtlasContext}/></div>
-        {view!=='atlas'&&(view!=='overview'||homeHasConversation)&&<div className="workspace-composer">{composer}</div>}
+        <div className={`workspace-scroll ${view==='overview'&&!homeHasConversation?'home-scroll':''} ${view==='atlas'?'atlas-scroll':''} ${view==='workbench'?'workbench-scroll':''}`} ref={scrollRef} id="main-content">{recordError&&<div className="service-notice">{recordError}<button onClick={loadRecords}>Retry</button></div>}<Workspace communityId={communityId} onCommunity={openCommunity} user={user} view={view} records={records} region={region} setRegion={setRegion} setView={navigate} onDisease={viewDisease} onNew={kind=>setRecordDialog({kind})} onRecord={r=>setRecordDialog({record:r,kind:r.kind})} onUpload={upload} onAsk={ask} onBookmark={bookmark} messages={messages} busy={busy} onSave={saveSuggestion} composer={composer} composerContext={composerContext} onAskWithContext={askWithAtlasContext}/></div>
+        {view!=='atlas'&&view!=='workbench'&&(view!=='overview'||homeHasConversation)&&<div className="workspace-composer">{composer}</div>}
       </div>
     </div>}
     {deleteChat&&<Dialog title={deleteChat==='all'?'Clear chat history?':'Delete this chat?'} onClose={()=>{if(!deletingChat)setDeleteChat(null);}}>

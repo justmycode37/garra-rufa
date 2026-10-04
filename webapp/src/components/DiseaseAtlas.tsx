@@ -3,17 +3,17 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowLeft, Maximize, Minus, Move, Plus, Rotate3D } from 'lucide-react';
 import { AnatomyScene, type AnatomyFrame, type AnatomyGraph, type AnatomyManifest } from '@/lib/anatomy-scene';
-import { atlasContextForTarget, atlasContextForDisease, discoverAtlas, type AtlasContext, type AtlasResource } from '@/lib/atlas-discovery';
+import { atlasContextForTarget, atlasContextForDisease, discoverAtlas, type AtlasContext } from '@/lib/atlas-discovery';
 import { diseases } from '@/lib/knowledge';
-import type { ConditionOption, Disease, Message, Source } from '@/lib/types';
-import { recommendCommunities } from '@/lib/community-recommendations';
+import type { Disease, Message } from '@/lib/types';
+import { ATLAS_GRAPH_ZOOM, atlasRegions } from '@/lib/atlas-graph';
 import { updateStreamingMessage, type OnAnswerText } from '@/lib/search-stream';
 import { Composer, type ComposerContext } from './Chat';
 import LandingChat from './LandingChat';
+import AtlasKnowledgeGraph from './AtlasKnowledgeGraph';
 import styles from './DiseaseAtlas.module.css';
 
 const initialFrame: AnatomyFrame = { zoom: 1, labels: [], detailReady: false, detailError: false, region: '', rotated: false };
-const resourceSource = (resource: AtlasResource): Source => ({ id: resource.id, title: resource.title, kind: resource.kind === 'paper' ? 'paper' : 'reference', url: resource.url, excerpt: resource.description });
 
 export default function DiseaseAtlas({ onDisease, composerContext, onAskWithContext, onCommunity }: {
   onDisease: (disease: Disease) => void;
@@ -36,6 +36,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const graphRegion = frame.zoom >= ATLAS_GRAPH_ZOOM && frame.regionId && atlasRegions[frame.regionId] ? frame.regionId : '';
   const activeDisease = diseases.find(d => d.id === (context?.diseaseId ?? context?.diseaseIds[0]));
 
   function applyContext(next: AtlasContext | undefined, move = true) {
@@ -57,20 +58,6 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
     setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'user', text: query }]);
     if (reply.context) applyContext(reply.context);
     setChatOpen(true);
-    if (!composerContext.attached?.length && !composerContext.includeWorkspace) {
-      const answerId = crypto.randomUUID();
-      const generation = requestGeneration.current;
-      setMessages(previous => [...previous, { id: answerId, role: 'assistant', text: reply.text, sources: reply.resources.filter(r => r.kind !== 'gene').map(resourceSource), warning: 'Demo collection · Selected sources, not a live search.' }]);
-      try {
-        const response = await fetch('/api/conditions');
-        if (response.ok) {
-          const data: { conditions: ConditionOption[] } = await response.json();
-          const communities = recommendCommunities(query, data.conditions);
-          if (generation === requestGeneration.current && communities.length) setMessages(previous => previous.map(message => message.id === answerId ? { ...message, communities } : message));
-        }
-      } catch { /* The local answer remains available if the directory is offline. */ }
-      return;
-    }
     requestBusy.current = true;
     setBusy(true);
     const generation = ++requestGeneration.current;
@@ -78,7 +65,8 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
     activeRequest.current = request;
     const assistantId = crypto.randomUUID();
     try {
-      const answer = await onAskWithContext(query, history, text => {
+      const scopedQuery = contextRef.current ? `${query}\n\nCurrent Atlas region: ${contextRef.current.label}.` : query;
+      const answer = await onAskWithContext(scopedQuery, history, text => {
         if (generation === requestGeneration.current) setMessages(previous => updateStreamingMessage(previous, assistantId, text));
       }, request.signal);
       if (generation === requestGeneration.current) setMessages(previous => [...previous.filter(message => message.id !== assistantId), { ...answer, id: assistantId }]);
@@ -117,6 +105,10 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
   }, [attempt]);
 
 
+  useEffect(() => {
+    if (graphRegion) applyContext(atlasContextForTarget(graphRegion, atlasRegions[graphRegion].label), false);
+  }, [graphRegion]);
+
   function keyDown(event: KeyboardEvent<HTMLCanvasElement>) {
     const arrows: Record<string, [number, number]> = { ArrowLeft: [.12, 0], ArrowRight: [-.12, 0], ArrowUp: [0, -.1], ArrowDown: [0, .1] };
     if (arrows[event.key]) { event.preventDefault(); scene.current?.rotateBy(...arrows[event.key]); }
@@ -127,25 +119,26 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
 
   return <section className={styles.layout} aria-label="Interactive atlas">
       <div className={styles.atlas}>
-        <canvas ref={canvas} className={styles.body} tabIndex={0} aria-label="3D human body" aria-describedby="atlas-instructions" onKeyDown={keyDown}/>
+        <canvas ref={canvas} className={`${styles.body} ${graphRegion ? styles.bodyKnowledge : ''}`} tabIndex={0} aria-label="3D human body" aria-describedby="atlas-instructions" onKeyDown={keyDown}/>
         {(loading || error) && <div className={styles.loading} role="status">{error || 'Preparing the body…'}{error && <button onClick={() => setAttempt(value => value + 1)}>Reload body</button>}</div>}
         {!loading && !error && <>
           {(frame.zoom > 1.05 || frame.rotated) && <div className={styles.breadcrumb}><button onClick={() => scene.current?.reset()}><ArrowLeft size={14}/>Whole body</button>{frame.region && <span>{frame.region}</span>}</div>}
           {(!frame.detailReady || frame.detailError) && <div className={styles.detailStatus} role="status">{frame.detailError ? <button onClick={() => setAttempt(value => value + 1)}>Retry anatomical detail</button> : 'Loading anatomical detail…'}</div>}
           <svg className={styles.connections} aria-hidden="true">
-            {frame.labels.map(label => {
+            {(!graphRegion ? frame.labels : []).map(label => {
               const x = label.side === 'left' ? label.x + label.width : label.x;
               const y = label.y + label.height / 2;
               return <g key={label.id} opacity={label.opacity}><path d={`M ${label.anchor.x} ${label.anchor.y} L ${x + (label.side === 'left' ? 18 : -18)} ${y} L ${x} ${y}`} fill="none" stroke="#000" strokeWidth=".8"/><circle cx={label.anchor.x} cy={label.anchor.y} r="2.5" fill="#000"/></g>;
             })}
           </svg>
-          {frame.labels.map(label => <button key={label.id} className={`${styles.annotation} ${label.overlapsGraph ? styles.overGraph : ''} ${label.side === 'left' ? styles.left : styles.right}`}
+          {(!graphRegion ? frame.labels : []).map(label => <button key={label.id} className={`${styles.annotation} ${label.overlapsGraph ? styles.overGraph : ''} ${label.side === 'left' ? styles.left : styles.right}`}
             style={{ transform: `translate3d(${label.x}px, ${label.y}px, 0)`, width: label.width, height: label.height, opacity: label.opacity, pointerEvents: label.interactive ? 'auto' : 'none' }}
             disabled={!label.interactive} aria-hidden={!label.interactive} tabIndex={label.interactive ? 0 : -1}
             aria-label={`Explore ${label.title}`}
             onClick={() => { const disease = diseases.find(d => d.id === label.diseaseId); if (disease) selectDisease(disease); else if (label.target) scene.current?.focus(label.target); }}><span className={styles.tagText}>{label.title}</span></button>)}
         </>}
-        <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore its connected conditions and research. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
+        {!loading && !error && graphRegion && <AtlasKnowledgeGraph key={graphRegion} regionId={graphRegion} frame={frame} onAsk={ask}/>}
+        <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore. Zoom in to reveal regional disease records, phenotypes and their connections. Select a disease to load genes, papers and specialist resources. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
         <div className={styles.footer}>
           <span className={styles.dragHint}>Drag to rotate · Scroll to zoom</span>
           <div className={styles.controls} role="group" aria-label="Atlas view controls">
@@ -160,7 +153,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
       </div>
     <div className={styles.promptDock}>
       {chatOpen && <LandingChat messages={messages} busy={busy} onDisease={onDisease} onCommunity={onCommunity} onClose={() => setChatOpen(false)} composer={null}/>}
-      <Composer {...composerContext} onSubmit={ask} busy={busy} compact placeholder={context ? `Ask about ${activeDisease?.shortName ?? context.label}…` : 'Ask a question…'}/>
+      <Composer {...composerContext} onSubmit={ask} busy={busy} compact placeholder={graphRegion ? `Ask about ${atlasRegions[graphRegion].label}…` : context ? `Ask about ${activeDisease?.shortName ?? context.label}…` : 'Ask a question…'}/>
     </div>
   </section>;
 }

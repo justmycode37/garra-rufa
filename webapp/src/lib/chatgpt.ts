@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import { z } from 'zod';
-import { accountById, accountForUser, acquireRefresh, browserAccounts, connectAccount, hostId, planEnabled, releaseRefresh, saveAccount, saveAttempt, type ChatGPTAccount, type ChatGPTTokens, type SignInAttempt } from './chatgpt-store';
+import { accountById, accountForUser, acquireRefresh, browserAccounts, connectAccount, hostId, planEnabled, releaseRefresh, saveAccount, saveAttempt, type ChatGPTAccount, type ChatGPTTokens, type SignInAttempt } from "./persistence";
 import type { Role, User } from './types';
 
 export const CHATGPT_ISSUER = 'https://auth.openai.com';
@@ -49,7 +49,7 @@ export async function discovery() {
 
 export async function startChatGPTSignIn(options: { requestUrl: string; browserId: string; role: Role; current: User | null; accountId?: string; enablePlan?: boolean; conversation?: SignInAttempt['conversation'] }) {
   const origin = localChatGPTOrigin(options.requestUrl);
-  const account = options.accountId ? browserAccounts(options.browserId).find(a => a.id === options.accountId) : undefined;
+  const account = options.accountId ? (await browserAccounts(options.browserId)).find(a => a.id === options.accountId) : undefined;
   if (options.accountId && !account) throw new Error('Choose a saved account from this browser or add a new one.');
   const config = await discovery();
   const attempt: SignInAttempt = {
@@ -60,7 +60,7 @@ export async function startChatGPTSignIn(options: { requestUrl: string; browserI
     conversation: options.conversation,
   };
   const url = new URL(config.authorization_endpoint);
-  url.search = new URLSearchParams({ client_id: attempt.clientId, ext_agent_host_id: hostId(), response_type: 'code', redirect_uri: attempt.redirectUri,
+  url.search = new URLSearchParams({ client_id: attempt.clientId, ext_agent_host_id: (await hostId()), response_type: 'code', redirect_uri: attempt.redirectUri,
     scope: scopes, resource: CHATGPT_RESOURCE, state: attempt.state, nonce: attempt.nonce, code_challenge_method: 'S256',
     code_challenge: createHash('sha256').update(attempt.verifier).digest('base64url'),
   }).toString();
@@ -68,7 +68,7 @@ export async function startChatGPTSignIn(options: { requestUrl: string; browserI
   if (account?.tokens?.idToken) url.searchParams.set('id_token_hint', account.tokens.idToken);
   if (account?.email) url.searchParams.set('login_hint', account.email);
   if (options.enablePlan) url.searchParams.set('prompt', 'consent');
-  return { url: url.toString(), attemptId: saveAttempt(attempt) };
+  return { url: url.toString(), attemptId: (await saveAttempt(attempt)) };
 }
 
 export function callbackClientId(attempt: SignInAttempt, returnedId: string | null) {
@@ -113,7 +113,7 @@ export async function finishChatGPTSignIn(attempt: SignInAttempt, callback: URL)
   if (!response.ok) throw new Error('OpenAI could not complete sign-in. Please start sign-in again.');
   const tokens = readTokens(await response.json());
   const identity = await verifyChatGPTIdentity(tokens.idToken, clientId, attempt.nonce);
-  return connectAccount(identity, tokens, attempt);
+  return (await connectAccount(identity, tokens, attempt));
 }
 
 const terminalRefreshErrors = new Set(['invalid_grant', 'invalid_refresh_token', 'token_expired', 'refresh_token_expired', 'refresh_token_invalidated', 'refresh_token_reused']);
@@ -122,7 +122,7 @@ const refreshes = globals.garraChatGPTRefreshes ??= new Map();
 
 async function refreshAccount(account: ChatGPTAccount): Promise<ChatGPTAccount> {
   if (!account.tokens?.refreshToken) throw new Error('Please sign in with ChatGPT again to renew your connection.');
-  if (!acquireRefresh(account)) throw new Error('Your ChatGPT connection is being renewed. Please try again shortly.');
+  if (!(await acquireRefresh(account))) throw new Error('Your ChatGPT connection is being renewed. Please try again shortly.');
   try {
     const config = await discovery();
     const response = await fetch(config.token_endpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -131,17 +131,17 @@ async function refreshAccount(account: ChatGPTAccount): Promise<ChatGPTAccount> 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (terminalRefreshErrors.has(typeof data.error === 'string' ? data.error : data.error?.code)) {
-        saveAccount({ ...account, tokens: undefined });
+        (await saveAccount({ ...account, tokens: undefined }));
         throw new Error('Your ChatGPT connection has expired. Please sign in again.');
       }
       throw new Error('ChatGPT could not renew the connection. Please try again later.');
     }
-    return saveAccount({ ...account, tokens: readTokens(data, account.tokens) });
-  } finally { releaseRefresh(account.id); }
+    return (await saveAccount({ ...account, tokens: readTokens(data, account.tokens) }));
+  } finally { (await releaseRefresh(account.id)); }
 }
 
 export async function chatGPTAccess(userId: string) {
-  let account = accountForUser(userId);
+  let account = (await accountForUser(userId));
   if (!account?.tokens) throw new Error('Continue with ChatGPT to use your plan for AI answers.');
   if (!planEnabled(account)) throw new Error('ChatGPT plan access is not enabled. Enable it from your account menu to use AI answers.');
   if (account.tokens.expiresAt <= Date.now() + 60000) {
@@ -158,14 +158,14 @@ export async function chatGPTAccess(userId: string) {
 }
 
 export async function disconnectChatGPT(userId: string) {
-  let account = accountForUser(userId);
+  let account = (await accountForUser(userId));
   if (!account) return true;
   const pending = refreshes.get(account.id);
   if (pending) await pending.catch(() => {});
-  account = accountById(account.id)!;
+  account = (await accountById(account.id))!;
   const token = account.tokens?.refreshToken;
   // The version check prevents a concurrent refresh from resurrecting cleared credentials.
-  saveAccount({ ...account, tokens: undefined });
+  (await saveAccount({ ...account, tokens: undefined }));
   if (!token) return true;
   try {
     const config = await discovery();

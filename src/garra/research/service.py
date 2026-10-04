@@ -9,6 +9,7 @@ import time
 from collections import OrderedDict
 
 from garra.ui.service import InputError
+from garra.research.atlas import AtlasIndex
 
 
 class ResearchUnavailable(Exception):
@@ -20,6 +21,13 @@ class ResearchService:
         self._slots = threading.BoundedSemaphore(3)
         self._lock = threading.Lock()
         self._cache = OrderedDict()
+        self._atlas = AtlasIndex()
+
+    def atlas(self, body):
+        try:
+            return self._atlas.search(body)
+        except OSError as exc:
+            raise ResearchUnavailable("The repository's HPO datasets are not installed. Add data/hpo/hp.obo and phenotype.hpoa to the backend.") from exc
 
     def search(self, body, *, papers=False):
         if not isinstance(body, dict) or set(body) - {"query", "limit", "category"}:

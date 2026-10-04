@@ -76,7 +76,16 @@ export function createBodyMotion(rig: HumanRig) {
   const leftFocus = armPose('l');
   const leftOpen = armPose('l', true);
   const order = [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 14, 13, 12, 8];
-  const state = { gesture: 'floating', sway: 0, lean: 0 };
+  const focusRegions = [
+    { name: 'left-hand', center: joint('lWrist').lerp(joint('lMiddleBase'), .65), radius: .27, bones: [3, 2, 1, 0] },
+    { name: 'right-hand', center: joint('rWrist').lerp(joint('rMiddleBase'), .65), radius: .27, bones: [7, 6, 5, 4] },
+    { name: 'left-leg', center: joint('lKnee').lerp(joint('lAnkle'), .12), radius: .42, bones: [10, 9] },
+    { name: 'right-leg', center: joint('rKnee').lerp(joint('rAnkle'), .12), radius: .42, bones: [13, 12] },
+  ];
+  const eye = joint('head').add(new THREE.Vector3(0, .04, .36));
+  const gaze = new THREE.Vector3();
+  const gazeRotation = new THREE.Quaternion();
+  const state = { gesture: 'floating', sway: 0, lean: 0, focusRegion: 0, focusStrength: 0 };
 
   function update(time: number, reducedMotion = false, reaching = 0) {
     const t = time % 40;
@@ -103,6 +112,27 @@ export function createBodyMotion(rig: HumanRig) {
     rotations[12].setFromEuler(euler.set(-.65 * rightFoot, -.06 * rightFoot, .065 * rightFoot));
     rotations[13].setFromAxisAngle(xAxis, 1.28 * rightFoot);
     rotations[14].setFromAxisAngle(xAxis, -.15 * rightFoot);
+
+    // Exclusive windows fade fully out before the next region lights up.
+    // Gaze and color use this same focus, including the second hand gesture.
+    state.focusRegion = 0;
+    state.focusStrength = 0;
+    if (!reducedMotion && reaching === 0) {
+      if (t < 8.6) { state.focusRegion = 1; state.focusStrength = envelope(t, .6, 4.5, 6.8, 8.6); }
+      else if (t < 16.4) { state.focusRegion = 2; state.focusStrength = envelope(t, 8.6, 10.4, 12.2, 16.4); }
+      else if (t < 26.4) { state.focusRegion = 3; state.focusStrength = envelope(t, 16.4, 20.2, 22.2, 26.4); }
+      else if (t < 31) { state.focusRegion = 1; state.focusStrength = envelope(t, 26.4, 28.8, 29.4, 31); }
+      else { state.focusRegion = 4; state.focusStrength = envelope(t, 31, 33, 34.5, 38.8); }
+    }
+    if (state.focusStrength > 0) {
+      const region = focusRegions[state.focusRegion - 1];
+      gaze.copy(region.center);
+      for (const bone of region.bones) gaze.sub(pivots[bone]).applyQuaternion(rotations[bone]).add(pivots[bone]);
+      gaze.sub(eye);
+      const pitch = THREE.MathUtils.clamp(Math.atan2(-gaze.y, Math.hypot(gaze.x, gaze.z)), 0, .65);
+      const yaw = THREE.MathUtils.clamp(Math.atan2(gaze.x, Math.max(.15, gaze.z)), -.55, .55);
+      rotations[8].slerp(gazeRotation.setFromEuler(euler.set(pitch, yaw, 0)), state.focusStrength);
+    } else state.focusRegion = 0;
 
     for (let i = 0; i < rotations.length; i++) {
       const q = rotations[i];
@@ -139,5 +169,5 @@ export function createBodyMotion(rig: HumanRig) {
     return point;
   }
 
-  return { update, deform, rotations };
+  return { update, deform, rotations, focusRegions };
 }

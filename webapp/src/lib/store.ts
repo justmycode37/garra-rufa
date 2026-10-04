@@ -11,6 +11,7 @@ function key(){
   const configured=process.env.DATA_ENCRYPTION_KEY;
   if(configured&&!/^[a-f0-9]{64}$/i.test(configured))throw new Error('DATA_ENCRYPTION_KEY must contain 64 hex characters');
   if(configured)return globals.rariviaKey=Buffer.from(configured,'hex');
+  if(process.env.VERCEL || process.env.GARRA_STORAGE==='supabase')throw new Error('Hosted storage requires a stable DATA_ENCRYPTION_KEY.');
   const dir=dataDir(); mkdirSync(dir,{recursive:true,mode:0o700});
   const file=path.join(dir,'.encryption-key');
   try { writeFileSync(file,randomBytes(32),{flag:'wx',mode:0o600}); } catch(e) {if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;}

@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import { sourceSchema } from './source-schema';
+import { repositoryGraphSchema } from './atlas-graph';
 
 const responseSchema = z.object({
   status: z.enum(['ok', 'partial', 'empty']), query: z.string().max(200),
   sources: z.array(sourceSchema).max(20), pipeline: z.enum(['repository-graph', 'repository-literature']),
   providers: z.array(z.string()).max(30), unavailableProviders: z.array(z.string()).max(30),
   retrievedAt: z.string(), cached: z.boolean(), notice: z.string().optional(),
+  graph: repositoryGraphSchema.optional(),
 });
 export type ResearchResponse = z.infer<typeof responseSchema>;
 export class ResearchUnavailable extends Error {}
@@ -21,7 +23,7 @@ export async function searchResearch(query: string, options: { papers?: boolean;
   const endpoint = new URL(options.papers ? '/api/research/papers' : '/api/research/search', base);
   try {
     const response = await fetch(endpoint, { method: 'POST', redirect: 'error', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(process.env.GARRA_RESEARCH_TOKEN ? { Authorization: `Bearer ${process.env.GARRA_RESEARCH_TOKEN}` } : {}) },
       body: JSON.stringify({ query: term, limit: options.limit ?? 12, category: options.contacts ? 'contacts' : 'all' }),
       signal: AbortSignal.any([AbortSignal.timeout(68000), ...(options.signal ? [options.signal] : [])]),
     });

@@ -64,6 +64,7 @@ class Handler(BaseHTTPRequestHandler):
                         "symptom_menu": "/api/body-map",
                         "research": "/api/research/search",
                         "papers": "/api/research/papers",
+                        "atlas": "/api/research/atlas",
                         "search": {
                             "method": "POST",
                             "path": "/api/connections/search",
@@ -82,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allowed():
             return self._reply(403, {"error": "origin_not_allowed"})
         path = urlsplit(self.path).path
-        if path not in {"/api/connections/search", "/api/research/search", "/api/research/papers"}:
+        if path not in {"/api/connections/search", "/api/research/search", "/api/research/papers", "/api/research/atlas"}:
             return self._reply(404, {"error": "not_found"})
         if self.headers.get_content_type() != "application/json":
             return self._reply(415, {"error": "content_type_must_be_application_json"})
@@ -95,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(413, {"error": "request_body_must_be_1_to_16384_bytes"})
             self.connection.settimeout(30)
             body = json.loads(self.rfile.read(length))
-            result = self.service.search(body) if path == "/api/connections/search" else self.research.search(body, papers=path.endswith("/papers"))
+            result = self.service.search(body) if path == "/api/connections/search" else self.research.atlas(body) if path.endswith("/atlas") else self.research.search(body, papers=path.endswith("/papers"))
         except (InputError, json.JSONDecodeError, UnicodeError) as exc:
             return self._reply(400, {"error": "invalid_request", "message": str(exc)})
         except UpstreamError as exc:

@@ -39,13 +39,13 @@ test('custom conditions keep real counts, deduplicate aliases and prefer the nam
   assert.equal(recommendCommunities('Fabry Pompe Marfan Rett Huntington', conditions).length, 3);
 });
 
-test('recommendations survive conversation transfer with canonical metadata and unknown IDs removed', () => {
+test('recommendations survive conversation transfer with canonical metadata and unknown IDs removed', async () => {
   const user = store.createGuest('patient');
-  const input = conversationTransferSchema.parse({ messages: [
+  const input = (await conversationTransferSchema.parseAsync({ messages: [
     { id: 'question', role: 'user', text: 'Fabry disease' },
     { id: 'answer', role: 'assistant', text: 'An answer.', communities: [{ id: 'fabry', name: 'Forged label', memberCount: 99999 }, { id: 'not-real' }] },
-  ] });
-  const record = saveLandingConversation(user.id, input);
+  ] }));
+  const record = (await saveLandingConversation(user.id, input));
   const saved = store.getRecord(record.id, user.id)?.messages?.at(-1)?.communities;
   assert.deepEqual(saved, recommendCommunities('Fabry', listConditions()));
 });

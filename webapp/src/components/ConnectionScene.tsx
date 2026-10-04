@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import * as THREE from 'three';
 import { createBodyMotion, type HumanRig } from '@/lib/body-motion';
+import { createBodyHighlight } from '@/lib/body-highlight';
 import { createReachingHandMotion, isReachingHandGraph, type ReachingHandGraph } from '@/lib/reaching-hand-motion';
 import { createConnectionGraph, type ConnectionGraph } from '@/lib/connection-graph';
 import { createHandAttachment, createHandPairLayout, FIGURE_ORIENTATION, HAND_SCALE } from '@/lib/hand-layout';
@@ -59,6 +60,10 @@ export default function ConnectionScene(props: Props) {
       camera.position.z = 20;
       scene.add(figure);
       const { rig } = human;
+      const bodyMotion = createBodyMotion(rig);
+      const focusColor = new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--coral').trim());
+      const highlight = createBodyHighlight(human, focusColor);
+      figure.add(highlight.mesh);
       const handAttachment = createHandAttachment(rig);
       const restAttachment = handAttachment.matrix;
       figure.rotation.copy(FIGURE_ORIENTATION);
@@ -93,7 +98,6 @@ export default function ConnectionScene(props: Props) {
       const right = createConnectionGraph(hand, true, HAND_SCALE), left = createConnectionGraph(hand, true);
       figure.add(body.group, originalHand.group, right.group); scene.add(left.group);
       left.group.matrixAutoUpdate = false;
-      const bodyMotion = createBodyMotion(rig);
       const rightMotion = createReachingHandMotion(hand.rig, 1);
       const leftMotion = createReachingHandMotion(hand.rig, 0);
       const rigidWeights = Array.from({ length: rig.boneCount }, (_, i) => i >= 4 && i < 8 ? 1 : 0);
@@ -162,7 +166,8 @@ export default function ConnectionScene(props: Props) {
           else handTime += delta;
         }
         const { lift, zoom, focus, shape: poseShape, entrance } = connectionTiming(progress);
-        bodyMotion.update(progress > 0 ? frozenTime : time, media.matches, lift);
+        const bodyPose = bodyMotion.update(progress > 0 ? frozenTime : time, media.matches, lift);
+        const highlightStrength = bodyPose.focusStrength * (1 - smooth(progress, 0, .08));
         const bodyAnchor = document.querySelector<HTMLElement>('[data-connection-anchor="body"]');
         if ((progress === 0 && bodyAnchor) || !framed) {
           // A direct About visit still has a valid reverse destination.
@@ -257,6 +262,7 @@ export default function ConnectionScene(props: Props) {
           left.group.matrix.elements[12] -= (1 - entrance) * Math.max(0, offscreenTravel - 4.5 * HAND_SCALE);
           left.update((point, i, surface) => leftMotion.deform(point, surface ? hand.rig.surfaceWeights : hand.rig.nodeWeights, i * hand.rig.boneCount));
         }
+        highlight.update(bodyPose.focusRegion, highlightStrength, index => hiddenNodes[index] ? originalHand.nodePosition(index) : body.nodePosition(index));
         // The anchor positions the art without clipping it. Both complete arm
         // silhouettes scroll naturally across the full viewport canvas.
         renderer.clear();
@@ -268,6 +274,8 @@ export default function ConnectionScene(props: Props) {
         element.dataset.direction = direction === 1 ? 'forward' : 'reverse';
         element.dataset.scene = active ? 'transition' : progress === 1 ? 'about' : 'body';
         element.dataset.motionTime = (progress > 0 ? handTime : time).toFixed(3);
+        element.dataset.focusRegion = highlightStrength > 0 ? bodyMotion.focusRegions[bodyPose.focusRegion - 1].name : 'none';
+        element.dataset.focusStrength = highlightStrength.toFixed(3);
         return !media.matches || active;
       }
 
@@ -306,7 +314,7 @@ export default function ConnectionScene(props: Props) {
         document.removeEventListener('visibilitychange', visibilityChanged); media.removeEventListener('change', requestRender);
         window.removeEventListener('popstate', cancelTransition); document.removeEventListener('keydown', escape);
         element.removeEventListener('webglcontextlost', lost); element.removeEventListener('webglcontextrestored', restored);
-        body.dispose(); originalHand.dispose(); right.dispose(); left.dispose(); renderer.dispose();
+        highlight.dispose(); body.dispose(); originalHand.dispose(); right.dispose(); left.dispose(); renderer.dispose();
       };
     }).catch(() => { if (!disposed) { setFailed(true); callbacks.current.onUnavailable(); } });
     return () => { disposed = true; cleanup?.(); };

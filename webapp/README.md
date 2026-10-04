@@ -86,7 +86,7 @@ claim that no evidence exists. Publication and sharing require explicit UI actio
 - `GARRA_BACKEND_DIR` / `GARRA_PYTHON`: optional backend checkout and interpreter paths for `dev:all`.
 - `GARRA_RESEARCH_CACHE_DIR`: optional Python cache directory, defaults to backend `data/literature-cache`.
 - `GARRA_DATA_DIR`: persistent database directory; defaults to `./data`.
-- `DATA_ENCRYPTION_KEY`: optional 64-character hex key. If omitted, a local key is generated in the data directory. Preserve the key with the database.
+- `DATA_ENCRYPTION_KEY`: required stable 64-character hex key for hosted Supabase storage; optional locally. If omitted, a local key is generated in the data directory. Preserve the key with the database.
 - `APP_ORIGIN`: leave unset for local use, or use the exact `http://127.0.0.1:<port>` origin. A non-loopback deployment origin disables local ChatGPT sign-in and subscription inference.
 
 ```sh
@@ -95,7 +95,7 @@ npm run build
 npm start
 ```
 
-For the local demo, keep the server bound to loopback and persist `GARRA_DATA_DIR` outside the deployment bundle. For public hosting, first obtain OpenAI hosted access approval and implement its registered OAuth flow, then use HTTPS and a canonical `APP_ORIGIN`. SQLite requires a single application host or a deliberate database migration before horizontal scaling. The app has not been publicly deployed. Real clinical use requires further identity, governance, consent, retention, and operational work beyond this prototype.
+For the local demo, keep the server bound to loopback and persist `GARRA_DATA_DIR` outside the deployment bundle. For public hosting, first obtain OpenAI hosted access approval and implement its registered OAuth flow, then use HTTPS and a canonical `APP_ORIGIN`. Local development uses SQLite; Vercel uses the Supabase persistence adapter. Vercel projects are prepared; configuring their server secrets and completing a verified deployment are still required. Real clinical use requires further identity, governance, consent, retention, and operational work beyond this prototype.
 
 ## Checks
 
@@ -122,29 +122,43 @@ through the authenticated Supabase plugin.
 - Browser components: `createSupabaseBrowserClient()` from `src/lib/supabase/client.ts`.
 - Public server queries: `createSupabaseServerClient()` from `src/lib/supabase/server.ts`.
 
-The remote project currently has no public tables. Workspace sign-in, records,
-files, and community data still use the existing encrypted local SQLite store.
-This connection setup does not migrate them. Before using Supabase for private
-workspace data, add a schema with ownership-based RLS policies and connect the
-app's authentication to Supabase Auth; the existing local session is not a
-Supabase identity.
+The `garra_*` tables and restricted server functions are defined in
+`supabase/migrations/20261004042901_garra_hosted_storage.sql` and applied to this
+project. Runtime callers use the async boundary in `src/lib/persistence.ts`.
+`GARRA_STORAGE=supabase` selects cloud persistence; local development defaults to
+SQLite. Vercel refuses SQLite so a cold start cannot silently lose workspace data.
+No local accounts, tokens, uploads, or records are automatically copied to Supabase.
 
-### 3D disease atlas
+Set server-only `SUPABASE_SECRET_KEY` and a stable `DATA_ENCRYPTION_KEY` on the host.
+All cloud tables have RLS enabled and browser grants revoked. There are deliberately
+no browser policies: the app validates ChatGPT identities, manages its own hashed
+sessions, and checks ownership/sharing before returning decrypted data. A ChatGPT
+identity is not assumed to be a Supabase Auth user. Supabase's informational
+[no-policy advisor](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
+is expected for this server-only access model. Service-role credentials stay on the server.
 
-The atlas uses BodyParts3D surfaces converted into black node-and-edge graphs.
-Drag to rotate, scroll/pinch to zoom, and Shift-drag (or the move control) to pan.
-Select a graph node or its label to focus an organ or bone. The Skeleton label
-opens a view of the full skeleton, including the skull, teeth, rib cage, spine,
-pelvis, arms, hands, legs, and feet. Arrow keys rotate, `+`/`-` zoom, and
-`0` resets. Organ networks emerge as the body surface fades on zoom; condition
-labels attach to separate anatomical graph nodes. Labels prefer free space. Disease labels remain on screen when the body fills
-the view, falling back to positions over the anatomy without white boxes.
+Run the live synthetic-data contract checks with:
 
-The static assets in `public/models/anatomy` retain a shared anatomical coordinate
-system. See `NOTICE.md` there for sources and per-asset licenses, also linked from the About page. To regenerate,
-install NumPy, SciPy, and fast-simplification 0.2.0 in an isolated Python environment,
-then run `tools/build-atlas-anatomy.py` with the official 4.0 OBJ archive and the
-five 3.0 lung-lobe STL files using `--lung-dir`. Use `--skin-only` to rebuild the
-body surface. `tools/atlas_mesh.py` repairs surface winding and samples organ
-networks deterministically. The anatomy is illustrative; disease connections
-indicate a regional association rather than a precise lesion.
+```sh
+node --env-file=.env.local --import tsx scripts/test-hosted-storage.ts
+```
+
+The checks create unique test users and records, verify isolation, sharing,
+encryption, one-time OAuth attempts, concurrent refresh/rate limits, and denial
+of browser access; they remove only their own synthetic records in `finally`.
+
+Two Vercel projects are prepared: `garra-rufa` for this Next app and
+`garra-rufa-research` for the Python repository backend. The backend's
+`api/index.py` reuses the existing graph and dedicated paper pipelines. Set the
+same private `GARRA_RESEARCH_TOKEN` on both services and set `GARRA_RESEARCH_URL`
+on the web app to the deployed backend's HTTPS origin. The Python build fetches
+the two public HPO files needed by the anatomical index; disposable provider
+caches live in `/tmp`. No private workspace data goes to that service.
+
+The hosted app does not enable the local dynamic-registration ChatGPT OAuth flow.
+For public ChatGPT-plan usage, complete OpenAI's
+[hosted-app interest form](https://openai.com/form/sign-in-with-chatgpt-interest/)
+and integrate the client registration/scopes granted through that process.
+Do not reuse a local dynamic client registration as a public hosted app.
+The current deployment configuration intentionally does not provide an OpenAI
+API key; it cannot silently switch workspace requests to API billing.

@@ -18,10 +18,10 @@ const messages = [
   { id: 'answer', role: 'assistant', text: '## Overview\n\nA **formatted** answer.', sources: [{ id: 'source', title: 'Reference', url: 'https://example.org/reference', kind: 'reference', excerpt: 'Evidence' }], diseases: [diseases[0]], steps: ['Read the source.'], mode: 'ai', suggestion: { kind: 'note', title: 'Notes', content: 'Keep this answer.' } },
 ];
 
-test('landing conversations survive entry into each role with answer metadata intact', () => {
+test('landing conversations survive entry into each role with answer metadata intact', async () => {
   for (const role of ['researcher', 'doctor', 'patient'] as const) {
     const user = store.createGuest(role);
-    const record = saveLandingConversation(user.id, conversationTransferSchema.parse({ messages }));
+    const record = (await saveLandingConversation(user.id, (await conversationTransferSchema.parseAsync({ messages }))));
     assert.equal(record.kind, 'chat');
     assert.equal(record.visibility, 'private');
     assert.deepEqual(store.getRecord(record.id, user.id)?.messages, messages);
@@ -31,29 +31,29 @@ test('landing conversations survive entry into each role with answer metadata in
   }
 });
 
-test('existing landing chats continue in the same saved record without duplicates', () => {
+test('existing landing chats continue in the same saved record without duplicates', async () => {
   const user = store.createGuest('researcher');
-  const record = saveLandingConversation(user.id, conversationTransferSchema.parse({ messages }));
+  const record = (await saveLandingConversation(user.id, (await conversationTransferSchema.parseAsync({ messages }))));
   const followup = [...messages, { id: 'followup', role: 'user', text: 'What should I read next?' }, { id: 'reply', role: 'assistant', text: 'Here is a source.' }];
-  const continued = saveLandingConversation(user.id, conversationTransferSchema.parse({ chatId: record.id, messages: followup }));
+  const continued = (await saveLandingConversation(user.id, (await conversationTransferSchema.parseAsync({ chatId: record.id, messages: followup }))));
   assert.equal(continued.id, record.id);
   assert.equal(store.listRecords(user.id).length, 1);
   assert.equal(continued.messages?.length, 4);
 });
 
-test('conversation transfer cannot overwrite another owner, a non-chat record, or a deleted chat', () => {
+test('conversation transfer cannot overwrite another owner, a non-chat record, or a deleted chat', async () => {
   const owner = store.createGuest('patient'), other = store.createGuest('doctor');
-  const chat = saveLandingConversation(owner.id, conversationTransferSchema.parse({ messages }));
+  const chat = (await saveLandingConversation(owner.id, (await conversationTransferSchema.parseAsync({ messages }))));
   const note = store.saveRecord(owner.id, { kind: 'note', title: 'Preserve this note' });
-  assert.throws(() => saveLandingConversation(other.id, conversationTransferSchema.parse({ chatId: chat.id, messages })), ConversationUnavailable);
-  assert.throws(() => saveLandingConversation(owner.id, conversationTransferSchema.parse({ chatId: note.id, messages })), ConversationUnavailable);
+  (await assert.rejects(async () => (await saveLandingConversation(other.id, (await conversationTransferSchema.parseAsync({ chatId: chat.id, messages })))), ConversationUnavailable));
+  (await assert.rejects(async () => (await saveLandingConversation(owner.id, (await conversationTransferSchema.parseAsync({ chatId: note.id, messages })))), ConversationUnavailable));
   store.deleteRecord(chat.id, owner.id);
-  assert.throws(() => saveLandingConversation(owner.id, conversationTransferSchema.parse({ chatId: chat.id, messages })), ConversationUnavailable);
+  (await assert.rejects(async () => (await saveLandingConversation(owner.id, (await conversationTransferSchema.parseAsync({ chatId: chat.id, messages })))), ConversationUnavailable));
 });
 
-test('transfer validates completed conversations and citation URLs', () => {
-  assert.equal(conversationTransferSchema.safeParse({ messages: [] }).success, false);
-  assert.equal(conversationTransferSchema.safeParse({ messages: messages.slice(0, 1) }).success, false);
+test('transfer validates completed conversations and citation URLs', async () => {
+  assert.equal((await conversationTransferSchema.safeParseAsync({ messages: [] })).success, false);
+  assert.equal((await conversationTransferSchema.safeParseAsync({ messages: messages.slice(0, 1) })).success, false);
   const invalid = [messages[0], { ...messages[1], sources: [{ ...messages[1].sources![0], url: 'javascript:alert(1)' }] }];
-  assert.equal(conversationTransferSchema.safeParse({ messages: invalid }).success, false);
+  assert.equal((await conversationTransferSchema.safeParseAsync({ messages: invalid })).success, false);
 });

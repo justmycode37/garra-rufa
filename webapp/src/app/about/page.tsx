@@ -22,7 +22,7 @@ export default function AboutPage() {
     <main id="mission">
       <div className={styles.art}><ReachingHands/></div>
       <section className={styles.intro} aria-labelledby="mission-title">
-        <h1 id="mission-title" tabIndex={-1}>Our mission</h1>
+        <h1 id="mission-title" tabIndex={-1}>Our mission is to connect</h1>
         <p className={styles.lead}>Make rare disease knowledge easier to find, understand, and build on. Together.</p>
         <p className={styles.copy}>A question should be the start of a path. Garra rufa connects information with the people who need it, bringing research, clinical questions, and lived experience into a shared place to explore.</p>
       </section>

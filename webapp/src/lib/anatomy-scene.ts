@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { diseases } from './knowledge';
 import { placeAtlasLabels, SILHOUETTE_STEP, type LabelCandidate, type PlacedLabel, type SilhouetteRow } from './atlas-labels';
 import { AtlasLabelMotion, type AnimatedAtlasLabel } from './atlas-label-motion';
+import { ATLAS_GRAPH_ZOOM, atlasRegions } from './atlas-graph';
 
 export type AnatomyGraph = { positions: number[]; triangles: number[]; nodes: number[]; normals: number[]; spacing: number[]; edges: number[] };
 type OrganGraph = { nodes: number[]; normals: number[]; edges: number[]; spacing: number };
@@ -11,7 +12,7 @@ type OrganNetwork = { id: string; category: string; spacing: number; lines: THRE
 type Point3 = [number, number, number];
 type Organ = { id: string; name: string; category: string; anchor: Point3; center: Point3; bounds: [Point3, Point3]; structures: string[] };
 export type AnatomyManifest = { organs: Organ[] };
-export type AnatomyFrame = { zoom: number; labels: AnimatedAtlasLabel[]; detailReady: boolean; detailError: boolean; region: string; rotated: boolean };
+export type AnatomyFrame = { zoom: number; labels: AnimatedAtlasLabel[]; detailReady: boolean; detailError: boolean; region: string; rotated: boolean; regionId?: string; regionAnchor?: { x: number; y: number }; viewport?: { width: number; height: number } };
 type Target = { id: string; title: string; point: THREE.Vector3; zoom: number; conditions: string[] };
 
 export class AnatomyScene {
@@ -48,6 +49,9 @@ export class AnatomyScene {
   private labelPoints = new Map<string, THREE.Vector3>();
   private detailLabels = false;
   private labelRegion: Target | undefined;
+  private graphRegion = '';
+  private focusPoint: THREE.Vector3 | null = null;
+  private regionalPoints = new Map<string, THREE.Vector3[]>();
 
   constructor(private canvas: HTMLCanvasElement, private graph: AnatomyGraph, private manifest: AnatomyManifest, private onFrame: (frame: AnatomyFrame) => void, private onContextLost: () => void, private onSelection: (id: string, title: string) => void = () => {}) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'low-power' });
@@ -175,6 +179,9 @@ export class AnatomyScene {
         this.organMeshes.push(object);
         if (!graph) return;
         const points = Array.from({ length: graph.nodes.length / 3 }, (_, i) => new THREE.Vector3().fromArray(graph.nodes, i * 3).addScaledVector(new THREE.Vector3().fromArray(graph.normals, i * 3), graph.spacing * .22));
+        // A small, evenly sampled spatial index handles paired organs and limbs,
+        // whose shared centre may be nowhere near the part being viewed.
+        this.regionalPoints.set(object.name, points.filter((_, i) => i % Math.max(1, Math.ceil(points.length / 180)) === 0));
         const lines = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(graph.edges.map(index => points[index])), new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false, depthTest: false }));
         const dots = new THREE.Points(new THREE.BufferGeometry().setFromPoints(points), new THREE.PointsMaterial({ color: 0x000000, size: 1.8, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, depthTest: false }));
         lines.renderOrder = 2; dots.renderOrder = 3;
@@ -317,6 +324,21 @@ export class AnatomyScene {
     // whole sets of labels on consecutive frames.
     if (!this.labelRegion || distance(closest) + 40 < distance(this.labelRegion)) this.labelRegion = closest;
     const nearest = this.labelRegion;
+    const regionCandidates = [
+      ...this.targets.filter(target => target.id !== 'skeleton').map(target => ({ id: target.id, point: target.point })),
+      ...this.manifest.organs.filter(organ => atlasRegions[organ.id]).map(organ => {
+        const points = this.regionalPoints.get(organ.id) ?? [new THREE.Vector3().fromArray(organ.center)];
+        const point = points.reduce((best, point) => point.distanceToSquared(this.controls.target) < best.distanceToSquared(this.controls.target) ? point : best);
+        return { id: organ.id, point };
+      }),
+    ].filter(candidate => !skeletal || ['bone', 'dental'].includes(this.manifest.organs.find(organ => organ.id === candidate.id)?.category ?? ''));
+    const regionDistance = (candidate: { id: string; point: THREE.Vector3 }) => candidate.point.distanceTo(this.controls.target) - (candidate.id === this.graphRegion ? .08 : 0);
+    regionCandidates.sort((a, b) => regionDistance(a) - regionDistance(b));
+    const focusStillHere = this.focusPoint && this.focusPoint.distanceTo(this.controls.target) < .12;
+    const activeRegion = (focusStillHere || this.tween) && this.focusedPart && atlasRegions[this.focusedPart]
+      ? { id: this.focusedPart, point: this.focusPoint ?? this.controls.target }
+      : regionCandidates[0];
+    this.graphRegion = zoom >= ATLAS_GRAPH_ZOOM ? activeRegion?.id ?? '' : '';
     this.detailLabels = this.detailLabels ? zoom > 1.58 : zoom >= 1.72;
     const candidates: LabelCandidate[] = [];
     const addLabel = (label: Omit<LabelCandidate, 'anchor'>, point: THREE.Vector3) => {
@@ -326,7 +348,7 @@ export class AnatomyScene {
     if (!this.detailLabels && !skeletal) {
       this.targets.filter(target => target.id !== 'muscles').forEach(target => addLabel({ id: target.id, title: target.title, kind: 'region', target: target.id }, target.point));
     } else {
-      if (!skeletal) nearest.conditions.forEach(id => {
+      if (!skeletal && zoom < ATLAS_GRAPH_ZOOM) nearest.conditions.forEach(id => {
         const disease = diseases.find(d => d.id === id)!;
         const anchor = this.anchorPoints.get(`${nearest.id}-${id}`)!;
         addLabel({ id: `disease-${nearest.id}-${id}`, title: disease.name, kind: 'disease', diseaseId: id }, anchor);
@@ -338,14 +360,16 @@ export class AnatomyScene {
         .sort((a, b) => organDistance(a.screen, a.organ.id) - organDistance(b.screen, b.organ.id)).slice(0, skeletal ? 10 : 6)
         .forEach(({ organ }) => addLabel({ id: `organ-${organ.id}`, title: organ.name, kind: 'organ', target: organ.id }, new THREE.Vector3().fromArray(organ.anchor)));
     }
-    this.lastRegion = this.focusedPart === 'skeleton' ? 'Skeleton' : !this.detailLabels ? '' : this.manifest.organs.find(organ => organ.id === this.focusedPart)?.name ?? nearest.title;
+    this.lastRegion = this.graphRegion ? atlasRegions[this.graphRegion].label : this.focusedPart === 'skeleton' ? 'Skeleton' : !this.detailLabels ? '' : this.manifest.organs.find(organ => organ.id === this.focusedPart)?.name ?? nearest.title;
     this.labelPlacements = placeAtlasLabels(candidates, this.silhouette(), this.width, this.height, this.labelPlacements);
     const motion = this.labelMotion.update(this.labelPlacements, now, reducedMotion);
     // Even exiting labels stay attached to their anatomical point as the
     // camera moves. Text and leader lines share the same animated placement.
     const labels = motion.labels.map(label => ({ ...label, anchor: this.project(this.labelPoints.get(label.id)!) }));
     if (motion.animating) this.requestDraw();
-    this.onFrame({ zoom, labels, detailReady: this.detailReady, detailError: this.detailError, region: this.lastRegion, rotated: Math.abs(this.controls.getAzimuthalAngle()) > .03 || Math.abs(this.controls.getPolarAngle() - Math.PI / 2) > .03 });
+    this.onFrame({ zoom, labels, detailReady: this.detailReady, detailError: this.detailError, region: this.lastRegion,
+      regionId: this.graphRegion, regionAnchor: activeRegion ? this.project(activeRegion.point) : undefined, viewport: { width: this.width, height: this.height },
+      rotated: Math.abs(this.controls.getAzimuthalAngle()) > .03 || Math.abs(this.controls.getPolarAngle() - Math.PI / 2) > .03 });
   };
 
   focus(id: string, notify = true) {
@@ -375,6 +399,7 @@ export class AnatomyScene {
   }
 
   private animateTo(target: THREE.Vector3, zoom: number, reset = false) {
+    this.focusPoint = reset ? null : target.clone();
     this.tween = { started: performance.now(), fromTarget: this.controls.target.clone(), toTarget: target.clone(), fromZoom: this.camera.zoom, toZoom: zoom, reset, fromPosition: this.camera.position.clone() };
     this.requestDraw();
   }
