@@ -2,9 +2,15 @@
 
 A rare disease discovery workspace with a minimal, animated landing page and researcher, doctor, and patient perspectives. The design reuses Bloom’s local fonts, sprout mark, and colour palette.
 
+Public website: **https://garra-rufa.vercel.app**. The production Next app uses
+Supabase storage and the protected `garra-rufa-research` Vercel service. Public
+pages, the anatomical atlas API, and literature search are live. Hosted
+ChatGPT-plan sign-in and workspace AI still require OpenAI approval and its
+registered hosted OAuth integration; use the local app for that complete flow.
+
 ## Run locally
 
-Requires Node.js 22.13 or newer (native `node:sqlite`) and Python 3.11 or newer.
+Requires Node.js 22.13 or newer (native `node:sqlite`) and Python 3.12 or newer (excluding 3.14.1, which the graph dependency does not support).
 From the repository root, set up the backend once:
 
 ```sh
@@ -95,7 +101,7 @@ npm run build
 npm start
 ```
 
-For the local demo, keep the server bound to loopback and persist `GARRA_DATA_DIR` outside the deployment bundle. For public hosting, first obtain OpenAI hosted access approval and implement its registered OAuth flow, then use HTTPS and a canonical `APP_ORIGIN`. Local development uses SQLite; Vercel uses the Supabase persistence adapter. Vercel projects are prepared; configuring their server secrets and completing a verified deployment are still required. Real clinical use requires further identity, governance, consent, retention, and operational work beyond this prototype.
+For the local demo, keep the server bound to loopback and persist `GARRA_DATA_DIR` outside the deployment bundle. Public ChatGPT-plan sign-in requires OpenAI hosted access approval and its registered OAuth flow, HTTPS, and a canonical `APP_ORIGIN`. Local development uses SQLite; the live Vercel site uses the Supabase persistence adapter. Production secrets are configured on Vercel and stay out of Git. Real clinical use requires further identity, governance, consent, retention, and operational work beyond this prototype.
 
 ## Checks
 
@@ -147,13 +153,20 @@ The checks create unique test users and records, verify isolation, sharing,
 encryption, one-time OAuth attempts, concurrent refresh/rate limits, and denial
 of browser access; they remove only their own synthetic records in `finally`.
 
-Two Vercel projects are prepared: `garra-rufa` for this Next app and
-`garra-rufa-research` for the Python repository backend. The backend's
+Two Vercel projects are deployed: `garra-rufa` for this Next app at
+https://garra-rufa.vercel.app and `garra-rufa-research` for the Python repository
+backend at https://garra-rufa-research.vercel.app. The backend's
 `api/index.py` reuses the existing graph and dedicated paper pipelines. Set the
 same private `GARRA_RESEARCH_TOKEN` on both services and set `GARRA_RESEARCH_URL`
 on the web app to the deployed backend's HTTPS origin. The Python build fetches
 the two public HPO files needed by the anatomical index; disposable provider
 caches live in `/tmp`. No private workspace data goes to that service.
+
+Production checks on 2026-10-04 verified public page access, eight Supabase
+communities, atlas data, exact-PMID literature lookup, rejection of unauthenticated
+private-record requests, and rejection of research calls without the shared key.
+These projects were deployed with the Vercel CLI; GitHub pushes do not currently
+publish a new production release automatically.
 
 The hosted app does not enable the local dynamic-registration ChatGPT OAuth flow.
 For public ChatGPT-plan usage, complete OpenAI's

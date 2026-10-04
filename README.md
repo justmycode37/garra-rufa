@@ -7,6 +7,9 @@ Approved downloaders for the rare-disease atlas. Every fetch starts from a row i
 ## Connected web app
 
 The Next.js frontend and AI workspace live in [`webapp/`](webapp/README.md).
+Public website: **https://garra-rufa.vercel.app**. Vercel hosts the web app and
+protected research service; Supabase stores hosted workspace data. Public
+ChatGPT-plan sign-in awaits OpenAI hosted-app approval and OAuth integration.
 To run the full product locally with ChatGPT-plan sign-in:
 
 ```bash

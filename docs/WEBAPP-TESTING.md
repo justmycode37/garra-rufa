@@ -60,7 +60,16 @@ ChatGPT plans requires OpenAI's hosted application approval/registration and the
 corresponding OAuth integration. See [OpenAI's documentation](https://developers.openai.com/siwc/token-sharing-open-source)
 and [hosted sign-in requirements](https://developers.openai.com/siwc/website).
 
-A hosted product also needs a persistent backend for the Python pipeline and a
-durable database/identity setup for encrypted workspaces. The current local
-SQLite store is not a shared Vercel serverless database. No public deployment is
-claimed by these local checks.
+The website is public at **https://garra-rufa.vercel.app**. Vercel hosts the Next
+app and a separate protected Python research service; production persistence uses
+Supabase, while local development keeps SQLite. No local accounts or private
+records are automatically migrated to the hosted database.
+
+Production checks on 2026-10-04 confirmed HTTP 200 without a Vercel login, eight
+communities from Supabase, anatomical data at `/api/atlas?region=heart`, and the
+dedicated paper pipeline at `/api/research/papers?q=PMID%3A38517496`. Private
+records return 401 without an app session, and direct research-service calls
+return 401 without its server credential. The hosted landing-page assistant
+currently returns labelled database results: no OpenAI API key is deployed.
+The complete ChatGPT-plan workspace remains available locally pending OpenAI's
+hosted approval and the corresponding OAuth integration.
