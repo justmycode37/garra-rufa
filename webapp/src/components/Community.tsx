@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, Heart, LoaderCircle, Plus, Search, Send, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Check, ChevronDown, Heart, LoaderCircle, Plus, Search, Send, Trash2, Users } from 'lucide-react';
 import type { ConditionOption, User } from '@/lib/types';
 import { diseases } from '@/lib/knowledge';
 import { communityStyle } from '@/lib/community-colors';
+import { normalizeCondition } from '@/lib/community-recommendations';
 import ConditionPicker from './ConditionPicker';
 import Dialog from './Dialog';
 import styles from './Community.module.css';
@@ -27,6 +28,7 @@ export default function Community({ user, onAsk, initialConditionId = '' }: { us
   const [data, setData] = useState<CommunityData>(empty);
   const [conditionId, setConditionId] = useState(initialConditionId);
   const [filter, setFilter] = useState('');
+  const [visibleCount, setVisibleCount] = useState(3);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(false);
@@ -49,6 +51,7 @@ export default function Community({ user, onAsk, initialConditionId = '' }: { us
       const response = await fetch(`/api/community${id ? `?conditionId=${encodeURIComponent(id)}` : ''}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Community could not load.');
+      if (!Array.isArray(result.conditions) || !Array.isArray(result.members) || !Array.isArray(result.posts) || !Array.isArray(result.projects)) throw new Error('Community could not load. Please try again.');
       if (request === generation.current) setData(result);
     } catch (e) {
       if (request === generation.current) setError(e instanceof Error ? e.message : 'Community could not load.');
@@ -61,9 +64,10 @@ export default function Community({ user, onAsk, initialConditionId = '' }: { us
   const organization = diseases.find(d => d.id === conditionId)?.organization;
   const open = (id: string) => { setConditionId(id); setContent(''); setError(''); };
   const editingProfile = data.profiles?.find(p => p.diseaseId === joinId) || null;
-  const openJoin = () => {
-    setFormError(''); setJoinId(conditionId); joinSelection.current = conditionId;
-    setAlias(profile?.alias || user.name.split(' ')[0]); setBio(profile?.bio || ''); setJoining(true);
+  const openJoin = (id = conditionId) => {
+    const existing = data.profiles?.find(p => p.diseaseId === id);
+    setFormError(''); setJoinId(id); joinSelection.current = id;
+    setAlias(existing?.alias || user.name.split(' ')[0]); setBio(existing?.bio || ''); setJoining(true);
   };
   const changeJoinCondition = useCallback(({ diseaseId }: { diseaseId: string; conditionName: string }) => {
     if (joinSelection.current === diseaseId) return;
@@ -112,24 +116,30 @@ export default function Community({ user, onAsk, initialConditionId = '' }: { us
     finally { setBusy(false); }
   }
 
-  const filtered = data.conditions.filter(c => [c.name, ...(c.aliases || [])].join(' ').toLowerCase().includes(filter.trim().toLowerCase()));
+  const filtered = data.conditions.filter(c => [c.name, c.id, ...(c.aliases || [])].some(value => normalizeCondition(value).includes(normalizeCondition(filter))));
 
   return <div className={styles.community} style={conditionId ? communityStyle(conditionId) : undefined}>
     {conditionId && <button className={`text-button ${styles.back}`} disabled={busy} onClick={() => open('')}><ArrowLeft size={14}/>All communities</button>}
     <div className={`section-heading ${conditionId ? styles.communityHeading : ''}`}>
-      <div><h1>{condition?.name || (conditionId ? 'Community' : 'Communities')}</h1>{condition && <p>{condition.memberCount} {condition.memberCount === 1 ? 'member' : 'members'}</p>}</div>
-      <button className={conditionId ? 'secondary' : `primary ${styles.joinCreate}`} onClick={openJoin} disabled={busy || (loading && !!conditionId)}>{conditionId ? profile ? 'Your profile' : 'Join community' : 'Join or create'}{conditionId ? <Users size={16}/> : <Heart className={styles.joinHeart} size={16} aria-hidden="true"/>}</button>
+      <div><h1>{condition?.name || (conditionId ? 'Community' : 'Communities')}</h1>{condition ? <p>{condition.memberCount} {condition.memberCount === 1 ? 'member' : 'members'}</p> : !conditionId && <p>Find your people. Join communities around the conditions that matter to you.</p>}</div>
+      <button className={conditionId ? 'secondary' : `primary ${styles.joinCreate}`} onClick={() => openJoin()} disabled={busy || (loading && !!conditionId)}>{conditionId ? profile ? 'Your profile' : 'Join community' : 'Join or create'}{conditionId ? <Users size={16}/> : <Heart className={styles.joinHeart} size={16} aria-hidden="true"/>}</button>
     </div>
     {error && <div className="form-error" role="alert">{error}<button className="text-button" onClick={() => load(conditionId)}>Try again</button></div>}
     {!conditionId ? <>
-      <div className={`search-box ${styles.search}`}><Search size={17}/><input aria-label="Find a community" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Find your condition…"/></div>
+      <div className={`search-box ${styles.search}`}><Search size={17}/><input aria-label="Find a community" value={filter} onChange={e => { setFilter(e.target.value); setVisibleCount(3); }} placeholder="Find your condition…"/></div>
       {loading ? <div className={styles.empty} role="status"><LoaderCircle className="spin" size={19}/>Loading communities…</div> : <div className={styles.directory}>
-        {filtered.map(c => <button className={styles.condition} style={communityStyle(c.id)} key={c.id} onClick={() => open(c.id)}>
+        {filtered.slice(0, visibleCount).map(c => <div className={styles.condition} style={communityStyle(c.id)} key={c.id}>
+          <button className={styles.conditionOpen} onClick={() => open(c.id)} aria-label={`Explore ${c.name}`}>
           <span className={styles.conditionIcon}><Users size={19} strokeWidth={1.5}/></span>
-          <span><b title={c.name}>{c.name}</b><small>{c.memberCount} {c.memberCount === 1 ? 'member' : 'members'} · {c.postCount} {c.postCount === 1 ? 'post' : 'posts'}{c.joined || data.profiles?.some(p => p.diseaseId === c.id) ? ' · Joined' : ''}</small></span>
+          <span><b title={c.name}>{c.name}</b><small>{c.memberCount} {c.memberCount === 1 ? 'member' : 'members'} · {c.postCount} {c.postCount === 1 ? 'post' : 'posts'}</small></span>
           <ArrowUpRight size={16}/>
-        </button>)}
-        {!filtered.length && <div className={styles.empty}><p>No community found for “{filter}”.</p><button className="text-button" onClick={openJoin}>Create a community<Plus size={14}/></button></div>}
+          </button>
+          {c.joined || data.profiles?.some(p => p.diseaseId === c.id)
+            ? <button className={`secondary ${styles.joinButton}`} onClick={() => open(c.id)} aria-label={`Open joined community ${c.name}`}><Check size={14}/>Joined</button>
+            : <button className={`secondary ${styles.joinButton}`} disabled={busy} onClick={() => openJoin(c.id)} aria-label={`Join ${c.name}`}><Plus size={14}/>Join</button>}
+        </div>)}
+        {filtered.length > visibleCount && <button type="button" className={`text-button ${styles.showMore}`} onClick={() => setVisibleCount(count => count + 3)}>Show more<ChevronDown size={15}/></button>}
+        {!filtered.length && !error && <div className={styles.empty}><p>{filter.trim() ? `No community found for “${filter}”.` : 'No communities yet.'}</p><button className="text-button" onClick={() => openJoin()}>Create a community<Plus size={14}/></button></div>}
       </div>}
     </> : loading ? <div className={styles.empty} role="status"><LoaderCircle className="spin" size={19}/>Loading community…</div> : condition && data.condition?.id === conditionId ? <div className={styles.layout}>
       <section aria-labelledby="conversation-title">
@@ -138,7 +148,7 @@ export default function Community({ user, onAsk, initialConditionId = '' }: { us
           <label htmlFor="community-post">Share with {condition.name}</label>
           <textarea id="community-post" value={content} onChange={e => setContent(e.target.value)} maxLength={3000} rows={3} placeholder="Share an experience, ask a question, or start a conversation." required disabled={busy}/>
           <div><small>Visible to people using the platform.</small><button className="primary" disabled={busy || !content.trim()}>{busy ? <LoaderCircle size={14} className="spin"/> : <Send size={14}/>}Share post</button></div>
-        </form> : <div className={styles.joinPrompt}><p>Connect with people who share this experience.</p><button className="text-button" onClick={openJoin}>Join the conversation<ArrowUpRight size={14}/></button></div>}
+        </form> : <div className={styles.joinPrompt}><p>Connect with people who share this experience.</p><button className="text-button" onClick={() => openJoin()}>Join the conversation<ArrowUpRight size={14}/></button></div>}
         <div className={styles.posts}>
           {data.posts.map(p => <article className={styles.post} key={p.id}>
             <header><span className={styles.avatar}>{p.author.slice(0, 1).toUpperCase()}</span><div><b>{p.author}</b><time dateTime={p.createdAt}>{new Date(p.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</time></div>{p.own && <button className="icon-button" aria-label="Delete your post" onClick={() => { setFormError(''); setDeletePost(p); }}><Trash2 size={14}/></button>}</header>
@@ -158,7 +168,7 @@ export default function Community({ user, onAsk, initialConditionId = '' }: { us
     {joining && <Dialog title={editingProfile ? 'Your community profile' : 'Join a community'} onClose={() => { if (!busy) setJoining(false); }}>
       <p className={styles.disclosure}>Your display name and introduction will be visible in the community.</p>
       <form className="auth-form" onSubmit={join}>
-        <ConditionPicker defaultValue={conditionId || undefined} defaultName={!conditionId ? filter : undefined} label="Condition" required disabled={busy} onValueChange={changeJoinCondition} createHint="Saving creates a community for this condition."/>
+        <ConditionPicker defaultValue={joinId || undefined} defaultName={!joinId ? filter : undefined} label="Condition" required disabled={busy} onValueChange={changeJoinCondition} createHint="Saving creates a community for this condition."/>
         <label>Display name<input name="alias" value={alias} onChange={e => setAlias(e.target.value)} required minLength={2} maxLength={50} disabled={busy}/></label>
         <label>Introduction<textarea name="bio" value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={300} placeholder="A little about you, on your own terms." disabled={busy}/></label>
         <button className="primary" disabled={busy}>{busy ? <LoaderCircle size={15} className="spin"/> : <Users size={15}/>} {editingProfile ? 'Save profile' : 'Join community'}</button>
