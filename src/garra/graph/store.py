@@ -7,12 +7,15 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from garra.datasets import ensure
 from garra.paths import ATLAS_DB
 
 
 class AtlasStore:
     def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or ATLAS_DB
+        if self.db_path == ATLAS_DB:  # the default copy can come back from the deploy bundle
+            ensure(self.db_path, download=False)
         if not self.db_path.is_file():
             raise FileNotFoundError(
                 f"Atlas database not found at {self.db_path}. Run: PYTHONPATH=src python -m garra.atlas build"

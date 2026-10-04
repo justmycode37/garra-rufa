@@ -4,8 +4,12 @@ export class OpenAIResponseError extends Error {
     super(status === 429 ? 'The AI service has reached its usage limit. Please try again later.' : code === 'incomplete_stream' ? 'The AI response did not finish. Please try again.' : 'The AI service is temporarily unavailable. Please try again.');
   }
 }
-function inferenceError(_body: unknown, status?: number, requestId?: string) {
-  return new OpenAIResponseError('request_failed', status, requestId);
+// OpenAI reports an account without credits as 429 `insufficient_quota` (HTTP body
+// `{error:{code}}`, stream `response.failed` `{error:{code}}` or `error` `{code}`).
+function inferenceError(body: unknown, status?: number, requestId?: string) {
+  const b = (body ?? {}) as { code?: unknown; type?: unknown; error?: { code?: unknown; type?: unknown } };
+  const quota = [b.code, b.type, b.error?.code, b.error?.type].includes('insufficient_quota');
+  return new OpenAIResponseError(quota ? 'insufficient_quota' : 'request_failed', status ?? (quota ? 429 : undefined), requestId);
 }
 const responseSchema = z.object({ status: z.literal('completed'), output: z.array(z.record(z.string(), z.unknown())) }).passthrough();
 const completedItemSchema = z.object({ output_index: z.number().int().nonnegative(), item: z.record(z.string(), z.unknown()) });

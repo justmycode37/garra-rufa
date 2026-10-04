@@ -39,13 +39,14 @@ if (!running) {
   const bridge = process.env.GARRA_BRIDGE || path.join(backend, 'data/derived/discovery/bridge.json');
   const ontology = process.env.GARRA_HPO_ONTOLOGY || path.join(backend, 'data/ontology/hp.obo');
   const communities = process.env.GARRA_COMMUNITIES || path.join(backend, 'examples/communities.demo.json');
-  for (const file of [bridge, ontology]) if (!existsSync(file)) { console.error(`Required discovery dataset missing: ${file}. See docs/BODY-UI-INTEGRATION.md.`); process.exit(1); }
+  // Missing datasets are restored or skipped by the backend (src/garra/datasets.py).
+  for (const file of [bridge, ontology]) if (!existsSync(file)) console.warn(`Discovery dataset missing: ${file}. The backend will restore it or run without it.`);
   run(python, ['-m', 'garra.ui', '--port', port, '--bridge', bridge, '--ontology', ontology, '--atlas', path.join(backend, 'data/atlas.sqlite'), ...(existsSync(communities) ? ['--communities', communities] : [])], backend, { PYTHONPATH: path.join(backend, 'src') });
   for (let attempt = 0; attempt < 50 && !stopping; attempt++) {
     try {
       const response = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(500) });
       const health = await response.json();
-      if (health.research && health.regions && health.service === 'garra-ui-bridge') { running = true; break; }
+      if (health.research && health.service === 'garra-ui-bridge') { running = true; break; }
     } catch { /* Wait for the Python process to bind. */ }
     await new Promise(resolve => setTimeout(resolve, 200));
   }

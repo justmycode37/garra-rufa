@@ -147,7 +147,8 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     if not args.cache.is_dir():
-        parser.error("Cache directory does not exist")
+        parser.error("Cache directory does not exist. Fill it from the live APIs with "
+                     "`python -m garra.atlas prefetch-packets` (scripts/refresh_discovery.py does this).")
     args.out.mkdir(parents=True, exist_ok=True)
     mapping_path = args.out / "gene-mappings.json"
     mappings = json.loads(mapping_path.read_text()) if mapping_path.exists() else {}

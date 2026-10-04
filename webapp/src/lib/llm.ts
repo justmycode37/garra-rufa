@@ -1,18 +1,17 @@
 /**
  * LLM provider seam for all AI answers (landing + workspace).
  *
- * ACTIVE PROVIDER: OpenRouter (OpenAI-compatible chat completions), mirroring
- * src/query-test/evidence/llm.py. Env: OPENROUTER_API_KEY, OPENROUTER_MODEL
- * (default stealth/space-bunny-alpha). `LLM_PROVIDER` selects the backend.
+ * ACTIVE PROVIDER: OpenAI (Responses API via ./openai-response.ts) with
+ * OPENAI_API_KEY, OPENAI_SEARCH_MODEL and OPENAI_WORKSPACE_MODEL.
+ * `LLM_PROVIDER=openrouter` selects OpenRouter (OpenAI-compatible chat completions,
+ * mirroring src/query-test/evidence/llm.py) with OPENROUTER_API_KEY, OPENROUTER_MODEL.
  *
- * HOW TO SWITCH BACK TO THE OPENAI API (for a future agent):
- *   Fastest: set `LLM_PROVIDER=openai` in .env.local / Vercel. The OpenAI path is
- *   untouched: it still uses ./openai-response.ts (`openAIResponse`) with
- *   OPENAI_API_KEY, OPENAI_SEARCH_MODEL and OPENAI_WORKSPACE_MODEL.
- *   Permanent: change `DEFAULT_PROVIDER` below to 'openai', then optionally delete
- *   the OpenRouter section of this file. Nothing else in the app needs to change:
- *   ai.ts only calls `llmConfigured`, `llmModel` and `llmResponse` from here.
- *   Tests that mock OpenAI's Responses SSE set LLM_PROVIDER=openai themselves.
+ * QUOTA FALLBACK: when OpenAI reports `insufficient_quota` (no credits left) and
+ * OPENROUTER_API_KEY is set, the request is retried on OpenRouter's free model router
+ * (OPENROUTER_FALLBACK_MODEL, default openrouter/free). Further requests go straight
+ * to the fallback for QUOTA_COOLDOWN_MS before OpenAI is tried again.
+ *
+ * ai.ts only calls `llmConfigured`, `llmModel` and `llmResponse` from here.
  *
  * Contract: `llmResponse` takes the OpenAI Responses-style body built by
  * `apiRequest()` and returns a CompletedResponse whose `output` holds `message`
@@ -21,20 +20,35 @@
  */
 import { OpenAIResponseError, openAIResponse, type CompletedResponse, type ResponseStreamOptions } from './openai-response';
 
-const DEFAULT_PROVIDER: 'openrouter' | 'openai' = 'openrouter';
+const DEFAULT_PROVIDER: 'openrouter' | 'openai' = 'openai';
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_DEFAULT_MODEL = 'stealth/space-bunny-alpha';
+const OPENROUTER_FREE_ROUTER = 'openrouter/free';
+const QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
+let quotaExhaustedAt = 0;
 
-export const llmProvider = () => (process.env.LLM_PROVIDER || DEFAULT_PROVIDER).trim().toLowerCase() === 'openai' ? 'openai' : 'openrouter';
-export const llmConfigured = () => !!(llmProvider() === 'openai' ? process.env.OPENAI_API_KEY : process.env.OPENROUTER_API_KEY);
-export const llmLabel = () => llmProvider() === 'openai' ? 'OpenAI' : 'OpenRouter';
+export const llmProvider = () => (process.env.LLM_PROVIDER || DEFAULT_PROVIDER).trim().toLowerCase() === 'openrouter' ? 'openrouter' : 'openai';
+const canFallBack = () => llmProvider() === 'openai' && !!process.env.OPENROUTER_API_KEY;
+const fallbackModel = () => (process.env.OPENROUTER_FALLBACK_MODEL || OPENROUTER_FREE_ROUTER).trim();
+const usingFallback = () => canFallBack() && (!process.env.OPENAI_API_KEY || Date.now() - quotaExhaustedAt < QUOTA_COOLDOWN_MS);
+export const llmConfigured = () => !!(llmProvider() === 'openai' ? process.env.OPENAI_API_KEY || canFallBack() : process.env.OPENROUTER_API_KEY);
+export const llmLabel = () => llmProvider() === 'openai' && !usingFallback() ? 'OpenAI' : 'OpenRouter';
 export function llmModel(surface: 'landing' | 'workspace') {
+  if (usingFallback()) return fallbackModel();
   if (llmProvider() === 'openai') return surface === 'workspace' ? process.env.OPENAI_WORKSPACE_MODEL || 'gpt-6-astra' : process.env.OPENAI_SEARCH_MODEL || 'gpt-6-luna';
   return (process.env.OPENROUTER_MODEL || OPENROUTER_DEFAULT_MODEL).trim();
 }
 
-export function llmResponse(body: Record<string, unknown>, options: ResponseStreamOptions = {}): Promise<CompletedResponse> {
-  return llmProvider() === 'openai' ? openAIResponse(body, options) : openRouterResponse(body, options);
+export async function llmResponse(body: Record<string, unknown>, options: ResponseStreamOptions = {}): Promise<CompletedResponse> {
+  if (llmProvider() === 'openrouter') return openRouterResponse(body, options);
+  if (usingFallback()) return openRouterResponse({ ...body, model: fallbackModel() }, options);
+  try {
+    return await openAIResponse(body, options);
+  } catch (error) {
+    if (!(error instanceof OpenAIResponseError) || error.code !== 'insufficient_quota' || !canFallBack()) throw error;
+    quotaExhaustedAt = Date.now();
+    return openRouterResponse({ ...body, model: fallbackModel() }, options);
+  }
 }
 
 // ---- OpenRouter adapter (Responses-style request -> chat completions) ----

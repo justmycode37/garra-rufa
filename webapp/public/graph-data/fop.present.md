@@ -198,19 +198,20 @@ Fibrodysplasia ossificans progressiva (FOP) is a severely disabling heritable di
 ## Patient support
 
 ### Patient organisations: Spain (3)
+- **Asociación Española de Fibrodisplasia Osificante Progresiva** (patient organisation) — Spain; sources: EURORDIS
 - **ALER: Asociación Leonesa de Enfermedades Raras y sin diagnóstico** (patient organisation) — Spain; sources: Orphanet
 - **AEFOP: Asociación  Española de Fibrodisplasia Osificante Progresiva** (patient organisation) — Spain; sources: Orphanet
-- **Asociación Española de Fibrodisplasia Osificante Progresiva** (patient organisation) — Spain; sources: EURORDIS
 ### Patient organisations: France (2)
-- **FOP France - Association française sur la Fibrodysplasie Ossifiante Progressive** (patient organisation) — France; sources: Orphanet
 - **FOP France** (patient organisation) — France; sources: EURORDIS
+- **FOP France - Association française sur la Fibrodysplasie Ossifiante Progressive** (patient organisation) — France; sources: Orphanet
 ### Patient organisations: Germany (2)
-- **FOP e.V.** (patient organisation) — Germany; sources: Orphanet
 - **FOP Germany (Förderverein für an Fibrodysplasia Ossificans Progressiva Erkrankte)** (patient organisation) — Germany; sources: EURORDIS
+- **FOP e.V.** (patient organisation) — Germany; sources: Orphanet
 ### Patient organisations: Italy (2)
-- **FOP ITALIA - Fibrodisplasia Ossificante Progressiva ODV** (patient organisation) — Italy; sources: Orphanet
 - **FOP Italia ODV** (patient organisation) — Italy; sources: EURORDIS
+- **FOP ITALIA - Fibrodisplasia Ossificante Progressiva ODV** (patient organisation) — Italy; sources: Orphanet
 ### Patient organisations: Other countries (13)
+- **FOP Friends (Fibrodysplasia Ossificans Progressiva)** (patient organisation) — United Kingdom; United Kingdom; sources: Genetic Alliance UK
 - **Neuromuscular diseases Flanders non-profit organization** (patient organisation) — Belgium; Belgium; sources: Orphanet
 - **Canadian FOP Network** (patient organisation) — Canada; Canada; sources: Orphanet
 - **Muscular Dystrophy Ireland** (patient organisation) — Ireland; Ireland; sources: Orphanet
@@ -221,14 +222,13 @@ Fibrodysplasia ossificans progressiva (FOP) is a severely disabling heritable di
 - **FOP Switzerland** (patient organisation) — Switzerland; Switzerland; sources: Orphanet
 - **FOP Friends** (patient organisation) — United Kingdom; United Kingdom; sources: Orphanet
 - **Fibrodysplasia Ossificans Progressiva Stichting Nederland** (patient organisation) — Netherlands; Netherlands; sources: EURORDIS
-- **FOP Friends (Fibrodysplasia Ossificans Progressiva)** (patient organisation) — United Kingdom; United Kingdom; sources: Genetic Alliance UK
 - **ALAPA - Alianza Argentina de Pacientes** (patient organisation) — Argentina; listed for a broader group of diseases that includes this one; Argentina; sources: Orphanet
 - **Variety - the Children's Charity** (patient organisation) — Australia; listed for a broader group of diseases that includes this one; Australia; sources: Orphanet
 ### Patient organisations: International / not stated (5)
+- **FOP Friends (United Kingdom of Great Britain and Northern Ireland)** (patient organisation) — International / not stated; sources: EURORDIS
 - **International FOP Association (IFOPA)** (patient organisation) — International / not stated; sources: NORD
 - **NIH/National Institute of Arthritis and Musculoskeletal and Skin Diseases** (patient organisation) — International / not stated; sources: NORD
 - **Progressive Osseous Heteroplasia Association** (patient organisation) — International / not stated; sources: NORD
-- **FOP Friends (United Kingdom of Great Britain and Northern Ireland)** (patient organisation) — International / not stated; sources: EURORDIS
 - **Gemeinsam für Selten Salzburg** (patient organisation) — International / not stated; listed for a broader group of diseases that includes this one; sources: Orphanet
 
 ## Expert care

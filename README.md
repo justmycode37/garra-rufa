@@ -92,17 +92,10 @@ python -m venv .venv
 export PYTHONPATH=src
 ```
 
-**Minimum to start the server.** `dev:all` refuses to start without `bridge.json` and
-`hp.obo`. The quickest way to get them is to unpack the tracked bundle:
-
-```bash
-mkdir -p data/derived/discovery data/ontology data/hpo
-gunzip -c deploy/discovery/bridge.json.gz  > data/derived/discovery/bridge.json
-gunzip -c deploy/discovery/hp.obo.gz       > data/ontology/hp.obo
-gunzip -c deploy/discovery/atlas.sqlite.gz > data/atlas.sqlite
-cp data/ontology/hp.obo data/hpo/hp.obo
-curl -Lo data/hpo/phenotype.hpoa https://purl.obolibrary.org/obo/hp/hpoa/phenotype.hpoa
-```
+**Minimum to start the server: nothing.** The files the server needs at startup are
+committed (about 90 MB): `data/atlas.sqlite`, `data/derived/discovery/bridge.json`,
+`data/ontology/hp.obo` and `data/hpo/` (`hp.obo`, `phenotype.hpoa`, `genes_to_disease.txt`).
+Everything else in `data/` stays ignored and is either rebuilt or fetched live.
 
 **Full rebuild from source:**
 

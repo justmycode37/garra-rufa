@@ -65,6 +65,71 @@
   "evidenceMd": "attr.evidence.md"
  },
  {
+  "id": "angelman",
+  "label": "Angelman syndrome",
+  "present": "angelman.present.json",
+  "evidence": "angelman.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0007113",
+   "ORPHA:72"
+  ],
+  "names": [
+   "Angelman syndrome",
+   "Angelman’s syndrome",
+   "happy puppet syndrome",
+   "puppetlike syndrome"
+  ],
+  "presentStats": {
+   "items": 169,
+   "groups": 31,
+   "links": 474
+  },
+  "presentMd": "angelman.present.md",
+  "evidenceStats": {
+   "nodes": 1028,
+   "edges": 1376,
+   "candidates": 293,
+   "papers": 105
+  },
+  "evidenceMd": "angelman.evidence.md"
+ },
+ {
+  "id": "dravet",
+  "label": "Dravet syndrome",
+  "present": "dravet.present.json",
+  "evidence": "dravet.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0100135",
+   "ORPHA:33069"
+  ],
+  "names": [
+   "Dravet syndrome",
+   "Dravet",
+   "DS",
+   "myoclonic epilepsy, severe, of infancy",
+   "severe myoclonic epilepsy of infancy",
+   "SME",
+   "SMEB",
+   "DEE6",
+   "DEE6A"
+  ],
+  "presentStats": {
+   "items": 140,
+   "groups": 22,
+   "links": 214
+  },
+  "presentMd": "dravet.present.md",
+  "evidenceStats": {
+   "nodes": 1014,
+   "edges": 1471,
+   "candidates": 298,
+   "papers": 132
+  },
+  "evidenceMd": "dravet.evidence.md"
+ },
+ {
   "id": "duchenne",
   "label": "Duchenne muscular dystrophy",
   "present": "duchenne.present.json",
@@ -166,6 +231,41 @@
   "evidenceMd": "fop.evidence.md"
  },
  {
+  "id": "friedreich",
+  "label": "Friedreich ataxia",
+  "present": "friedreich.present.json",
+  "evidence": "friedreich.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0100339",
+   "ORPHA:95"
+  ],
+  "names": [
+   "Friedreich ataxia",
+   "FA",
+   "FRDA",
+   "Friedreich's Ataxia",
+   "Friedreich's ataxia",
+   "Friedreich's tabes",
+   "Friedreich\\",
+   ", ",
+   "s ataxia"
+  ],
+  "presentStats": {
+   "items": 145,
+   "groups": 29,
+   "links": 239
+  },
+  "presentMd": "friedreich.present.md",
+  "evidenceStats": {
+   "nodes": 1055,
+   "edges": 1469,
+   "candidates": 324,
+   "papers": 148
+  },
+  "evidenceMd": "friedreich.evidence.md"
+ },
+ {
   "id": "gaucher",
   "label": "Gaucher disease",
   "present": "gaucher.present.json",
@@ -234,6 +334,41 @@
    "papers": 133
   },
   "evidenceMd": "pompe.evidence.md"
+ },
+ {
+  "id": "progeria",
+  "label": "Hutchinson-Gilford progeria syndrome",
+  "present": "progeria.present.json",
+  "evidence": "progeria.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0008310",
+   "ORPHA:740"
+  ],
+  "names": [
+   "Hutchinson-Gilford progeria syndrome",
+   "HGPS",
+   "Hutchinson-Gilford disease",
+   "Hutchinson-Gilford progeria",
+   "premature senility syndrome",
+   "Hutchinson Gilford syndrome",
+   "Hutchinson-Gilford Syndrome",
+   "Hutchinson-Gilford syndrome (disorder)",
+   "Progeria"
+  ],
+  "presentStats": {
+   "items": 120,
+   "groups": 26,
+   "links": 101
+  },
+  "presentMd": "progeria.present.md",
+  "evidenceStats": {
+   "nodes": 1131,
+   "edges": 1626,
+   "candidates": 259,
+   "papers": 89
+  },
+  "evidenceMd": "progeria.evidence.md"
  },
  {
   "id": "krabbe",
@@ -339,6 +474,41 @@
   "evidenceMd": "mps1.evidence.md"
  },
  {
+  "id": "nf1",
+  "label": "neurofibromatosis type 1",
+  "present": "nf1.present.json",
+  "evidence": "nf1.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0018975",
+   "ORPHA:636"
+  ],
+  "names": [
+   "neurofibromatosis type 1",
+   "Neurofibromatosis 1",
+   "neurofibromatosis 1",
+   "neurofibromatosis type i",
+   "NF1",
+   "Nf1-Microdeletion syndrome",
+   "nonmosaic neurofibromatosis type 1",
+   "nonmosaic NF1",
+   "peripheral neurofibromatosis"
+  ],
+  "presentStats": {
+   "items": 160,
+   "groups": 32,
+   "links": 245
+  },
+  "presentMd": "nf1.present.md",
+  "evidenceStats": {
+   "nodes": 1218,
+   "edges": 1673,
+   "candidates": 388,
+   "papers": 129
+  },
+  "evidenceMd": "nf1.evidence.md"
+ },
+ {
   "id": "pmm2",
   "label": "PMM2-congenital disorder of glycosylation",
   "present": "pmm2.present.json",
@@ -372,6 +542,102 @@
    "papers": 80
   },
   "evidenceMd": "pmm2.evidence.md"
+ },
+ {
+  "id": "rett",
+  "label": "Rett syndrome",
+  "present": "rett.present.json",
+  "evidence": "rett.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0010726",
+   "ORPHA:778"
+  ],
+  "names": [
+   "Rett syndrome",
+   "Rett syndrome, atypical, X-linked dominant",
+   "Rett syndrome, preserved speech variant, X-linked dominant",
+   "Rett syndrome, X-linked dominant",
+   "Rett’s disease",
+   "RTS",
+   "RTT",
+   "cerebroatrophic hyperammonemia",
+   "Rett's disorder"
+  ],
+  "presentStats": {
+   "items": 159,
+   "groups": 32,
+   "links": 205
+  },
+  "presentMd": "rett.present.md",
+  "evidenceStats": {
+   "nodes": 1235,
+   "edges": 1536,
+   "candidates": 359,
+   "papers": 136
+  },
+  "evidenceMd": "rett.evidence.md"
+ },
+ {
+  "id": "sma",
+  "label": "spinal muscular atrophy",
+  "present": "sma.present.json",
+  "evidence": "sma.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0001516"
+  ],
+  "names": [
+   "spinal muscular atrophy"
+  ],
+  "presentStats": {
+   "items": 107,
+   "groups": 12,
+   "links": 326
+  },
+  "presentMd": "sma.present.md",
+  "evidenceStats": {
+   "nodes": 1049,
+   "edges": 1517,
+   "candidates": 362,
+   "papers": 136
+  },
+  "evidenceMd": "sma.evidence.md"
+ },
+ {
+  "id": "tsc",
+  "label": "tuberous sclerosis",
+  "present": "tsc.present.json",
+  "evidence": "tsc.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0001734",
+   "ORPHA:805"
+  ],
+  "names": [
+   "tuberous sclerosis",
+   "Bourneville disease",
+   "Bourneville syndrome",
+   "Bourneville's disease",
+   "Bourneville's syndrome",
+   "epiloia",
+   "TSC",
+   "tuberous sclerosis complex",
+   "tuberous sclerosis syndrome"
+  ],
+  "presentStats": {
+   "items": 145,
+   "groups": 27,
+   "links": 176
+  },
+  "presentMd": "tsc.present.md",
+  "evidenceStats": {
+   "nodes": 1017,
+   "edges": 1450,
+   "candidates": 284,
+   "papers": 135
+  },
+  "evidenceMd": "tsc.evidence.md"
  },
  {
   "id": "xlh",

@@ -3,12 +3,15 @@
 import argparse
 import json
 import re
+import socket
+import sys
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from garra.community import CommunityCatalog
+from garra.datasets import ensure
 from garra.discovery import DiscoveryEngine
 from garra.discovery.regions import RegionIndex
 from garra.research.service import ResearchService, ResearchUnavailable
@@ -19,6 +22,21 @@ from .monarch import UpstreamError
 from .service import ConnectionService, InputError
 
 EVIDENCE_PATH = re.compile(r"^/api/graphs/([a-z0-9-]{1,60}-[0-9a-f]{8})/evidence$")
+
+
+class Server(ThreadingHTTPServer):
+    def shutdown_request(self, request):
+        # Close only after the client has read the response. On Windows, closing a
+        # loopback socket that still has unsent data can drop the tail of a large
+        # response and reset the connection about 19 s later.
+        try:
+            request.shutdown(socket.SHUT_WR)
+            request.settimeout(5)
+            while request.recv(4096):
+                pass
+        except OSError:
+            pass
+        self.close_request(request)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -312,7 +330,7 @@ def create_server(
         communities=communities if communities is not None else CommunityCatalog(),
         discovery=discovery if discovery is not None else DiscoveryEngine(),
     )
-    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+    return Server(("127.0.0.1", port), handler)
 
 
 def main(argv=None):
@@ -351,6 +369,11 @@ def main(argv=None):
         default=Path(__file__).resolve().parents[3] / "webapp/src/lib/body-regions.json",
     )
     args = parser.parse_args(argv)
+    # Any dataset may be missing: it is restored when possible, otherwise its routes
+    # degrade (empty discovery, live HPO atlas, 503 regions) instead of failing startup.
+    args.bridge, args.atlas = ensure(args.bridge), ensure(args.atlas)
+    args.ontology, args.communities = ensure(args.ontology), ensure(args.communities)
+    args.enrichment = ensure(args.enrichment)
     try:
         enrichment = json.loads(args.enrichment.read_text()) if args.enrichment else None
         service = ConnectionService(enrichment=enrichment)
@@ -369,9 +392,9 @@ def main(argv=None):
             "discovery": discovery,
             "graphs": None if args.no_graph_builds else GraphBuilds(args.graph_builds_dir),
         }
-        if args.ontology:
-            if not args.bridge:
-                raise ValueError("--ontology requires --bridge")
+        if args.ontology and not args.bridge:
+            print("--ontology needs --bridge; body regions are disabled", file=sys.stderr)
+        elif args.ontology and ensure(args.region_map):
             options["regions"] = RegionIndex(
                 discovery,
                 json.loads(args.bridge.read_text()),

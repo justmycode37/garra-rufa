@@ -58,8 +58,8 @@ class ResearchService:
         try:
             process = subprocess.run(
                 [sys.executable, "-m", "garra.research.worker"],
-                input=json.dumps(payload), capture_output=True, text=True,
-                timeout=65, env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                input=json.dumps(payload), capture_output=True, text=True, encoding="utf-8",
+                timeout=65, env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
             )
             if process.returncode:
                 raise ResearchUnavailable("The research pipeline could not complete. Please retry.")

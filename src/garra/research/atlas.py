@@ -10,6 +10,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from garra.datasets import ensure
 from garra.ui.service import InputError
 
 HPO_URL = "https://hpo.jax.org/browse/term/"
@@ -26,6 +27,10 @@ class AtlasIndex:
         with self._lock:
             if self._loaded:
                 return
+            # Missing files are fetched from the HPO release; if that fails the read
+            # below raises OSError and the route answers 503.
+            ensure(self.directory / "hp.obo")
+            ensure(self.directory / "phenotype.hpoa")
             terms, children = {}, defaultdict(set)
             for block in (self.directory / "hp.obo").read_text().split("[Term]")[1:]:
                 fields = defaultdict(list)
