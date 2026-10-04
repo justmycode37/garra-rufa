@@ -1,5 +1,206 @@
 [
  {
+  "id": "alport",
+  "label": "Alport syndrome",
+  "present": "alport.present.json",
+  "evidence": "alport.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0018965",
+   "ORPHA:63"
+  ],
+  "names": [
+   "Alport syndrome",
+   "Alport deafness-nephropathy",
+   "Alport's syndrome",
+   "Hereditary Nephritis",
+   "Alport\\"
+  ],
+  "presentStats": {
+   "items": 116,
+   "groups": 18,
+   "links": 291
+  },
+  "presentMd": "alport.present.md",
+  "evidenceStats": {
+   "nodes": 914,
+   "edges": 1439,
+   "candidates": 335,
+   "papers": 100
+  },
+  "evidenceMd": "alport.evidence.md"
+ },
+ {
+  "id": "attr",
+  "label": "Amyloidosis, hereditary, transthyretin-related",
+  "present": "attr.present.json",
+  "evidence": "attr.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0971004"
+  ],
+  "names": [
+   "Amyloidosis, hereditary, transthyretin-related",
+   "ATTR amyloidosis",
+   "ATTRm amyloidosis",
+   "Corino de Andrade's disease",
+   "familial amyloid polyneuropathy",
+   "Familial transthyretin amyloidosis",
+   "paramyloidosis",
+   "transthyretin amyloidosis",
+   "transthyretin-related hereditary amyloidosis"
+  ],
+  "presentStats": {
+   "items": 148,
+   "groups": 34,
+   "links": 188
+  },
+  "presentMd": "attr.present.md",
+  "evidenceStats": {
+   "nodes": 889,
+   "edges": 1378,
+   "candidates": 280,
+   "papers": 92
+  },
+  "evidenceMd": "attr.evidence.md"
+ },
+ {
+  "id": "duchenne",
+  "label": "Duchenne muscular dystrophy",
+  "present": "duchenne.present.json",
+  "evidence": "duchenne.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0010679",
+   "ORPHA:98896"
+  ],
+  "names": [
+   "Duchenne muscular dystrophy",
+   "DMD",
+   "Duchenne muscular dystrophy, X-linked recessive",
+   "severe dystrophinopathy, Duchenne type",
+   "Muscular dystrophy, Duchenne"
+  ],
+  "presentStats": {
+   "items": 110,
+   "groups": 18,
+   "links": 184
+  },
+  "presentMd": "duchenne.present.md",
+  "evidenceStats": {
+   "nodes": 1162,
+   "edges": 1591,
+   "candidates": 410,
+   "papers": 143
+  },
+  "evidenceMd": "duchenne.evidence.md"
+ },
+ {
+  "id": "fabry",
+  "label": "Fabry disease",
+  "present": "fabry.present.json",
+  "evidence": "fabry.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0010526",
+   "ORPHA:324"
+  ],
+  "names": [
+   "Fabry disease",
+   "Alpha-galactosidase A deficiency",
+   "Anderson-Fabry disease",
+   "angiokeratoma corporis diffusum",
+   "diffuse angiokeratoma",
+   "Fabry's disease",
+   "FD",
+   "Fd",
+   "alpha galactosidase deficiency"
+  ],
+  "presentStats": {
+   "items": 156,
+   "groups": 29,
+   "links": 127
+  },
+  "presentMd": "fabry.present.md",
+  "evidenceStats": {
+   "nodes": 975,
+   "edges": 1370,
+   "candidates": 307,
+   "papers": 114
+  },
+  "evidenceMd": "fabry.evidence.md"
+ },
+ {
+  "id": "fop",
+  "label": "fibrodysplasia ossificans progressiva",
+  "present": "fop.present.json",
+  "evidence": "fop.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0007606",
+   "ORPHA:337"
+  ],
+  "names": [
+   "fibrodysplasia ossificans progressiva",
+   "FOP",
+   "fop",
+   "progressive myositis ossificans",
+   "Stone Man syndrome",
+   "Stone man syndrome",
+   "myositis ossificans progressiva",
+   "progressive ossifying myositis",
+   "Stone Man Syndrome"
+  ],
+  "presentStats": {
+   "items": 138,
+   "groups": 30,
+   "links": 96
+  },
+  "presentMd": "fop.present.md",
+  "evidenceStats": {
+   "nodes": 985,
+   "edges": 1394,
+   "candidates": 305,
+   "papers": 96
+  },
+  "evidenceMd": "fop.evidence.md"
+ },
+ {
+  "id": "gaucher",
+  "label": "Gaucher disease",
+  "present": "gaucher.present.json",
+  "evidence": "gaucher.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0018150",
+   "ORPHA:355"
+  ],
+  "names": [
+   "Gaucher disease",
+   "acid beta-glucosidase deficiency",
+   "Gaucher syndrome",
+   "glucocerebrosidase deficiency",
+   "glucocerebrosidosis",
+   "glucosylceramidase deficiency",
+   "glucosylceramide beta-glucosidase deficiency",
+   "lipoid histiocytosis (kerasin type)",
+   "glocucerebrosidase deficiency"
+  ],
+  "presentStats": {
+   "items": 117,
+   "groups": 21,
+   "links": 377
+  },
+  "presentMd": "gaucher.present.md",
+  "evidenceStats": {
+   "nodes": 941,
+   "edges": 1481,
+   "candidates": 313,
+   "papers": 138
+  },
+  "evidenceMd": "gaucher.evidence.md"
+ },
+ {
   "id": "pompe",
   "label": "glycogen storage disease II",
   "present": "pompe.present.json",
@@ -25,14 +226,49 @@
    "groups": 29,
    "links": 192
   },
-  "evidenceStats": {
-   "nodes": 945,
-   "edges": 1417,
-   "candidates": 350,
-   "papers": 120
-  },
   "presentMd": "pompe.present.md",
+  "evidenceStats": {
+   "nodes": 959,
+   "edges": 1406,
+   "candidates": 355,
+   "papers": 133
+  },
   "evidenceMd": "pompe.evidence.md"
+ },
+ {
+  "id": "krabbe",
+  "label": "Krabbe disease",
+  "present": "krabbe.present.json",
+  "evidence": "krabbe.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0009499",
+   "ORPHA:487"
+  ],
+  "names": [
+   "Krabbe disease",
+   "diffuse globoid body sclerosis",
+   "galactocerebrosidase deficiency",
+   "galactosylceramidase deficiency",
+   "galactosylceramide lipidosis",
+   "GALC deficiency",
+   "GALC enzyme deficiency",
+   "globoid cell leukodystrophy",
+   "globoid cell leukoencephalopathy"
+  ],
+  "presentStats": {
+   "items": 122,
+   "groups": 21,
+   "links": 348
+  },
+  "presentMd": "krabbe.present.md",
+  "evidenceStats": {
+   "nodes": 975,
+   "edges": 1375,
+   "candidates": 324,
+   "papers": 93
+  },
+  "evidenceMd": "krabbe.evidence.md"
  },
  {
   "id": "marfan",
@@ -50,21 +286,57 @@
    "Marfan syndrome, type 1",
    "Marfan's syndrome",
    "MFS",
-   "MFS1"
+   "MFS1",
+   "Marfan\\"
   ],
   "presentStats": {
-   "items": 164,
-   "groups": 33,
-   "links": 260
-  },
-  "evidenceStats": {
-   "nodes": 814,
-   "edges": 1262,
-   "candidates": 331,
-   "papers": 50
+   "items": 158,
+   "groups": 32,
+   "links": 250
   },
   "presentMd": "marfan.present.md",
+  "evidenceStats": {
+   "nodes": 620,
+   "edges": 919,
+   "candidates": 242,
+   "papers": 68
+  },
   "evidenceMd": "marfan.evidence.md"
+ },
+ {
+  "id": "mps1",
+  "label": "mucopolysaccharidosis type 1",
+  "present": "mps1.present.json",
+  "evidence": "mps1.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0001586",
+   "ORPHA:579"
+  ],
+  "names": [
+   "mucopolysaccharidosis type 1",
+   "Alpha-L-iduronidase deficiency",
+   "lipochondrodystrophy",
+   "MPS1",
+   "MPSI",
+   "Mucopolysaccharidosis Type I",
+   "mucopolysaccharidosis type I",
+   "Hurler syndrome",
+   "Hurler-Scheie syndrome"
+  ],
+  "presentStats": {
+   "items": 80,
+   "groups": 18,
+   "links": 259
+  },
+  "presentMd": "mps1.present.md",
+  "evidenceStats": {
+   "nodes": 992,
+   "edges": 1431,
+   "candidates": 370,
+   "papers": 105
+  },
+  "evidenceMd": "mps1.evidence.md"
  },
  {
   "id": "pmm2",
@@ -78,27 +350,62 @@
   ],
   "names": [
    "PMM2-congenital disorder of glycosylation",
+   "carbohydrate deficient glycoprotein syndrome type Ia",
    "CDG 1A",
    "CDG syndrome type Ia",
    "CDG-IA",
-   "carbohydrate deficient glycoprotein syndrome type Ia",
+   "CDG1A",
    "congenital disorder of glycosylation type 1a",
    "congenital disorder of glycosylation type Ia",
-   "phosphomannomutase 2 deficiency",
-   "congenital disorder of glycosylation 1a"
+   "phosphomannomutase 2 deficiency"
   ],
   "presentStats": {
-   "items": 136,
-   "groups": 25,
-   "links": 163
-  },
-  "evidenceStats": {
-   "nodes": 886,
-   "edges": 1227,
-   "candidates": 349,
-   "papers": 50
+   "items": 139,
+   "groups": 26,
+   "links": 165
   },
   "presentMd": "pmm2.present.md",
+  "evidenceStats": {
+   "nodes": 969,
+   "edges": 1300,
+   "candidates": 293,
+   "papers": 80
+  },
   "evidenceMd": "pmm2.evidence.md"
+ },
+ {
+  "id": "xlh",
+  "label": "X-linked hypophosphatemia",
+  "present": "xlh.present.json",
+  "evidence": "xlh.evidence.json",
+  "exported": "2026-10-04",
+  "ids": [
+   "MONDO:0010619",
+   "ORPHA:89936"
+  ],
+  "names": [
+   "X-linked hypophosphatemia",
+   "hereditary hypophosphatemic rickets, X-linked",
+   "hypophosphatemic rickets, X-linked",
+   "hypophosphatemic rickets, X-linked dominant, X-linked dominant",
+   "rickets, vitamin D-resistant",
+   "vitamin D-resistant rickets, X-linked",
+   "X-linked dominant hypophosphatemic rickets",
+   "X-linked hereditary hypophosphatemic rickets",
+   "XLH"
+  ],
+  "presentStats": {
+   "items": 104,
+   "groups": 19,
+   "links": 170
+  },
+  "presentMd": "xlh.present.md",
+  "evidenceStats": {
+   "nodes": 840,
+   "edges": 1335,
+   "candidates": 256,
+   "papers": 103
+  },
+  "evidenceMd": "xlh.evidence.md"
  }
 ]

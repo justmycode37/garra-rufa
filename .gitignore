@@ -1,4 +1,12 @@
-/data/
+# data/ is local downloads and caches, except the files the server needs to start
+/data/*
+!/data/atlas.sqlite
+!/data/derived/
+/data/derived/*
+!/data/derived/discovery/
+!/data/ontology/
+!/data/hpo/
+/data/hpo/*.pickle
 .venv/
 __pycache__/
 *.py[cod]
@@ -6,7 +14,6 @@ __pycache__/
 .mypy_cache/
 data/raw/
 data/cache/
-data/atlas.sqlite
 *.part
 .DS_Store
 .env
