@@ -35,6 +35,8 @@ class DiscoveryEngine:
             or bridge["schema_version"] != 1
         ):
             raise ValueError("Expected a version-1 bridge snapshot")
+        self.ingestion = deepcopy(bridge.get("ingestion", {}))
+        self.literature_matches = deepcopy(bridge.get("literature_matches", []))
         self.relations = deepcopy(bridge.get("source_relations", []))
         self.nodes = self._index(bridge.get("nodes"), "nodes")
         self.claims = self._index(bridge.get("claims"), "claims")
@@ -214,6 +216,16 @@ class DiscoveryEngine:
                 "candidate_pairs": len(self.pairs),
                 "clusters": len(self.groups),
                 "atlas_loaded": self.atlas_loaded,
+                "diseases": sum(n["kind"] == "disease" for n in self.nodes.values()),
+                "clustered_diseases": len(self.memberships),
+                "phenotype_profiles": len({r["from"] for r in self.relations if r["relation"] == "has_phenotype" and self.nodes.get(r["from"], {}).get("kind") == "disease"}),
+                "publications": len(self.papers),
+                "publications_with_claims": len({c["paper_id"] for c in self.claims.values()}),
+                "claims": len(self.claims),
+                "reviewed_claims": sum(c.get("reviewed") is True for c in self.claims.values()),
+                "evidence_files": sum(row.get("status") == "loaded" for row in self.ingestion.get("evidence_inputs", [])),
+                "truncated_source_responses": self.ingestion.get("truncated_source_responses", 0),
+                "excluded_or_unresolved_items": self.ingestion.get("excluded_or_unresolved_items", 0),
             },
             "notice": "Research discovery only. Cluster membership is not proof of a shared mechanism. "
             "Only supplied bridge candidates can form groups; absent data is not negative evidence.",
@@ -397,6 +409,24 @@ class DiscoveryEngine:
                               "source": paper["id"], "evidence": [claim["id"]]})
             edges.append({"from": paper["id"], "to": claim_id, "relation": "contains_claim",
                           "source": paper["id"], "evidence": [claim["id"]]})
+        for match in self.literature_matches:
+            if match["entity_id"] != identifier or match["paper_id"] not in self.papers:
+                continue
+            paper = self.papers[match["paper_id"]]
+            metadata = next((r.get("meta", {}) for r in paper.get("records", []) if r.get("meta")), {})
+            pmid = next((x[5:] for x in paper["identifiers"] if x.startswith("PMID:") and x[5:].isdigit()), None)
+            pmc = next((x for x in paper["identifiers"] if x.startswith("PMC") and x[3:].isdigit()), None)
+            entry = {"id": paper["id"], "label": metadata.get("title") or paper["id"], "kind": "paper",
+                     "description": ("Downloaded literature search result; relevance and claims are not verified. " + str(metadata.get("abstract") or ""))[:10000],
+                     "providers": ["Saved literature search"], "xrefs": paper["identifiers"],
+                     "access": "Open full text in PMC" if pmc else "Publication record; full-text access not verified"}
+            if pmc:
+                entry["url"] = "https://pmc.ncbi.nlm.nih.gov/articles/" + pmc + "/"
+            elif pmid:
+                entry["url"] = "https://pubmed.ncbi.nlm.nih.gov/" + pmid + "/"
+            node_map.setdefault(paper["id"], entry)
+            edges.append({"from": identifier, "to": paper["id"], "relation": "literature_search_result",
+                          "source": "Saved literature search", "evidence": []})
         nodes = list(node_map.values())
         return {
             "graph": {"nodes": nodes, "edges": edges, "focus": [identifier]},

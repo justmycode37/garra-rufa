@@ -2,8 +2,8 @@
   "schema_version": 1,
   "files": {
     "bridge.json": {
-      "sha256": "122c0ac77bbc67b3ff5ba49a9ff52f563adebdb691e96dc858d628c4f5c282ec",
-      "bytes": 23344462
+      "sha256": "12d46471531ca31efd3834b989e195b1282bea2004ae6c338a465d2cbaa8f98f",
+      "bytes": 23356348
     },
     "hp.obo": {
       "sha256": "93dace952fcb3ec4728818857f6ba76bc2d5312f4d83266519b8694b8e798f22",

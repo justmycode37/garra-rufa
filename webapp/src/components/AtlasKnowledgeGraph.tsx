@@ -32,6 +32,7 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
   const [page, setPage] = useState(0);
   const [expanding, setExpanding] = useState(false);
   const [expandNotice, setExpandNotice] = useState('');
+  const [liveState, setLiveState] = useState<'not_requested'|'loading'|'loaded'|'partial'>('not_requested');
   const [expanded, setExpanded] = useState<string[]>([]);
   const expandRequest = useRef<AbortController | null>(null);
   const previousCallouts = useRef<AtlasCallout[]>([]);
@@ -39,7 +40,7 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
   useEffect(() => { const timer = setTimeout(() => { setFilterQuery(query); setOffset(0); }, 300); return () => clearTimeout(timer); }, [query]);
   useEffect(() => {
     const abort = new AbortController();
-    expandRequest.current?.abort(); setExpanding(false); setExpandNotice(''); setExpanded([]);
+    expandRequest.current?.abort(); setExpanding(false); setExpandNotice(''); setExpanded([]); setLiveState('not_requested');
     setLoading(true); setData(undefined); setError(''); setSelectedId(''); setPage(0); setFilter('all');
     const key = `${regionId}:${offset}:${filterQuery}`;
     const timer = setTimeout(async () => {
@@ -89,21 +90,22 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
     setSelectedId(node.id); setFilter('all'); setPage(0); setExpandNotice('');
     if (node.kind === 'disease' && /^(OMIM|ORPHA|MONDO|DECIPHER):\d+$/.test(node.id)) void expand(node);
   }
-  async function expand(node: AtlasNode) {
-    if (expanded.includes(node.id)) return;
+  async function expand(node: AtlasNode, enrich = false) {
+    if (!enrich && expanded.includes(node.id)) return;
     const abort = new AbortController(); expandRequest.current?.abort(); expandRequest.current = abort;
-    setExpanding(true); setExpandNotice('');
+    setExpanding(true); setExpandNotice(''); if(enrich)setLiveState('loading');
     try {
-      const response = await fetch(`/api/atlas/expand?${new URLSearchParams({ entity: node.id, label: node.label.slice(0, 200) })}`, { signal: abort.signal });
+      const response = await fetch(`/api/atlas/expand?${new URLSearchParams({ entity: node.id, label: node.label.slice(0, 200), ...(enrich ? {enrich:'1'} : {}) })}`, { signal: abort.signal });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Connected records could not be loaded.');
       const graph = repositoryGraphSchema.parse(body.graph);
       if (abort.signal.aborted) return;
       setData(current => current ? mergeAtlasGraphs(current, [graph]) : current);
       const unavailable: string[] = Array.isArray(body.unavailableProviders) ? body.unavailableProviders.filter((item: unknown) => typeof item === 'string') : [];
+      if(enrich)setLiveState(unavailable.length?'partial':'loaded');
       if (!unavailable.length) setExpanded(previous => [...previous, node.id]);
-      setExpandNotice(unavailable.length ? `Some sources are unavailable: ${unavailable.join(', ')}. Retrieved connections are shown; you can retry.` : 'Connected records loaded. Only source-listed people appear as doctors.');
-    } catch (error) { if (!abort.signal.aborted) setExpandNotice(error instanceof Error ? error.message : 'Connected records could not be loaded.'); }
+      setExpandNotice(unavailable.length ? `Some sources are unavailable: ${unavailable.join(', ')}. Retrieved connections are shown; you can retry.` : 'Available records loaded. Literature search results are not verified claims. Only source-listed people appear as doctors.');
+    } catch (error) { if (!abort.signal.aborted) { if(enrich)setLiveState('partial'); setExpandNotice(error instanceof Error ? error.message : 'Connected records could not be loaded.'); } }
     finally { if (!abort.signal.aborted) setExpanding(false); }
   }
 
@@ -113,7 +115,12 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
       <label className={styles.search}><Search size={13}/><input aria-label="Filter regional disease records" value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a disease in this region" maxLength={120}/>{query && <button aria-label="Clear disease filter" onClick={() => setQuery('')}><X size={12}/></button>}</label>
       {data && <select className={styles.filter} aria-label="Graph record type" value={filter} onChange={event => { setFilter(event.target.value); setPage(0); }}>{filters.map(([kind, label]) => {
         const count = records.filter(node => matches(node, kind)).length + (selected && selected.id !== data.root && matches(selected, kind) ? 1 : 0);
-        return <option key={kind} value={kind}>{label} ({count})</option>;
+        const status = count > 0 ? String(count)
+          : kind === 'claim' ? 'No linked claims'
+          : ['paper', 'specialist', 'trial', 'resource'].includes(kind)
+            ? liveState === 'loading' ? 'Loading…' : liveState === 'partial' ? 'Unknown / partial' : liveState === 'loaded' ? 'None retrieved' : 'Not searched'
+            : 'Not loaded';
+        return <option key={kind} value={kind}>{label} ({status})</option>;
       })}</select>}
       {selected && <button className={styles.back} onClick={() => { setSelectedId(''); setPage(0); setFilter('all'); }}><ArrowLeft size={12}/>{region.label}</button>}
 
@@ -149,6 +156,7 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
         {selected.location && <p>{selected.location}</p>}{selected.email && <p>{selected.email}</p>}{selected.phone && <p>{selected.phone}</p>}
         <div className={styles.sourceLinks}>{selected.url && <a href={selected.url} target="_blank" rel="noreferrer">Open original source <ArrowUpRight size={13}/></a>}<span>{selected.providers.join(' · ')}</span></div>
         {selected.kind === 'disease' && /^(OMIM|ORPHA|MONDO|DECIPHER):\d+$/.test(selected.id) && <button className={styles.expand} disabled={expanding || expanded.includes(selected.id)} onClick={() => expand(selected)}>{expanding ? <><LoaderCircle size={14} className={styles.spinner}/>Loading connected research…</> : expanded.includes(selected.id) ? 'Connected research loaded' : 'Load genes, papers & specialist resources'}</button>}
+        {selected.kind === 'disease' && /^(OMIM|ORPHA|MONDO|DECIPHER):\d+$/.test(selected.id) && <button className={styles.expand} disabled={expanding} onClick={() => expand(selected, true)}>Search papers & resources</button>}
         {expandNotice && <p className={styles.notice} role="status">{expandNotice}</p>}
         <button className={styles.ask} onClick={() => onAsk(`Explain ${selected.label} (${selected.id}) and its recorded connections to ${region.label}. Include sources.`)}>Ask about this record <ArrowUpRight size={13}/></button>
 
@@ -167,7 +175,7 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
         <span>Diseases {data.total ? offset + 1 : 0}–{Math.min(offset + 6, data.total)} / {data.total.toLocaleString()}</span>
         <button aria-label="Next disease records" disabled={data.nextOffset === null} onClick={() => setOffset(data.nextOffset!)}><ChevronRight size={14}/></button>
       </div>
-      <div className={styles.provenance}>Counts show loaded connected records. Zero means none linked in this snapshot, not none exist. HPO · {data.datasetVersion}</div>
+      <div className={styles.provenance}>Counts show this loaded graph, including the selected record—not repository totals. Zero means none linked in this snapshot, not none exist. HPO · {data.datasetVersion}</div>
 
     </>}
   </div>;

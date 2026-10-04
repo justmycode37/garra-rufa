@@ -38,8 +38,9 @@ try {
 if (!running) {
   const bridge = process.env.GARRA_BRIDGE || path.join(backend, 'data/derived/discovery/bridge.json');
   const ontology = process.env.GARRA_HPO_ONTOLOGY || path.join(backend, 'data/ontology/hp.obo');
+  const communities = process.env.GARRA_COMMUNITIES || path.join(backend, 'examples/communities.demo.json');
   for (const file of [bridge, ontology]) if (!existsSync(file)) { console.error(`Required discovery dataset missing: ${file}. See docs/BODY-UI-INTEGRATION.md.`); process.exit(1); }
-  run(python, ['-m', 'garra.ui', '--port', port, '--bridge', bridge, '--ontology', ontology, '--atlas', path.join(backend, 'data/atlas.sqlite')], backend, { PYTHONPATH: path.join(backend, 'src') });
+  run(python, ['-m', 'garra.ui', '--port', port, '--bridge', bridge, '--ontology', ontology, '--atlas', path.join(backend, 'data/atlas.sqlite'), ...(existsSync(communities) ? ['--communities', communities] : [])], backend, { PYTHONPATH: path.join(backend, 'src') });
   for (let attempt = 0; attempt < 50 && !stopping; attempt++) {
     try {
       const response = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(500) });

@@ -21,3 +21,25 @@ test('iris uses a specific root and broad substructure mappings disclose their s
  assert.equal(regions.iris.hpo,'HP:0000525');assert.notEqual(regions.iris.hpo,regions.eyes.hpo);
  assert.ok(regions['hand-bones'].scope);assert.ok(regions.airways.scope);
 });
+
+
+test('ontology candidates preserve entity IDs and use a fixed upstream route', async t=>{
+ t.mock.method(globalThis,'fetch',async(url:URL)=>{
+  assert.equal(url.pathname,'/api/neighbors');assert.equal(url.searchParams.get('entity_id'),'MONDO:0007947');
+  return Response.json({annotation_status:'loaded',candidates:[],is_probability:false});
+ });
+ const response=await GET(new Request('http://localhost/api/discovery?resource=neighbors&entity_id=MONDO%3A0007947'));
+ assert.equal(response.status,200);assert.equal((await response.json()).is_probability,false);
+});
+
+test('community catalog filters proxy to the fixed research backend', async t=>{
+ t.mock.method(globalThis,'fetch',async(url:URL)=>{
+  assert.equal(url.pathname,'/api/communities');
+  assert.equal(url.searchParams.get('disease_id'),'MONDO:0007947');
+  assert.equal(url.searchParams.get('kind'),'disease');
+  assert.equal(url.searchParams.has('patient_id'),false);
+  return Response.json({sections:[],notice:'catalog'});
+ });
+ const response=await GET(new Request('http://localhost/api/discovery?resource=communities&kind=disease&disease_id=MONDO%3A0007947&patient_id=private'));
+ assert.equal(response.status,200);assert.equal((await response.json()).notice,'catalog');
+});

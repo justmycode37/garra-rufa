@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { atlasGraphSchema, atlasNodeSchema, atlasNodeKind, atlasPaths, mergeAtlasGraphs, connectedAtlasNodes } from '../src/lib/atlas-graph';
-import { expandAtlasDisease, loadAtlasRegion } from '../src/lib/atlas-repository';
+import { expandAtlasDisease, loadAtlasRegion, loadAtlasEntity } from '../src/lib/atlas-repository';
 
 const node = (id: string, kind = 'phenotype') => atlasNodeSchema.parse({ id, label: id, kind, providers: ['HPO'] });
 const edge = (from: string, to: string) => ({ from, to, relation: 'has_phenotype', source: 'HPO', evidence: ['PMID:1'] });
@@ -41,7 +41,7 @@ test('regional endpoint sends only bounded public anatomy queries and rejects in
   for (const url of ['javascript:alert(1)', '/api/files/private', 'https://user:password@example.org']) assert.throws(() => atlasNodeSchema.parse({ ...node('test'), url }));
 });
 
-test('expansion keeps partial results, preserves identifier equivalence and excludes unrelated matches', async t => {
+test('expansion keeps cross references without asserting equivalence or inheriting subtype associations', async t => {
   t.mock.method(globalThis, 'fetch', async (url: URL, options: RequestInit) => {
     const request = JSON.parse(String(options.body));
     if (request.category === 'contacts') return new Response('', { status: 503 });
@@ -51,8 +51,9 @@ test('expansion keeps partial results, preserves identifier equivalence and excl
   });
   const result = await expandAtlasDisease('OMIM:1', 'Example condition');
   assert.deepEqual(result.unavailableProviders, ['specialist resources']);
-  assert.deepEqual(new Set(result.graph.nodes.map(n => n.id)), new Set(['MONDO:1', 'HGNC:1', 'OMIM:1', 'parent']));
-  assert.ok(result.graph.edges.some(e => e.relation === 'same_as'));
+  assert.deepEqual(new Set(result.graph.nodes.map(n => n.id)), new Set(['MONDO:1', 'OMIM:1']));
+  assert.ok(result.graph.edges.some(e => e.relation === 'cross_reference'));
+  assert.ok(!result.graph.edges.some(e => e.relation === 'same_as'));
 });
 
 
@@ -69,4 +70,33 @@ test('claim metadata survives schema parsing and graph merging without becoming 
   assert.equal(atlasNodeKind(node('GO:1','process')),'pathway');
   assert.equal(atlasNodeKind(paper),'paper');
   assert.equal(atlasPaths(graph,'OMIM:1').get('PMID:1')?.length,2);
+});
+
+
+test('saved graph stays available when explicit external enrichment fails', async t => {
+  let lookups=0;
+  t.mock.method(globalThis,'fetch',async (url:URL) => {
+    if(url.pathname==='/api/entity') return Response.json({graph:{nodes:[node('OMIM:1','disease'),node('PMID:1','paper')],edges:[edge('OMIM:1','PMID:1')],focus:['OMIM:1']}});
+    lookups++;return new Response('',{status:503});
+  });
+  const signal=new AbortController().signal;
+  const saved=await loadAtlasEntity('OMIM:1','Example',false,signal);
+  assert.equal(lookups,0);assert.equal(saved.graph.nodes.length,2);
+  const enriched=await loadAtlasEntity('OMIM:1','Example',true,signal);
+  assert.equal(lookups,3);assert.deepEqual(enriched.graph,saved.graph);
+  assert.ok(enriched.unavailableProviders.includes('live papers and resources'));
+});
+
+test('explicit enrichment adds literature results without manufacturing claims', async t => {
+  t.mock.method(globalThis,'fetch',async (url:URL, options:RequestInit) => {
+    if(url.pathname==='/api/entity') return Response.json({graph:{nodes:[node('OMIM:1','disease')],edges:[],focus:['OMIM:1']}});
+    const papers=url.pathname.endsWith('/papers');
+    const req=JSON.parse(String(options.body));
+    return Response.json({status:'ok',query:req.query,pipeline:papers?'repository-literature':'repository-graph',providers:[],unavailableProviders:[],retrievedAt:'2026-10-04',cached:false,
+      sources:papers?[{id:'PMID:12',pmid:'12',title:'A retrieved publication',url:'https://pubmed.ncbi.nlm.nih.gov/12/',kind:'paper',excerpt:'Abstract excerpt'}]:[]});
+  });
+  const result=await loadAtlasEntity('OMIM:1','Example',true,new AbortController().signal);
+  assert.ok(result.graph.nodes.some(n=>n.id==='PMID:12'&&n.kind==='paper'));
+  assert.ok(result.graph.edges.some(e=>e.relation==='literature_search_result'));
+  assert.ok(!result.graph.nodes.some(n=>n.kind==='claim'));
 });

@@ -117,6 +117,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(200, result)
             except InputError as exc:
                 return self._reply(400, {"error": str(exc)})
+        if path == "/api/neighbors":
+            if self.regions is None:
+                return self._reply(503, {"error": "Ontology data is not configured"})
+            query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            if set(query) != {"entity_id"} or len(query["entity_id"]) != 1:
+                return self._reply(400, {"error": "Use one entity_id"})
+            try:
+                return self._reply(200, self.regions.neighbors(query["entity_id"][0]))
+            except InputError as exc:
+                return self._reply(400, {"error": str(exc)})
         if path == "/api/entity":
             query = parse_qs(urlsplit(self.path).query)
             if set(query) != {"id"} or len(query["id"]) != 1:

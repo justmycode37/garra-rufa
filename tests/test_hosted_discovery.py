@@ -49,6 +49,7 @@ class HostedRoutesTest(unittest.TestCase):
         for path, target in [
             ("/api/regions", regions.catalog),
             ("/api/regions/heart", regions.detail),
+            ("/api/neighbors?entity_id=MONDO:1", regions.neighbors),
             ("/api/clusters?kind=pathway", engine.clusters),
             ("/api/clusters/example", engine.cluster),
             ("/api/entity?id=MONDO:1", engine.entity_graph),
@@ -57,12 +58,20 @@ class HostedRoutesTest(unittest.TestCase):
             with patch.object(api, "load_discovery", return_value=(engine, regions)):
                 self.assertEqual(self.request(path), (200, {"test": path}))
         regions.detail.assert_called_with("heart")
+        regions.neighbors.assert_called_with("MONDO:1")
         engine.clusters.assert_called_with(kind="pathway")
         engine.entity_graph.assert_called_with("MONDO:1")
 
+    def test_communities_route_uses_public_catalog(self):
+        engine, regions = Mock(), Mock()
+        with patch.object(api, "load_discovery", return_value=(engine, regions)):
+            status, result = self.request("/api/communities?disease_id=MONDO%3A0009290")
+        self.assertEqual(status, 200)
+        self.assertTrue(any(section["items"] for section in result["sections"]))
+
     def test_invalid_filters_and_unknown_routes(self):
         with patch.object(api, "load_discovery", return_value=(Mock(), Mock())):
-            for path in ["/api/entity", "/api/entity?id=a&id=b", "/api/clusters?unexpected=1", "/api/regions?unexpected=1"]:
+            for path in ["/api/entity", "/api/entity?id=a&id=b", "/api/clusters?unexpected=1", "/api/regions?unexpected=1", "/api/neighbors", "/api/neighbors?entity_id=a&entity_id=b", "/api/communities?patient_id=private"]:
                 self.assertEqual(self.request(path)[0], 400)
             self.assertEqual(self.request("/does-not-exist")[0], 404)
             self.assertEqual(self.request("/api/research/missing", method="POST")[0], 404)
