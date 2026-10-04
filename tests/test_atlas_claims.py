@@ -48,3 +48,14 @@ class AtlasClaimsTests(unittest.TestCase):
         paper = next(n for n in engine.entity_graph("MONDO:1")["graph"]["nodes"] if n["kind"] == "paper")
         self.assertEqual(paper["url"], "https://pubmed.ncbi.nlm.nih.gov/1/")
         self.assertIn("not verified", paper["access"])
+
+
+class SavedLiteratureTests(unittest.TestCase):
+    def test_downloaded_paper_links_do_not_create_claims_for_another_disease(self):
+        engine = AtlasClaimsTests().engine()
+        engine.literature_matches = [{"entity_id": "MONDO:2", "paper_id": "PMID:1"}]
+        graph = engine.entity_graph("MONDO:2")["graph"]
+        paper = next(n for n in graph["nodes"] if n["kind"] == "paper")
+        self.assertIn("not verified", paper["description"])
+        self.assertFalse(any(n["kind"] == "claim" for n in graph["nodes"]))
+        self.assertTrue(any(e["relation"] == "literature_search_result" for e in graph["edges"]))

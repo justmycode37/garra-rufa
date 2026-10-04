@@ -1,8 +1,9 @@
 """Anatomical overlays on real disease clusters, supported by HPO annotation paths."""
 
 import hashlib
+import math
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
 from garra.ui.service import InputError
@@ -28,6 +29,8 @@ class RegionIndex:
                 raise ValueError("Unknown body-region HPO root: " + definition["hpo"])
         self.matches = {key: defaultdict(set) for key in definitions}
         ancestry = {}
+        self.profiles = defaultdict(set)
+        self.expanded_profiles = defaultdict(set)
         for edge in bridge.get("source_relations", []):
             if edge["relation"] != "has_phenotype":
                 continue
@@ -44,10 +47,48 @@ class RegionIndex:
                     ancestors.add(current)
                     pending.extend(self.parents[current])
                 ancestry[hp] = ancestors
+            self.profiles[disease].add(hp)
+            self.expanded_profiles[disease].update(ancestry[hp])
             for key, definition in definitions.items():
                 if definition["hpo"] in ancestry[hp]:
                     self.matches[key][disease].add(hp)
+        frequency = Counter(term for terms in self.expanded_profiles.values() for term in terms)
+        population = len(self.expanded_profiles)
+        self.weights = {term: math.log(population / count) for term, count in frequency.items()}
         self.built_at = datetime.now(timezone.utc).isoformat()
+
+    def neighbors(self, identifier):
+        if identifier not in self.engine.entities:
+            raise InputError("Unknown entity identifier")
+        profile = self.expanded_profiles.get(identifier, set())
+        candidates = []
+        for other, terms in self.expanded_profiles.items():
+            if other == identifier or not profile:
+                continue
+            shared = {t for t in profile & terms if self.weights[t] > 0}
+            denominator = sum(self.weights[t] for t in profile | terms)
+            if not shared or denominator == 0:
+                continue
+            exact_a, exact_b = self.profiles[identifier], self.profiles[other]
+            candidates.append({
+                **self.engine._card(other),
+                "score": sum(self.weights[t] for t in shared) / denominator,
+                "exact_hpo_jaccard": len(exact_a & exact_b) / len(exact_a | exact_b),
+                "shared_features": [{"id": t, "label": self.labels.get(t, t),
+                                     "exact_in_both": t in exact_a & exact_b}
+                                    for t in sorted(shared, key=lambda t: (-self.weights[t], t))[:5]],
+                "status": "exploratory_candidate_not_validated_mechanism",
+            })
+        candidates.sort(key=lambda c: (-c["score"], c["id"]))
+        return {
+            **self.engine.metadata(), "entity_id": identifier,
+            "annotation_status": "loaded" if profile else "not_annotated_in_snapshot",
+            "metric": "ancestor_information_weighted_jaccard", "is_probability": False,
+            "ontology_sha256": self.ontology_hash, "total": len(candidates), "candidates": candidates[:10],
+            "notice": "Exploratory ranking using HPO ancestors and information weights from this snapshot. "
+                      "Universal terms have zero weight. Scores change with coverage, are not probabilities, "
+                      "and do not use the exact-HPO 50% cluster cutoff. Membership in existing clusters is unchanged.",
+        }
 
     def catalog(self):
         return {

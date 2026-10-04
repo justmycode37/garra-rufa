@@ -1,4 +1,5 @@
 """Offline bridge. Source associations, paper claims and pair inferences stay separate."""
+import json
 import math
 import re
 from collections import defaultdict
@@ -132,6 +133,13 @@ def build_bridge(source, evidence, *, mappings=(), phenotype_threshold=0.5):
                            "passage": ev["quote"], "locator": {"passage": ev.get("passage"),
                                                                   "section": ev.get("section")},
                            "reviewed": False, "status": "unreviewed_extraction"})
+
+    # Repeated imports of the same publication passage must not inflate evidence counts.
+    unique_claims = {}
+    for claim in claims:
+        key = json.dumps({k: v for k, v in claim.items() if k != "id"}, sort_keys=True)
+        unique_claims.setdefault(key, claim)
+    claims = [{**c, "id": f"claim:{i + 1}"} for i, c in enumerate(unique_claims.values())]
 
     profiles = {k: {"phenotype": set(), "mechanism": set(), "genes": set()}
                 for k, n in nodes.items() if n["kind"] == "disease" and n["identity_verified"]}

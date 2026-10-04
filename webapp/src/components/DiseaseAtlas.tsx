@@ -11,6 +11,7 @@ import { updateStreamingMessage, type OnAnswerText } from '@/lib/search-stream';
 import { Composer, type ComposerContext } from './Chat';
 import LandingChat from './LandingChat';
 import AtlasKnowledgeGraph from './AtlasKnowledgeGraph';
+import RegionalDiscovery from './RegionalDiscovery';
 import styles from './DiseaseAtlas.module.css';
 
 const initialFrame: AnatomyFrame = { zoom: 1, labels: [], detailReady: false, detailError: false, region: '', rotated: false };
@@ -32,6 +33,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [pan, setPan] = useState(false);
+  const [researchOpen, setResearchOpen] = useState(false);
   const [context, setContext] = useState<AtlasContext>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
@@ -139,7 +141,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
         </>}
         {!loading && !error && graphRegion && <AtlasKnowledgeGraph key={graphRegion} regionId={graphRegion} frame={frame} onAsk={ask}/>}
         <p className={styles.srOnly} id="atlas-instructions">Drag to rotate. Scroll or pinch to zoom. Shift-drag or use the move control to pan. Select an anatomy label or node to explore. Click a body part to reveal its records as labels connected to the anatomy. Select a disease to load genes, papers and specialist resources. Arrow keys rotate, plus and minus zoom, and 0 resets.</p>
-        <div className={styles.footer}>
+        <div className={styles.footer}><button className={styles.researchToggle} aria-expanded={researchOpen} aria-controls="atlas-research-drawer" onClick={()=>setResearchOpen(v=>!v)}>Research & coverage</button>
           <span className={styles.dragHint}>Drag to rotate · Scroll to zoom</span>
           <div className={styles.controls} role="group" aria-label="Atlas view controls">
             <button onClick={() => { scene.current?.setPanMode(!pan); setPan(!pan); }} aria-label={pan ? 'Switch to rotation' : 'Switch to panning'} title={pan ? 'Drag to move. Switch to rotation.' : 'Drag to rotate. Switch to panning.'} aria-pressed={pan}>{pan ? <Move size={17}/> : <Rotate3D size={19}/>}</button>
@@ -151,6 +153,10 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
           </div>
         </div>
       </div>
+    {researchOpen&&<div id="atlas-research-drawer" className={styles.researchDrawer} role="region" aria-label="Research explorer">
+      <button className={styles.closeResearch} onClick={()=>setResearchOpen(false)}>Close research explorer</button>
+      <RegionalDiscovery regionId={graphRegion||'brain'} onRegion={id=>scene.current?.focus(id)}/>
+    </div>}
     <div className={styles.promptDock}>
       {chatOpen && <LandingChat messages={messages} busy={busy} onDisease={onDisease} onCommunity={onCommunity} onClose={() => setChatOpen(false)} composer={null}/>}
       <Composer {...composerContext} onSubmit={ask} busy={busy} compact placeholder={graphRegion ? `Ask about ${atlasRegions[graphRegion].label}…` : context ? `Ask about ${activeDisease?.shortName ?? context.label}…` : 'Ask a question…'}/>

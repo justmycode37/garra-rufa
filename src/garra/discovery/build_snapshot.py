@@ -11,7 +11,9 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from garra.bridge import build_bridge
+from garra.bridge.build import curie, publication_ids
 from garra.discovery import DiscoveryEngine
+from garra.discovery.evidence_inputs import load_evidence, load_literature
 
 
 def verify_gene(identifier):
@@ -138,7 +140,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache", type=Path, default=Path("data/cache/connections"))
     parser.add_argument("--out", type=Path, default=Path("data/derived/discovery"))
-    parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--evidence", type=Path, action="append", help="Repeat for multiple extracted .kg.json files; otherwise discover saved outputs")
+    parser.add_argument("--literature", type=Path, action="append", help="Downloaded papers JSON; imported as search results, not claims")
     parser.add_argument(
         "--verify-genes", action="store_true", help="Query HGNC for exact Ensembl identity mappings"
     )
@@ -162,12 +165,41 @@ def main(argv=None):
                 mappings[identifier] = result
         mapping_path.write_text(json.dumps(mappings, indent=2) + "\n")
     source, inputs, warnings = collect(args.cache, mappings)
-    evidence = (
-        json.loads(args.evidence.read_text())
-        if args.evidence
-        else {"nodes": [], "edges": [], "papers": []}
+    evidence_paths = args.evidence if args.evidence is not None else sorted(
+        set(Path("datasets/evidence").glob("**/*.kg.json")) | set(Path("runs").glob("**/*.kg.json"))
     )
+    if not evidence_paths and (args.out / "bridge.json").exists():
+        previous = json.loads((args.out / "bridge.json").read_text())
+        if previous.get("claims"):
+            parser.error("No evidence inputs found; refusing to erase existing claims. Supply --evidence.")
+    evidence, evidence_inventory = load_evidence(evidence_paths)
+    literature_paths = args.literature if args.literature is not None else sorted(
+        set(Path("runs").glob("**/*.papers.json")) | set(Path("runs").glob("**/papers.json"))
+        | set(Path("datasets/evidence").glob("**/*.papers.json"))
+    )
+    literature, literature_inventory = load_literature(literature_paths)
+    evidence["papers"] = [*evidence["papers"], *literature]
     bridge = build_bridge(source, evidence, phenotype_threshold=0.5)
+    publication_aliases = {alias: p["id"] for p in bridge["papers"] for alias in p["identifiers"]}
+    valid_entities = {n["id"] for n in bridge["nodes"] if n["identity_verified"] and n["kind"] in {"disease", "gene"}}
+    matches = {}
+    for record in literature:
+        paper = next((publication_aliases[i] for i in publication_ids(record["meta"]) if i in publication_aliases), None)
+        if not paper:
+            continue
+        for hit in record["meta"].get("hits", []):
+            entity = curie(hit.get("entity", ""))
+            if entity in valid_entities:
+                matches[entity, paper] = {"entity_id": entity, "paper_id": paper,
+                                          "status": "literature_search_result", "source_file": record["import_file"]}
+    bridge["literature_matches"] = list(matches.values())
+    bridge["ingestion"] = {
+        "evidence_inputs": evidence_inventory,
+        "literature_inputs": literature_inventory,
+        "source_files": len(inputs),
+        "truncated_source_responses": sum(w.get("reason") == "truncated_source_response" for w in warnings),
+        "excluded_or_unresolved_items": len(bridge.get("issues", [])),
+    }
     engine = DiscoveryEngine(bridge)
     clusters = engine.clusters()
     counts = {
@@ -180,10 +212,8 @@ def main(argv=None):
         "gene_mapping_sha256": hashlib.sha256(
             json.dumps(mappings, sort_keys=True).encode()
         ).hexdigest(),
-        "evidence_file": str(args.evidence) if args.evidence else None,
-        "evidence_sha256": hashlib.sha256(args.evidence.read_bytes()).hexdigest()
-        if args.evidence
-        else None,
+        "evidence_inputs": evidence_inventory,
+        "literature_inputs": literature_inventory,
         "warnings": warnings,
         "coverage": engine.metadata()["coverage"],
         "diseases": sum(n["kind"] == "disease" for n in source["nodes"]),

@@ -1,7 +1,7 @@
 import { handler, body, HttpError, json } from '@/lib/http';
 
 // Fixed server-side routes: the browser cannot choose an upstream host or URL.
-const paths: Record<string, string> = { regions: '/api/regions', region: '/api/regions/', clusters: '/api/clusters', cluster: '/api/clusters/', search: '/api/search' };
+const paths: Record<string, string> = { regions: '/api/regions', region: '/api/regions/', clusters: '/api/clusters', cluster: '/api/clusters/', search: '/api/search', neighbors: '/api/neighbors', communities: '/api/communities' };
 async function proxy(request: Request) {
   const params = new URL(request.url).searchParams;
   const resource = params.get('resource') || 'regions';
@@ -11,7 +11,13 @@ async function proxy(request: Request) {
   const base = new URL(process.env.GARRA_RESEARCH_URL || 'http://127.0.0.1:8787');
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new HttpError(503, 'Invalid research service configuration.');
   const endpoint = new URL(paths[resource] + (['region','cluster'].includes(resource) ? id : ''), base);
-  if (resource === 'clusters' && params.has('entity_id')) endpoint.searchParams.set('entity_id', params.get('entity_id')!);
+  if (['clusters','neighbors'].includes(resource) && params.has('entity_id')) endpoint.searchParams.set('entity_id', params.get('entity_id')!);
+  if (resource === 'communities') {
+    for (const key of ['kind', 'disease_id', 'process_id']) {
+      const value = params.get(key);
+      if (value) endpoint.searchParams.set(key, value);
+    }
+  }
   const payload = request.method === 'POST' ? await body(request) : undefined;
   try {
     const response = await fetch(endpoint, {method: request.method, cache: 'no-store', redirect: 'error',
