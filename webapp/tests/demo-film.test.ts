@@ -100,7 +100,7 @@ test('two dots connect, then the narration interval is visually blank for ten se
   assert.equal(connected.connection, 1);
   for (let time = BRAND_CUES.blank.start; time < BRAND_CUES.blank.end; time += .1) {
     const pose = brandClosingPose(time);
-    for (const key of ['pairOpacity', 'jumpOpacity', 'fishOpacity', 'wordmarkOpacity', 'splashOpacity', 'periodOpacity', 'dropletsOpacity'] as const) assert.equal(pose[key], 0);
+    for (const key of ['pairOpacity', 'jumpOpacity', 'fishOpacity', 'wordmarkOpacity', 'splashOpacity', 'periodOpacity', 'dropletsOpacity', 'impactOpacity'] as const) assert.equal(pose[key], 0);
     assert.equal(finalePose(time).handsOpacity, 0);
     assert.equal(textPose(time, FILM_CUES.connect.start, FILM_CUES.connect.end).opacity, 0);
   }
@@ -108,17 +108,31 @@ test('two dots connect, then the narration interval is visually blank for ten se
 
 test('the second jump lands beside the wordmark and its splash becomes the period', () => {
   const airborne = brandClosingPose((BRAND_CUES.return.start + BRAND_CUES.return.end) / 2);
-  assert.ok(airborne.fishArc > .9 && airborne.splashArc > 0);
-  assert.equal(airborne.splashOpacity, 1);
+  assert.ok(airborne.fishArc > .9);
+  assert.equal(BRAND_CUES.splash.start, BRAND_CUES.return.end);
+  for (let time = BRAND_CUES.jump.start; time <= BRAND_CUES.return.end; time += .005) {
+    const pose = brandClosingPose(time);
+    assert.equal(pose.splashOpacity, 0, 'the splash must wait for the landing');
+    assert.equal(pose.dropletsOpacity, 0);
+    assert.equal(pose.impactOpacity, 0);
+    assert.equal(pose.periodOpacity, 0);
+  }
+  const impact = brandClosingPose(BRAND_CUES.return.end + .05);
+  assert.equal(impact.splashOpacity, 1);
+  assert.ok(impact.dropletsOpacity > .8 && impact.impactOpacity > .5);
   assert.equal(airborne.periodOpacity, 0);
   const end = brandClosingPose(filmContentTime(FILM_DURATION));
   assert.equal(end.fishTravel, 1);
   assert.equal(end.fishArc, 0);
   assert.equal(end.fishRotation, 0);
+  assert.equal(end.fishSettle, 0);
   assert.equal(end.fishOpacity, 1);
   assert.equal(end.wordmarkOpacity, 1);
   assert.equal(end.splashOpacity, 0);
   assert.equal(end.periodOpacity, 1);
+  assert.equal(end.impactOpacity, 0);
+  assert.equal(end.dropletsOpacity, 0);
+  assert.ok(filmContentTime(FILM_DURATION) - BRAND_CUES.splash.end >= .6, 'hold the completed logo');
 });
 
 test('text fades in from the right and fades out to the left', () => {
@@ -148,10 +162,15 @@ test('both fish jumps stay left of every letter, including their rotated bounds'
       const firstJumpRadius = Math.hypot(19, 8) * .84 * layout.fishWidth * 2.08 / 72;
       assert.ok(fish.x + firstJumpRadius < layout.wordmarkLeft - 8);
     }
-    const before = brandFishPosition(BRAND_CUES.return.end - .001, layout);
     const landed = brandFishPosition(BRAND_CUES.return.end, layout);
     assert.equal(landed.y, layout.fishY);
-    assert.ok(Math.abs(before.y - landed.y) < .005, 'ease into the landing without a sudden stop');
+    const before = brandFishPosition(BRAND_CUES.return.end - .001, layout);
+    const after = brandFishPosition(BRAND_CUES.return.end + .001, layout);
+    assert.ok(before.y < landed.y && after.y > landed.y, 'the fish carries its downward momentum through contact');
+    assert.ok(Math.abs((landed.y - before.y) - (after.y - landed.y)) < .01, 'the landing should not snap between poses');
+    const settled = brandFishPosition(BRAND_CUES.settle.end, layout);
+    assert.equal(settled.y, layout.fishY);
+    assert.ok(Math.abs(brandFishPosition(BRAND_CUES.settle.end - .001, layout).y - settled.y) < .001);
   }
 });
 
@@ -159,6 +178,8 @@ test('the splash rises beside the fish and stays clear of the letters on its way
   for (const layout of brandLayouts) {
     const radius = layout.periodSize / 2;
     const lettersRight = layout.periodX - radius - 2;
+    const fish = brandFishPosition(BRAND_CUES.return.end, layout);
+    assert.deepEqual(brandSplashPosition(BRAND_CUES.splash.start, layout), { x: fish.contactX, y: fish.surfaceY });
     for (let time = BRAND_CUES.splash.start; time < BRAND_CUES.splash.end; time += .005) {
       const dot = brandSplashPosition(time, layout);
       assert.ok(dot.x + radius < layout.wordmarkLeft || dot.y + radius < layout.wordmarkTop || dot.x - radius > lettersRight);

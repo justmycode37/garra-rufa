@@ -59,6 +59,7 @@ export default function DemoFilm() {
     const wordmark = element.querySelector<HTMLElement>('[data-wordmark]')!;
     const period = element.querySelector<HTMLElement>('[data-brand-period]')!;
     const splashDot = element.querySelector<HTMLElement>('[data-brand-splash]')!;
+    const impactRipple = element.querySelector<HTMLElement>('[data-brand-impact]')!;
     const droplets = Array.from(element.querySelectorAll<HTMLElement>('[data-brand-droplet]'));
     let brandLayout: BrandLayout | undefined;
     const measureBrand = () => {
@@ -143,11 +144,17 @@ export default function DemoFilm() {
       splashDot.style.width = splashDot.style.height = `${layout.periodSize}px`;
       splashDot.style.opacity = String(brand.splashOpacity);
       splashDot.style.transform = `translate3d(${dot.x - layout.periodSize / 2}px, ${dot.y - layout.periodSize / 2}px, 0)`;
+      const rippleWidth = layout.fishWidth * (.12 + brand.impactSpread * .48);
+      const rippleHeight = rippleWidth * .16;
+      impactRipple.style.width = `${rippleWidth}px`;
+      impactRipple.style.height = `${rippleHeight}px`;
+      impactRipple.style.opacity = String(brand.impactOpacity * .65);
+      impactRipple.style.transform = `translate3d(${fish.contactX - rippleWidth / 2}px, ${fish.surfaceY - rippleHeight / 2}px, 0)`;
       droplets.forEach((drop, index) => {
-        const drift = (index === 0 ? -1 : 1) * brand.dropletsTravel * 32;
-        const rise = Math.sin(brand.dropletsTravel * Math.PI) * (index === 0 ? 32 : 48);
+        const drift = (index === 0 ? -1 : 1) * brand.dropletsTravel * layout.fishWidth * .23;
+        const rise = 4 * brand.dropletsTravel * (1 - brand.dropletsTravel) * layout.fishWidth * (index === 0 ? .16 : .24);
         drop.style.opacity = String(brand.dropletsOpacity);
-        drop.style.transform = `translate3d(${fish.x + drift}px, ${fish.surfaceY - rise}px, 0)`;
+        drop.style.transform = `translate3d(${fish.contactX + drift}px, ${fish.surfaceY - rise}px, 0)`;
       });
       timeline.value = String(time);
       timeline.style.setProperty('--progress', `${time / FILM_DURATION * 100}%`);
@@ -272,6 +279,7 @@ export default function DemoFilm() {
         </div>
         <svg className={styles.brandFish} data-brand-fish="" viewBox="-310 -155 620 310" fill="none" stroke="currentColor" strokeWidth="6" strokeLinejoin="round" strokeLinecap="round"><Fish standalone/></svg>
         <span className={styles.brandSplash} data-brand-splash=""/>
+        <span className={styles.brandImpact} data-brand-impact=""/>
         <span className={styles.brandDroplet} data-brand-droplet=""/><span className={styles.brandDroplet} data-brand-droplet=""/>
       </div>
     </div>

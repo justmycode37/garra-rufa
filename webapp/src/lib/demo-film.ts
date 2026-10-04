@@ -10,9 +10,10 @@ export const BRAND_CUES = {
   dots: { start: 10.5, end: 12 },
   blank: { start: 12, end: 22 },
   jump: { start: 22, end: 23.15 },
-  return: { start: 23.15, end: 24.4 },
+  return: { start: 23.15, end: 24.25 },
+  settle: { start: 24.25, end: 24.49 },
   wordmark: { start: 23.25, end: 23.72 },
-  splash: { start: 23.18, end: 24.65 },
+  splash: { start: 24.25, end: 25.35 },
 } as const;
 
 // Preserve the original ten-second opening; append the narration and brand ending.
@@ -129,8 +130,10 @@ export function handApproachPose(time: number) {
 export function brandClosingPose(time: number) {
   const pairVisible = time < BRAND_CUES.dots.start ? 0 : 1 - ease(progress(time, BRAND_CUES.dots.end - .18, BRAND_CUES.dots.end));
   const returning = progress(time, BRAND_CUES.return.start, BRAND_CUES.return.end);
+  const settling = progress(time, BRAND_CUES.settle.start, BRAND_CUES.settle.end);
   const splash = progress(time, BRAND_CUES.splash.start, BRAND_CUES.splash.end);
   const splashFinished = time >= BRAND_CUES.splash.end;
+  const impact = progress(time, BRAND_CUES.splash.start, BRAND_CUES.splash.start + .42);
   return {
     pairOpacity: pairVisible,
     firstDot: out(progress(time, BRAND_CUES.dots.start, BRAND_CUES.dots.start + .2)),
@@ -139,15 +142,18 @@ export function brandClosingPose(time: number) {
     jumpOpacity: time >= BRAND_CUES.jump.start && time < BRAND_CUES.jump.end ? 1 : 0,
     jumpAnimationTime: progress(time, BRAND_CUES.jump.start, BRAND_CUES.jump.end) * 1500 * .76,
     fishOpacity: out(progress(time, BRAND_CUES.return.start, BRAND_CUES.return.start + .1)),
-    fishTravel: ease(returning),
-    fishArc: returning === 1 ? 0 : Math.sin(Math.PI * returning) ** 2,
-    fishRotation: returning < .55 ? mix(-38, 12, ease(returning / .55)) : mix(12, 0, ease((returning - .55) / .45)),
+    fishTravel: returning,
+    fishArc: 4 * returning * (1 - returning),
+    fishSettle: settling * (1 - settling) ** 3,
+    fishRotation: returning < .6 ? mix(-38, 10, ease(returning / .6)) : mix(10, 0, ease((returning - .6) / .4)),
     wordmarkOpacity: out(progress(time, BRAND_CUES.wordmark.start, BRAND_CUES.wordmark.end)),
-    splashOpacity: time < BRAND_CUES.splash.start || splashFinished ? 0 : out(progress(time, BRAND_CUES.splash.start, BRAND_CUES.splash.start + .08)),
+    splashOpacity: time < BRAND_CUES.splash.start || splashFinished ? 0 : out(progress(time, BRAND_CUES.splash.start, BRAND_CUES.splash.start + .025)),
     splashTravel: splash,
     splashArc: 4 * splash * (1 - splash),
     periodOpacity: splashFinished ? 1 : 0,
-    dropletsOpacity: time < BRAND_CUES.splash.start ? 0 : 1 - progress(time, BRAND_CUES.splash.start + .04, BRAND_CUES.splash.start + .38),
+    impactOpacity: out(progress(time, BRAND_CUES.splash.start, BRAND_CUES.splash.start + .035)) * (1 - impact) ** 2,
+    impactSpread: out(impact),
+    dropletsOpacity: out(progress(time, BRAND_CUES.splash.start, BRAND_CUES.splash.start + .025)) * (1 - progress(time, BRAND_CUES.splash.start + .04, BRAND_CUES.splash.start + .38)),
     dropletsTravel: progress(time, BRAND_CUES.splash.start, BRAND_CUES.splash.start + .38),
   };
 }
@@ -163,24 +169,30 @@ export function brandFishPosition(time: number, layout: BrandLayout) {
   // Reserve enough room for the full rotated SVG, not just its unrotated width.
   const radius = Math.hypot(layout.fishWidth / 2, layout.fishWidth / 4);
   const x = Math.min(layout.fishX, layout.wordmarkLeft - Math.max(8, layout.fishWidth * .06) - radius);
+  const height = Math.min(155, layout.fishWidth * .95);
+  const launchDepth = layout.fishWidth * .7;
+  const landingSpeed = (4 * height - launchDepth) / (BRAND_CUES.return.end - BRAND_CUES.return.start);
+  // Carry the downward momentum into a short, damped settle at contact.
+  const followThrough = landingSpeed * (BRAND_CUES.settle.end - BRAND_CUES.settle.start) * pose.fishSettle;
   return {
     x,
-    y: mix(layout.fishY + layout.fishWidth * .7, layout.fishY, pose.fishTravel) - pose.fishArc * Math.min(155, layout.fishWidth * .95),
+    y: mix(layout.fishY + launchDepth, layout.fishY, pose.fishTravel) - pose.fishArc * height + followThrough,
     rotation: pose.fishRotation,
-    surfaceY: layout.fishY + layout.fishWidth * .4,
+    contactX: x + layout.fishWidth * 75 / 620,
+    surfaceY: layout.fishY + layout.fishWidth * 120 / 620,
   };
 }
 
 export function brandSplashPosition(time: number, layout: BrandLayout) {
   const pose = brandClosingPose(time);
   const fish = brandFishPosition(time, layout);
-  const crest = layout.wordmarkTop - Math.max(24, layout.fishWidth * .45);
   const t = pose.splashTravel;
-  // Rise beside the fish, travel above the letters, then fall into the period.
-  if (t < .22) return { x: fish.x, y: mix(fish.surfaceY, crest, ease(t / .22)) };
-  if (t < .78) {
-    const travel = (t - .22) / .56;
-    return { x: mix(fish.x, layout.periodX, ease(travel)), y: crest - Math.sin(Math.PI * travel) ** 2 * layout.fishWidth * .12 };
-  }
-  return { x: layout.periodX, y: mix(crest, layout.periodY, ease((t - .78) / .22)) };
+  const clearance = Math.max(fish.surfaceY, layout.periodY) - layout.wordmarkTop + layout.periodSize + 12;
+  const height = Math.max(layout.fishWidth * .95, clearance * 2.1);
+  // One unbroken flight from the landing contact. Horizontal travel finishes
+  // before descent so the droplet falls cleanly into the space after the letters.
+  return {
+    x: mix(fish.contactX, layout.periodX, ease(progress(t, 0, .84))),
+    y: mix(fish.surfaceY, layout.periodY, t) - 4 * height * t * (1 - t),
+  };
 }
