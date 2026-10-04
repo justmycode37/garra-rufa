@@ -1,13 +1,21 @@
 .community { max-width: 1120px; margin: 0 auto; }
+.joinCreate,.joinCreate:hover { background: var(--ink); color: #fff; }
+.joinHeart { transform-origin: center; }
+.joinCreate:hover .joinHeart,.joinCreate:focus-visible .joinHeart { fill: currentColor; animation: heartbeat 1.15s ease-in-out infinite; }
+@keyframes heartbeat { 0%,35%,100% { transform: scale(1); } 12% { transform: scale(1.2); } 22% { transform: scale(1.04); } 28% { transform: scale(1.14); } }
+@media(prefers-reduced-motion:reduce) { .joinCreate:hover .joinHeart,.joinCreate:focus-visible .joinHeart { animation: none; } }
 .back { margin-bottom: 22px; color: var(--quiet); font-size: 11px; }
 .search { width: 100%; max-width: 520px; margin: 6px 0 28px; }
 .directory { display: grid; gap: 12px; }
-.condition { width: 100%; display: flex; align-items: center; gap: 18px; padding: 21px 22px; text-align: left; border: 0; border-radius: 18px; background: var(--card); transition: background .18s, box-shadow .18s; }
-.condition:hover { background: #fff; box-shadow: 0 3px 16px #14131406; }
+.condition { width: 100%; display: flex; align-items: center; gap: 18px; padding: 21px 22px; text-align: left; border: 0; border-radius: 18px; background: var(--community-color, var(--sea)); transition: transform .18s ease; }
+.communityHeading { padding: 22px; border-radius: 18px; background: var(--community-color, var(--sea)); }
+.communityHeading p { color: var(--ink); opacity: .75; }
+@media(hover:hover) and (pointer:fine) { .condition:hover { transform: scale(1.012); } }
+@media(prefers-reduced-motion:reduce) { .condition { transition: none; } .condition:hover { transform: none; } }
 .conditionIcon { width: 39px; height: 39px; flex-shrink: 0; display: grid; place-items: center; background: rgba(20,19,20,.035); border-radius: 12px; }
 .condition > span:nth-child(2) { flex: 1; min-width: 0; }
-.condition b { display: block; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
-.condition small { display: block; color: var(--quiet); font-size: 10px; margin-top: 7px; }
+.condition b { display: block; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.condition small { display: block; color: var(--ink); opacity: .75; font-size: 10px; margin-top: 7px; }
 .condition > svg { flex-shrink: 0; color: var(--quiet); }
 .layout { display: grid; grid-template-columns: minmax(0,1fr) 235px; gap: 55px; margin-top: 38px; }
 .sectionTitle { font-size: 14px; font-weight: 500; margin: 0 0 22px; letter-spacing: -.25px; }

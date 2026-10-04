@@ -1,42 +1,90 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import styles from './FishSchool.module.css';
 
 const fish = [
-  { x: 140, y: 139, size: .85, dx: -34, dy: 19, tilt: -15 },
-  { x: 213, y: 90, size: 1, dx: -15, dy: -23, tilt: 12 },
-  { x: 220, y: 190, size: .8, dx: -21, dy: 22, tilt: -8 },
-  { x: 286, y: 139, size: 1.15, dx: -10, dy: -18, tilt: 9 },
-  { x: 326, y: 63, size: .82, dx: -18, dy: -14, tilt: -12 },
-  { x: 328, y: 214, size: .94, dx: 12, dy: 17, tilt: 11 },
-  { x: 380, y: 103, size: 1.1, dx: -16, dy: -17, tilt: -8 },
-  { x: 401, y: 171, size: 1.25, dx: -7, dy: 13, tilt: 7 },
-  { x: 456, y: 54, size: .8, dx: 15, dy: -12, tilt: 14 },
-  { x: 463, y: 225, size: .84, dx: -15, dy: 10, tilt: -9 },
-  { x: 487, y: 132, size: 1.38, dx: 20, dy: -8, tilt: -5 },
-  { x: 559, y: 78, size: .97, dx: 24, dy: -21, tilt: -13 },
-  { x: 566, y: 189, size: 1.04, dx: 23, dy: 24, tilt: 12 },
-  { x: 646, y: 130, size: 1.19, dx: 28, dy: -13, tilt: 7 },
-  { x: 672, y: 209, size: .76, dx: 36, dy: 15, tilt: -10 },
-  { x: 738, y: 102, size: .84, dx: 25, dy: -18, tilt: -12 },
+  { x: 32, y: 0, size: .62 },
+  { x: 3, y: -16, size: .54 },
+  { x: -3, y: 17, size: .58 },
+  { x: -32, y: -12, size: .5 },
+  { x: -39, y: 15, size: .53 },
 ];
 
 export default function FishSchool() {
   const scene = useRef<SVGSVGElement>(null);
-  const [visible, setVisible] = useState(false);
+  const school = useRef<SVGGElement>(null);
 
   useEffect(() => {
-    if (!scene.current) return;
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { threshold: .1 });
-    observer.observe(scene.current);
-    return () => observer.disconnect();
+    const svg = scene.current;
+    const group = school.current;
+    if (!svg || !group) return;
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let width = svg.clientWidth;
+    let height = svg.clientHeight;
+    let visible = false;
+    let elapsed = 0;
+    let previousTime: number | null = null;
+    let frame = 0;
+
+    const draw = () => {
+      if (reducedMotion.matches) {
+        group.setAttribute('transform', `translate(${width / 2} ${height / 2})`);
+        return;
+      }
+      // One shared route keeps the five fish together, including through turns.
+      const phase = elapsed * .00028;
+      const radius = Math.max(0, width / 2 - 85);
+      const x = width / 2 + radius * Math.sin(phase);
+      const y = height / 2 + 34 * Math.sin(phase * 2);
+      const heading = Math.atan2(68 * Math.cos(phase * 2), radius * Math.cos(phase)) * 180 / Math.PI;
+      group.setAttribute('transform', `translate(${x} ${y}) rotate(${heading})`);
+    };
+
+    const tick = (time: number) => {
+      if (previousTime !== null) elapsed += Math.min(time - previousTime, 64);
+      previousTime = time;
+      draw();
+      frame = requestAnimationFrame(tick);
+    };
+
+    const syncAnimation = () => {
+      cancelAnimationFrame(frame);
+      previousTime = null;
+      const active = visible && document.visibilityState === 'visible';
+      svg.dataset.visible = String(active);
+      draw();
+      if (active && !reducedMotion.matches) frame = requestAnimationFrame(tick);
+    };
+
+    const resize = new ResizeObserver(() => {
+      width = svg.clientWidth;
+      height = svg.clientHeight;
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      draw();
+    });
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      syncAnimation();
+    }, { threshold: .1 });
+
+    resize.observe(svg);
+    observer.observe(svg);
+    reducedMotion.addEventListener('change', syncAnimation);
+    document.addEventListener('visibilitychange', syncAnimation);
+    return () => {
+      cancelAnimationFrame(frame);
+      resize.disconnect();
+      observer.disconnect();
+      reducedMotion.removeEventListener('change', syncAnimation);
+      document.removeEventListener('visibilitychange', syncAnimation);
+    };
   }, []);
 
-  return <svg ref={scene} className={styles.scene} viewBox="0 0 880 280" preserveAspectRatio="xMidYMid slice" data-visible={visible} aria-hidden="true" focusable="false">
-    <g className={styles.current}>
-      {fish.map(({ x, y, size, dx, dy, tilt }, index) => <g key={index} transform={`translate(${x} ${y}) scale(${size})`} opacity={size < .9 ? .45 : size < 1.1 ? .7 : 1}>
-        <g className={styles.gather} style={{ '--wander-x': `${dx}px`, '--wander-y': `${dy}px`, '--wander-angle': `${tilt}deg` } as CSSProperties}>
+  return <svg ref={scene} className={styles.scene} viewBox="0 0 1000 220" data-visible="false" aria-hidden="true" focusable="false">
+    <g ref={school} transform="translate(500 110)">
+      {fish.map(({ x, y, size }, index) => <g key={index} transform={`translate(${x} ${y}) scale(${size})`}>
           <g className={styles.fish} style={{ '--phase': `${-index * .19}s`, '--tail-speed': `${.65 + (index % 4) * .08}s` } as CSSProperties}>
             <g className={styles.tail}>
               <path d="M-9 0-18-4-18 4Z"/>
@@ -52,7 +100,6 @@ export default function FishSchool() {
               <circle cx="11" cy="-2.3" r=".85"/>
             </g>
           </g>
-        </g>
       </g>)}
     </g>
   </svg>;

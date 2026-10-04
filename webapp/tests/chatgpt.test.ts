@@ -260,20 +260,39 @@ test('anonymous and disconnected users cannot spend an API key, and plan errors 
   assert.equal((await answerQuery({ ...input, user, chatGPTAllowed: false })).mode, 'database'); assert.equal(requests.length, 0);
 });
 
-test('successful subscription answers complete the tool loop and preserve evidence sources', async t => {
+test('subscription answers retrieve graph, paper and contact records and pass them to the model', async t => {
   const account = connect('oaiapp_answer');
   let round = 0;
+  const backendCalls: string[] = [];
+  const records = [
+    {id:'repo-condition',title:'Repository condition',kind:'reference',url:'https://monarchinitiative.org/MONDO:0007947',excerpt:'Verified graph relationship'},
+    {id:'paper-study',title:'Repository paper',kind:'paper',url:'https://pubmed.ncbi.nlm.nih.gov/38517496/',excerpt:'Verified abstract',pmid:'38517496'},
+    {id:'repo-centre',title:'Repository centre',kind:'contact',url:'https://www.orpha.net/en/expert-centres/centre/1',excerpt:'Source-listed centre'},
+  ];
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
     if (String(url).endsWith('/models')) return json({ models: [{ slug: 'available', display_name: 'Available', visibility: 'list' }] });
     const body = JSON.parse(init.body as string);
+    if (String(url).includes('/api/research/')) {
+      backendCalls.push(String(url));
+      assert.equal((init.headers as Record<string,string>).Authorization, undefined);
+      assert.equal(body.query,'Marfan syndrome');
+      const papers=String(url).endsWith('/papers');
+      const index=papers?1:body.category==='contacts'?2:0;
+      return json({status:'ok',query:body.query,pipeline:papers?'repository-literature':'repository-graph',providers:['source'],unavailableProviders:[],retrievedAt:'2026-10-04T10:00:00Z',cached:false,sources:[records[index]]});
+    }
+    assert.equal((init.headers as Record<string,string>).Authorization,'Bearer access-secret');
     assert.equal(body.stream, true); assert.equal(body.store, false);
-    if (++round === 1) return sse([itemDone({ type: 'function_call', namespace: 'garra', name: 'search_knowledge', call_id: 'call1', arguments: JSON.stringify({ query: 'Marfan' }) }), completed()]);
-    assert.ok(body.input.some((item: { type?: string }) => item.type === 'function_call_output'));
-    return sse([itemDone({ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ answer: 'Evidence summary [1].', region: 'heart', sourceIds: ['marfan'], nextSteps: [], suggestion: null }) }] }), completed()]);
+    if (++round === 1) return sse([
+      ...['search_knowledge','find_papers','find_contacts'].map((name,index)=>itemDone({type:'function_call',namespace:'garra',name,call_id:'call'+index,arguments:JSON.stringify({query:'Marfan syndrome'})},index)), completed()]);
+    const outputs=body.input.filter((item:{type?:string})=>item.type==='function_call_output');
+    assert.equal(outputs.length,3);
+    for(let index=0;index<3;index++) assert.deepEqual(JSON.parse(outputs[index].output).sources[0],records[index]);
+    return sse([itemDone({ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ answer: 'Graph [1]. Paper [2]. Centre [3].', region: 'heart', sourceIds: records.map(r=>r.id), nextSteps: [], suggestion: null }) }] }), completed()]);
   });
   const user = accounts.withChatGPT(store.sessionUser(store.createSession(account.userId)))!;
-  const result = await answerQuery({ query: 'hello world', user, history: [], fileIds: [], includeWorkspace: false, chatGPTAllowed: true, billing: 'chatgpt' as const });
-  assert.equal(result.mode, 'ai'); assert.equal(round, 2); assert.equal(result.sources[0].id, 'marfan');
+  const result = await answerQuery({ query: 'Find Marfan research and centres', user, history: [], fileIds: [], includeWorkspace: false, chatGPTAllowed: true, billing: 'chatgpt' as const });
+  assert.equal(result.mode, 'ai'); assert.equal(round, 2); assert.equal(backendCalls.length,3);
+  assert.deepEqual(result.sources,records); assert.equal(result.warning,undefined);
 });
 
 test('confirmed invalid subscriber context stops future use, while transport failures do not erase tokens', async t => {

@@ -4,9 +4,13 @@ import { ArrowUp,Plus,X,Paperclip,LoaderCircle,ArrowUpRight,BookOpen,ChevronDown
 import { GarraMark } from './Brand';
 import ThinkingIndicator, { FishAnimation } from './ThinkingIndicator';
 import VoiceInput from './VoiceInput';
+import CommunityRecommendations from './CommunityRecommendations';
+import { answerWordReveal } from '@/lib/answer-word-reveal';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message,WorkspaceRecord,User,Disease } from '@/lib/types';
+import SourceCard from './SourceCard';
+import { answerWithSources } from '@/lib/answer-sources';
 
 type ComposerProps = {
   onSubmit: (query: string) => void;
@@ -42,20 +46,22 @@ export function Composer({onSubmit,busy,user,onUpload,attached=[],onDetach,inclu
   </div>;
 }
 
-export function Text({text}:{text:string}){return <div className="answer-text"><Markdown remarkPlugins={[remarkGfm]} skipHtml components={{a:({node,...props})=><a {...props} target={props.href?.startsWith('/')?undefined:'_blank'} rel="noreferrer"/>,table:({node,...props})=><div className="answer-table"><table {...props}/></div>,img:({alt})=><span>{alt}</span>}}>{text}</Markdown></div>;}
+export function Text({text,streaming=false}:{text:string;streaming?:boolean}){const reveal=useRef(streaming);return <div className="answer-text"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={reveal.current?[answerWordReveal]:[]} skipHtml components={{a:({node,...props})=><a {...props} target={props.href?.startsWith('/')?undefined:'_blank'} rel="noreferrer"/>,table:({node,...props})=><div className="answer-table"><table {...props}/></div>,img:({alt})=><span>{alt}</span>}}>{text}</Markdown></div>;}
 
-export function Answer({message,onDisease,onSave,plain=false}:{message:Message;onDisease:(d:Disease)=>void;onSave?:(m:Message)=>void;plain?:boolean}){
+export function Answer({message,onDisease,onSave,onCommunity,plain=false}:{message:Message;onDisease:(d:Disease)=>void;onSave?:(m:Message)=>void;onCommunity?:(id:string)=>void;plain?:boolean}){
   const [expanded,setExpanded]=useState(false);
-  return <div className="answer">
-    <Text text={message.text}/>
+  return <div className="answer" aria-busy={message.streaming || undefined}>
+    {answerWithSources(message.text,message.streaming?[]:message.sources||[]).map((part,index)=><div className="answer-part" key={index}>{part.text&&<Text text={part.text} streaming={message.streaming}/>} {!!part.cards.length&&<div className="answer-evidence">{part.cards.map(({source,number})=><SourceCard key={source.id} source={source} number={number}/>)}</div>}</div>)}
+    {message.streaming&&<span className="answer-writing" role="status">Writing…</span>}
     {message.warning&&<div className="service-notice" role="status">{message.warning}</div>}
     {!plain&&!!message.diseases?.length&&<div className="related-diseases">{message.diseases.slice(0,4).map(d=><button key={d.id} onClick={()=>onDisease(d)}><i className={d.color}/>{d.shortName}<ArrowUpRight size={13}/></button>)}</div>}
     {plain&&!!message.steps?.length&&<div className="answer-text answer-next-steps"><h3>Next steps</h3><ul>{message.steps.map((step,index)=><li key={index}><Text text={step}/></li>)}</ul></div>}
-    {!!message.sources?.length&&<div className="sources-block"><button className="sources-toggle" onClick={()=>setExpanded(!expanded)} aria-expanded={expanded}><BookOpen size={15}/>{message.sources.length} sources<ChevronDown size={14} className={expanded?'rotate':''}/></button>{expanded&&<ol className="source-list">{message.sources.map(s=><li key={s.id}><a href={s.url} target={s.kind==='workspace'?undefined:'_blank'} rel="noreferrer">{s.title}<ArrowUpRight size={13}/></a><small>{s.kind==='workspace'?'Your workspace':s.kind==='paper'?`Research paper${s.year?' · '+s.year:''}`:'MedlinePlus Genetics'}</small></li>)}</ol>}</div>}
+    {!!message.sources?.length&&<div className="sources-block"><button className="sources-toggle" onClick={()=>setExpanded(!expanded)} aria-expanded={expanded}><BookOpen size={15}/>{message.sources.length} sources<ChevronDown size={14} className={expanded?'rotate':''}/></button>{expanded&&<ol className="source-list">{message.sources.map(s=><li key={s.id}><a href={s.url} target={s.kind==='workspace'?undefined:'_blank'} rel="noreferrer">{s.title}<ArrowUpRight size={13}/></a><small>{s.kind==='workspace'?'Your workspace':s.kind==='paper'?`Research paper${s.year?' · '+s.year:''}`:s.providers?.join(' · ')||s.recordType||'Research record'}</small></li>)}</ol>}</div>}
     {!plain&&!!message.steps?.length&&<div className="next-steps"><span className="eyebrow">A POSSIBLE NEXT STEP</span><p>{message.steps[0]}</p></div>}
     {message.suggestion&&onSave&&<button className="secondary" onClick={()=>onSave(message)}><FolderPlus size={16}/>Review & save {message.suggestion.kind}</button>}
+    {!message.streaming&&!!message.communities?.length&&<CommunityRecommendations communities={message.communities} onCommunity={onCommunity}/>}
   </div>;
 }
-export function ChatMessages({messages,busy,onDisease,onSave}:{messages:Message[];busy:boolean;onDisease:(d:Disease)=>void;onSave?:(m:Message)=>void}){
-  return <div className="chat-messages" aria-live="polite">{messages.map(m=>m.role==='user'?<div className="user-message" key={m.id}>{m.text}</div>:<Answer key={m.id} message={m} onDisease={onDisease} onSave={onSave} plain/>)}{busy&&<ThinkingIndicator/>}</div>;
+export function ChatMessages({messages,busy,onDisease,onSave,onCommunity}:{messages:Message[];busy:boolean;onDisease:(d:Disease)=>void;onSave?:(m:Message)=>void;onCommunity?:(id:string)=>void}){
+  return <div className="chat-messages" aria-live="polite">{messages.map(m=>m.role==='user'?<div className="user-message" key={m.id}>{m.text}</div>:<Answer key={m.id} message={m} onDisease={onDisease} onSave={onSave} onCommunity={onCommunity} plain/>)}{busy&&!messages.at(-1)?.streaming&&<ThinkingIndicator/>}</div>;
 }

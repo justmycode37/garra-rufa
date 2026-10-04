@@ -1,20 +1,17 @@
 .scene {
   display: block;
   width: 100%;
-  height: 280px;
-  margin-top: 30px;
+  height: 220px;
+  margin-top: 18px;
   overflow: hidden;
   color: #000;
   pointer-events: none;
 }
 
-.current { animation: current 12s ease-in-out infinite; }
-.gather { animation: gather 12s ease-in-out infinite; }
-
 .fish {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.25;
+  stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
   animation: swim 2.4s ease-in-out var(--phase) infinite;
@@ -28,17 +25,6 @@
 .joints, .tail circle { fill: currentColor; stroke: none; }
 .scene[data-visible='false'] * { animation-play-state: paused; }
 
-@keyframes current {
-  0%, 100% { transform: translate(-12px, 4px); }
-  40% { transform: translate(0, -4px); }
-  70% { transform: translate(24px, 0); }
-}
-
-@keyframes gather {
-  0%, 100% { transform: translate(var(--wander-x), var(--wander-y)) rotate(var(--wander-angle)); }
-  38%, 70% { transform: translate(0, 0) rotate(0deg); }
-}
-
 @keyframes swim {
   0%, 100% { transform: translateY(-2px) rotate(-2deg); }
   50% { transform: translateY(2px) rotate(2deg); }
@@ -50,7 +36,7 @@
 }
 
 @media (max-width: 720px) {
-  .scene { height: 190px; margin-top: 22px; }
+  .scene { height: 180px; margin-top: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

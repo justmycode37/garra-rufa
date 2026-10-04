@@ -4,6 +4,9 @@ import { answerQuery } from '@/lib/ai';
 import { getRecord,saveRecord,limit } from '@/lib/store';
 import type { Message } from '@/lib/types';
 import { chatGPTRequestUrl, localChatGPTOrigin } from '@/lib/chatgpt';
+import type { AnswerProgress, SearchResponse, SearchStreamEvent } from '@/lib/search-stream';
+import { listConditions } from '@/lib/conditions';
+import { recommendCommunities } from '@/lib/community-recommendations';
 export const maxDuration=180;
 export const POST=handler(async(req)=>{
   const input=z.object({surface:z.enum(['landing','workspace']).default('workspace'),query:z.string().trim().min(2).max(16000),chatId:z.uuid().optional(),fileIds:z.array(z.uuid()).max(3).default([]),includeWorkspace:z.boolean().default(false),history:z.array(z.object({role:z.enum(['user','assistant']),text:z.string().max(8000),id:z.string()})).max(8).default([])}).parse(await body(req));
@@ -17,13 +20,37 @@ export const POST=handler(async(req)=>{
   if(u)for(const id of input.fileIds){const r=getRecord(id,u.id);if(!r||r.kind!=='document')throw new HttpError(404,'Attachment not found.');}
   const history=previous?.messages||input.history;
   let chatGPTAllowed=true;try{localChatGPTOrigin(chatGPTRequestUrl(req));}catch{chatGPTAllowed=false;}
-  const result=await answerQuery({query:input.query,user:u,history,fileIds:input.fileIds,includeWorkspace:input.includeWorkspace,chatGPTAllowed,billing:input.surface==='landing'?'api':'chatgpt'});
-  const messages:Message[]=[...history,{id:crypto.randomUUID(),role:'user',text:input.query},{id:crypto.randomUUID(),role:'assistant',text:result.answer,sources:result.sources,diseases:result.diseases,steps:result.steps,mode:result.mode,model:result.model,effort:result.effort,warning:result.warning,region:result.region,suggestion:result.suggestion}];
-  let chatId=input.chatId;
-  if(u){
-    // Deleting a conversation in another tab must not let an in-flight answer recreate it.
-    if(previous&&!getRecord(previous.id,u.id))throw new HttpError(404,'This conversation was deleted. Start a new chat to continue.');
-    const chat=saveRecord(u.id,{id:previous?.id,kind:'chat',title:previous?.title||input.query.slice(0,65),content:'',messages:messages.slice(-80)});chatId=chat.id;
+  async function complete(signal:AbortSignal,onProgress?:(event:AnswerProgress)=>void):Promise<SearchResponse>{
+    signal.throwIfAborted();
+    const result=await answerQuery({query:input.query,user:u,history,fileIds:input.fileIds,includeWorkspace:input.includeWorkspace,chatGPTAllowed,billing:input.surface==='landing'?'api':'chatgpt',onProgress,signal});
+    signal.throwIfAborted();
+    const communities=recommendCommunities(input.query,listConditions());
+    const messages:Message[]=[...history,{id:crypto.randomUUID(),role:'user',text:input.query},{id:crypto.randomUUID(),role:'assistant',text:result.answer,sources:result.sources,diseases:result.diseases,steps:result.steps,mode:result.mode,model:result.model,effort:result.effort,warning:result.warning,region:result.region,suggestion:result.suggestion}];
+    if(communities.length)messages[messages.length-1].communities=communities;
+    let chatId=input.chatId;
+    if(u){
+      // Deleting a conversation in another tab must not let an in-flight answer recreate it.
+      if(previous&&!getRecord(previous.id,u.id))throw new HttpError(404,'This conversation was deleted. Start a new chat to continue.');
+      const chat=saveRecord(u.id,{id:previous?.id,kind:'chat',title:previous?.title||input.query.slice(0,65),content:'',messages:messages.slice(-80)});chatId=chat.id;
+    }
+    return {...result,messages,chatId};
   }
-  return json({...result,messages,chatId});
+  if(!req.headers.get('accept')?.includes('application/x-ndjson'))return json(await complete(req.signal));
+
+  const abort=new AbortController();
+  const signal=AbortSignal.any([req.signal,abort.signal]);
+  const encoder=new TextEncoder();
+  let cancelled=false;
+  const stream=new ReadableStream<Uint8Array>({
+    async start(controller){
+      const send=(event:SearchStreamEvent)=>{if(!signal.aborted)controller.enqueue(encoder.encode(JSON.stringify(event)+'\n'));};
+      // Flush headers while evidence lookup and the model's first tokens are pending.
+      controller.enqueue(encoder.encode('\n'));
+      try{send({type:'complete',result:await complete(signal,send)});}
+      catch(error){send({type:'error',error:error instanceof HttpError?error.message:'The answer was interrupted. Please try again.'});}
+      finally{if(!cancelled)controller.close();}
+    },
+    cancel(){cancelled=true;abort.abort();},
+  });
+  return new Response(stream,{headers:{'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store, no-transform','X-Accel-Buffering':'no'}});
 });

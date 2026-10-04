@@ -47,7 +47,6 @@ export default function AboutPage() {
         </article>
       </section>
       <section className={styles.nameStory} aria-labelledby="our-name-title">
-        <span className={styles.nameEyebrow}>THE LITTLE FISH BEHIND OUR NAME</span>
         <h2 id="our-name-title">garra rufa<span>.</span></h2>
         <p className={styles.nameLead}>Small helpers. Stronger together.</p>
         <div className={styles.nameCopy}>
@@ -56,7 +55,6 @@ export default function AboutPage() {
         </div>
         <FishSchool/>
       </section>
-      <p className={styles.closing}>Clear questions. Connected knowledge. Sources you can follow.</p>
     </main>
     <footer className={styles.footer}><span>garra rufa</span><span>A way forward, together.</span></footer>
   </div>;

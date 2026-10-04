@@ -13,18 +13,27 @@ import LandingChat from './LandingChat';
 import Workspace from './Workspace';
 import RecordDialog from './RecordDialog';
 import { inferRegion } from '@/lib/knowledge';
+import { updateStreamingMessage, type OnAnswerText } from '@/lib/search-stream';
+import { readAnimatedSearchResponse } from '@/lib/animated-search';
+import { useChatScroll } from './useChatScroll';
 import type { User,Role,Region,View,WorkspaceRecord,RecordKind,Message,Disease,Source } from '@/lib/types';
 const navItems:{id:View;label:string;icon:typeof Home}[]=[{id:'overview',label:'Home',icon:Home},{id:'atlas',label:'Atlas',icon:Network},{id:'projects',label:'Projects',icon:Folder},{id:'patients',label:'Patients',icon:Stethoscope},{id:'documents',label:'Documents',icon:FileText},{id:'workbench',label:'Research papers',icon:FlaskConical},{id:'community',label:'Community',icon:Users}];
+const communityDestinationKey='garra:community-destination';
 
 export default function GarraApp(){
   const [searchOpen,setSearchOpen]=useState(false);
+  const [communityId,setCommunityId]=useState('');const pendingCommunity=useRef('');
+  const clearCommunityDestination=()=>{pendingCommunity.current='';try{sessionStorage.removeItem(communityDestinationKey);}catch{}};
   const [accountOpen,setAccountOpen]=useState(false);const [authError,setAuthError]=useState('');const [welcomeBusy,setWelcomeBusy]=useState(false);
   const [deleteChat,setDeleteChat]=useState<WorkspaceRecord|'all'|null>(null);const [deletingChat,setDeletingChat]=useState(false);const [deleteChatError,setDeleteChatError]=useState('');
   const [user,setUser]=useState<User|null>(null);const [workspace,setWorkspace]=useState(false);const [view,setView]=useState<View>('overview');const [region,setRegion]=useState<Region>('body');
   const [auth,setAuth]=useState<{mode:'login'|'signup';role?:Role;continueChat?:boolean}|null>(null);const [roleInfo,setRoleInfo]=useState(false);const [records,setRecords]=useState<WorkspaceRecord[]>([]);
   const [messages,setMessages]=useState<Message[]>([]);const [busy,setBusy]=useState(false);const [chatId,setChatId]=useState<string|undefined>();const [attached,setAttached]=useState<WorkspaceRecord[]>([]);const [includeWorkspace,setIncludeWorkspace]=useState(false);
   const [selectedDisease,setSelectedDisease]=useState<Disease|null>(null);const [recordDialog,setRecordDialog]=useState<{record?:Partial<WorkspaceRecord>;kind:RecordKind}|null>(null);const [toast,setToast]=useState('');const [sidebarOpen,setSidebarOpen]=useState(false);const [recordError,setRecordError]=useState('');
-  const scrollRef=useRef<HTMLDivElement>(null);const requestGeneration=useRef(0);
+  const scrollRef=useRef<HTMLDivElement>(null);const requestGeneration=useRef(0);const activeRequest=useRef<AbortController|null>(null);
+  const followAnswer=useChatScroll(scrollRef,workspace&&view==='overview');
+  const cancelAnswer=()=>{requestGeneration.current++;activeRequest.current?.abort();activeRequest.current=null;setBusy(false);};
+  useEffect(()=>()=>{activeRequest.current?.abort();},[]);
   const loadRecords=async()=>{try{const r=await fetch('/api/records');const d=await r.json();if(!r.ok)throw new Error(d.error);setRecords(d.records);setRecordError('');}catch(e){setRecordError(e instanceof Error?e.message:'Unable to load your workspace.');}};
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
@@ -32,6 +41,11 @@ export default function GarraApp(){
     const entryRole=params.get('entry')==='signup'&&(requestedRole==='researcher'||requestedRole==='doctor'||requestedRole==='patient')?requestedRole:null;
     if(entryRole)setAuth({mode:'signup',role:entryRole});
     const connected=params.get('chatgpt')==='connected';const resumeChat=params.get('chat');
+    let community=params.get('view')==='community'?params.get('condition')||'':'';
+    if(connected)try{community=community||sessionStorage.getItem(communityDestinationKey)||'';}catch{}
+    if(!/^[a-z0-9-]{1,80}$/.test(community))community='';
+    pendingCommunity.current=community;
+    if(community)try{sessionStorage.setItem(communityDestinationKey,community);}catch{}
     if(params.get('chatgpt')==='error'){setAccountOpen(true);setAuthError('ChatGPT sign-in could not be completed or was cancelled. Your previous workspace is unchanged. Please try again.');}
     fetch('/api/auth').then(r=>r.json()).then(async d=>{if(d.user?.chatgpt){setUser(d.user);setWorkspace(!entryRole&&params.get('view')!=='explore');await loadRecords();
       const resume=resumeChat;
@@ -40,13 +54,18 @@ export default function GarraApp(){
         const chat=response.ok?data.records.find((r:WorkspaceRecord)=>r.id===resume&&r.kind==='chat'):null;
         if(chat){setChatId(chat.id);setMessages(chat.messages||[]);setView('overview');}
       }
-    }}).catch(()=>{});
+      if(community){setCommunityId(community);setWorkspace(true);setView('community');setAuth(null);clearCommunityDestination();}
+    }else if(community){setAuth({mode:'signup'});}}).catch(()=>{});
     if(params.has('chatgpt')){params.delete('chatgpt');params.delete('chat');window.history.replaceState(null,'',`${window.location.pathname}${params.size?'?'+params.toString():''}`);}
   },[]);
   useEffect(()=>{if(!toast)return;const id=setTimeout(()=>setToast(''),4500);return()=>clearTimeout(id);},[toast]);
-  useEffect(()=>{if(view==='overview'&&workspace&&(messages.length>0||busy))scrollRef.current?.scrollTo({top:scrollRef.current.scrollHeight,behavior:'smooth'});},[messages,busy,view,workspace]);
   useEffect(()=>{const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();if(workspace)setSearchOpen(true);else document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus();}};document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key);},[workspace]);
-  const navigate=(v:View)=>{setView(v);setSidebarOpen(false);scrollRef.current?.scrollTo({top:0});};
+  const navigate=(v:View)=>{if(v==='community')setCommunityId('');setView(v);setSidebarOpen(false);scrollRef.current?.scrollTo({top:0});};
+  const openCommunity=(id:string)=>{
+    if(user?.chatgpt){setCommunityId(id);setWorkspace(true);setView('community');setSidebarOpen(false);scrollRef.current?.scrollTo({top:0});if(!workspace)void loadRecords();return;}
+    pendingCommunity.current=id;try{sessionStorage.setItem(communityDestinationKey,id);}catch{}
+    setAuth({mode:'signup'});
+  };
   async function confirmChatDeletion(){
     if(!deleteChat||busy||deletingChat)return;
     setDeletingChat(true);setDeleteChatError('');
@@ -60,8 +79,8 @@ export default function GarraApp(){
     }catch(error){setDeleteChatError(error instanceof Error?error.message:'Unable to delete this chat.');}
     finally{setDeletingChat(false);}
   }
-  const startChat=()=>{setMessages([]);setChatId(undefined);setAttached([]);navigate('overview');};
-  const closeLandingChat=()=>{requestGeneration.current++;setBusy(false);setMessages([]);setChatId(undefined);setAttached([]);setRegion('body');document.querySelector<HTMLTextAreaElement>('.landing .composer textarea')?.focus();};
+  const startChat=()=>{cancelAnswer();followAnswer();setMessages([]);setChatId(undefined);setAttached([]);navigate('overview');};
+  const closeLandingChat=()=>{cancelAnswer();setMessages([]);setChatId(undefined);setAttached([]);setRegion('body');document.querySelector<HTMLTextAreaElement>('.landing .composer textarea')?.focus();};
   async function enterWorkspace(nextUser:User){
     if(!nextUser.chatgpt){setAccountOpen(true);return;}
     let conversation:WorkspaceRecord|undefined;
@@ -71,19 +90,21 @@ export default function GarraApp(){
       if(!response.ok)throw new Error(data.error||'Unable to carry your conversation into the workspace. Please try again.');
       conversation=data.record;
     }
-    requestGeneration.current++;setBusy(false);setUser(nextUser);setAuth(null);setWorkspace(true);setView('overview');setMessages(conversation?.messages||[]);setAttached([]);setIncludeWorkspace(false);setChatId(conversation?.id);setRecords(conversation?[conversation]:[]);loadRecords();
+    cancelAnswer();setUser(nextUser);setAuth(null);setWorkspace(true);setView('overview');setMessages(conversation?.messages||[]);setAttached([]);setIncludeWorkspace(false);setChatId(conversation?.id);setRecords(conversation?[conversation]:[]);loadRecords();
+    if(pendingCommunity.current){setCommunityId(pendingCommunity.current);setView('community');clearCommunityDestination();}
   }
   async function openWorkspace(){
     try{
       const response=await fetch('/api/auth');const data=await response.json();
       if(!response.ok||!data.user?.chatgpt){setUser(null);setWorkspace(false);setAuth({mode:'signup',role:'researcher'});return;}
-      setUser(data.user);setWorkspace(true);setMessages([]);setChatId(undefined);loadRecords();
+      cancelAnswer();setUser(data.user);setWorkspace(true);setMessages([]);setChatId(undefined);loadRecords();
     }catch{setAccountOpen(true);setAuthError('Please sign in to open your workspace.');}
   }
   async function signOut(){
     const response=await fetch('/api/auth',{method:'DELETE'});const data=await response.json();
     if(!response.ok)throw new Error(data.error||'Unable to sign out.');
-    requestGeneration.current++;setBusy(false);setUser(null);setWorkspace(false);setAccountOpen(false);setAuth(null);setRecords([]);setMessages([]);setChatId(undefined);setAttached([]);setIncludeWorkspace(false);setSearchOpen(false);setRecordDialog(null);setDeleteChat(null);setAuthError('');
+    clearCommunityDestination();setCommunityId('');
+    cancelAnswer();setUser(null);setWorkspace(false);setAccountOpen(false);setAuth(null);setRecords([]);setMessages([]);setChatId(undefined);setAttached([]);setIncludeWorkspace(false);setSearchOpen(false);setRecordDialog(null);setDeleteChat(null);setAuthError('');
     if(data.warning)setToast(data.warning);
   }
   async function acknowledgePlan(){
@@ -91,16 +112,26 @@ export default function GarraApp(){
     try{const response=await fetch('/api/auth/chatgpt',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'acknowledge-plan'})});const data=await response.json();if(!response.ok)throw new Error(data.error);setUser(data.user);}catch{setToast('Could not save your preference. Please try again.');}finally{setWelcomeBusy(false);}
   }
   async function ask(query:string){
-    if(busy||deletingChat)return;setBusy(true);if(workspace)navigate('overview');setRegion(inferRegion(query));
+    if(busy||activeRequest.current||deletingChat)return;setBusy(true);followAnswer();if(workspace){setView('overview');setSidebarOpen(false);}setRegion(inferRegion(query));
     const generation=++requestGeneration.current;
-    const history=messages;setMessages(m=>[...m,{id:crypto.randomUUID(),role:'user',text:query}]);
-    try{const r=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,surface:workspace?'workspace':'landing',chatId:workspace?chatId:undefined,history:history.slice(-8).map(({id,role,text})=>({id,role,text:text.slice(0,8000)})),fileIds:workspace?attached.map(a=>a.id):[],includeWorkspace:workspace&&includeWorkspace})});const d=await r.json();if(generation!==requestGeneration.current)return;if(!r.ok)throw new Error(d.error);setMessages([...history,...d.messages.slice(-2)].slice(-80));setRegion(d.region);setChatId(d.chatId);if(workspace)loadRecords();setAttached([]);}catch(e){if(generation!==requestGeneration.current)return;setMessages(m=>[...m,{id:crypto.randomUUID(),role:'assistant',text:'Your question could not be completed. You can still explore the atlas and its original sources.',warning:e instanceof Error?e.message:'Please try again.',mode:'database'}]);}finally{if(generation===requestGeneration.current)setBusy(false);}
+    const request=new AbortController();activeRequest.current=request;
+    const assistantId=crypto.randomUUID();
+    const history=messages;const pending:Message[]=[...history,{id:crypto.randomUUID(),role:'user',text:query}];setMessages(pending);
+    try{
+      const response=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/x-ndjson'},signal:request.signal,body:JSON.stringify({query,surface:workspace?'workspace':'landing',chatId:workspace?chatId:undefined,history:history.slice(-8).map(({id,role,text})=>({id,role,text:text.slice(0,8000)})),fileIds:workspace?attached.map(a=>a.id):[],includeWorkspace:workspace&&includeWorkspace})});
+      const data=await readAnimatedSearchResponse(response,text=>{if(generation===requestGeneration.current)setMessages(current=>updateStreamingMessage(current,assistantId,text));},request.signal);
+      if(generation!==requestGeneration.current)return;
+      const answer=data.messages.at(-1);if(!answer||answer.role!=='assistant')throw new Error('The assistant returned no answer. Please try again.');
+      setMessages([...pending,{...answer,id:assistantId}].slice(-80));setRegion(data.region);setChatId(data.chatId);if(workspace)loadRecords();setAttached([]);
+    }catch(error){
+      if(generation!==requestGeneration.current)return;
+      setMessages([...pending,{id:assistantId,role:'assistant',text:'Your question could not be completed. You can still explore the atlas and its original sources.',warning:error instanceof Error?error.message:'Please try again.',mode:'database'}]);
+    }finally{if(generation===requestGeneration.current){activeRequest.current=null;setBusy(false);}}
   }
-  async function askWithAtlasContext(query:string,history:Message[]):Promise<Message>{
+  async function askWithAtlasContext(query:string,history:Message[],onText:OnAnswerText,signal:AbortSignal):Promise<Message>{
     const fileIds=attached.map(file=>file.id);
-    const response=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,surface:'workspace',history:history.slice(-8).map(({id,role,text})=>({id,role,text:text.slice(0,8000)})),fileIds,includeWorkspace})});
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||'Unable to complete your question.');
+    const response=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/x-ndjson'},signal,body:JSON.stringify({query,surface:'workspace',history:history.slice(-8).map(({id,role,text})=>({id,role,text:text.slice(0,8000)})),fileIds,includeWorkspace})});
+    const data=await readAnimatedSearchResponse(response,onText,signal);
     const answer=(data.messages as Message[]|undefined)?.findLast(message=>message.role==='assistant');
     if(!answer)throw new Error('The assistant returned no answer. Please try again.');
     setAttached(files=>files.filter(file=>!fileIds.includes(file.id)));
@@ -127,7 +158,7 @@ export default function GarraApp(){
       <header className="landing-nav"><Brand onClick={closeLandingChat}/><div className="nav-right"><AboutLink/><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?.chatgpt?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></div></header>
       <div className={`landing-intro ${messages.length||region!=='body'?'searching':''}`}><h1>A way forward.</h1><p>Rare disease knowledge, connected.</p></div>
       <BodyGraph/>
-      <div className="landing-search"><LandingChat messages={messages} busy={busy} composer={composer} onDisease={viewDisease} onClose={closeLandingChat} onContinue={()=>setAuth({mode:'signup',continueChat:true})}/></div>
+      <div className="landing-search"><LandingChat onCommunity={openCommunity} messages={messages} busy={busy} composer={composer} onDisease={viewDisease} onClose={closeLandingChat} onContinue={()=>setAuth({mode:'signup',continueChat:true})}/></div>
     </main>:user&&<div className={`workspace-shell ${view==='atlas'?'atlas-shell':''}`}>
       {sidebarOpen&&<button className="sidebar-scrim" aria-label="Close navigation" onClick={()=>setSidebarOpen(false)}/>}
       <aside className={`sidebar ${sidebarOpen?'open':''}`}>
@@ -140,11 +171,11 @@ export default function GarraApp(){
         </nav>
         <div className="history-heading"><span>Recent chats</span><div className="history-actions">{chatRecords.length>0&&<button aria-label="Clear chat history" title="Clear chat history" disabled={busy||deletingChat} onClick={()=>{setDeleteChatError('');setDeleteChat('all');}}><Trash2 size={14}/></button>}<button aria-label="New conversation" onClick={startChat}><Plus size={15}/></button></div></div>
         <div className="chat-history">{chatRecords.length?chatRecords.map(r=><div key={r.id} className={`chat-history-row ${chatId===r.id&&view==='overview'?'active':''}`}><button className="chat-history-open" onClick={()=>{if(busy||deletingChat)return;setChatId(r.id);setMessages(r.messages||[]);setAttached([]);navigate('overview');}}><MessageCircle size={14}/><span>{r.title}</span></button><button className="chat-history-delete" aria-label={`Delete chat: ${r.title}`} title="Delete chat" disabled={busy||deletingChat} onClick={()=>{setDeleteChatError('');setDeleteChat(r);}}><Trash2 size={13}/></button></div>):<p>Your conversations appear here.</p>}</div>
-        <div className="sidebar-bottom"><button className="back-to-atlas" onClick={()=>{setWorkspace(false);setMessages([]);setChatId(undefined);setRegion('body');}}><ArrowLeft size={15}/>Back to home</button><button className="workspace-role-switch" onClick={()=>setAuth({mode:'signup',role:user.role})}><span className={`avatar ${role!.color}`}>{role!.label.slice(0,1)}</span><span><b>{role!.label}</b><small>Switch perspective</small></span><ChevronDown size={16}/></button></div>
+        <div className="sidebar-bottom"><button className="back-to-atlas" onClick={()=>{cancelAnswer();setWorkspace(false);setMessages([]);setChatId(undefined);setRegion('body');}}><ArrowLeft size={15}/>Back to home</button><button className="workspace-role-switch" onClick={()=>setAuth({mode:'signup',role:user.role})}><span className={`avatar ${role!.color}`}>{role!.label.slice(0,1)}</span><span><b>{role!.label}</b><small>Switch perspective</small></span><ChevronDown size={16}/></button></div>
       </aside>
       <div className="workspace-main">
         <header className="workspace-topbar"><div><button className="mobile-only icon-button" aria-label="Open navigation" onClick={()=>setSidebarOpen(true)}><Menu size={21}/></button><b>{navItems.find(n=>n.id===view)?.label||'Home'}</b></div><button className="text-button chatgpt-account-button" onClick={()=>setAccountOpen(true)}>{user.name}<ChevronDown size={14}/></button></header>
-        <div className={`workspace-scroll ${view==='overview'&&!homeHasConversation?'home-scroll':''} ${view==='atlas'?'atlas-scroll':''}`} ref={scrollRef} id="main-content">{recordError&&<div className="service-notice">{recordError}<button onClick={loadRecords}>Retry</button></div>}<Workspace user={user} view={view} records={records} region={region} setRegion={setRegion} setView={navigate} onDisease={viewDisease} onNew={kind=>setRecordDialog({kind})} onRecord={r=>setRecordDialog({record:r,kind:r.kind})} onUpload={upload} onAsk={ask} onBookmark={bookmark} messages={messages} busy={busy} onSave={saveSuggestion} composer={composer} composerContext={composerContext} onAskWithContext={askWithAtlasContext}/></div>
+        <div className={`workspace-scroll ${view==='overview'&&!homeHasConversation?'home-scroll':''} ${view==='atlas'?'atlas-scroll':''}`} ref={scrollRef} id="main-content">{recordError&&<div className="service-notice">{recordError}<button onClick={loadRecords}>Retry</button></div>}<Workspace communityId={communityId} onCommunity={openCommunity} user={user} view={view} records={records} region={region} setRegion={setRegion} setView={navigate} onDisease={viewDisease} onNew={kind=>setRecordDialog({kind})} onRecord={r=>setRecordDialog({record:r,kind:r.kind})} onUpload={upload} onAsk={ask} onBookmark={bookmark} messages={messages} busy={busy} onSave={saveSuggestion} composer={composer} composerContext={composerContext} onAskWithContext={askWithAtlasContext}/></div>
         {view!=='atlas'&&(view!=='overview'||homeHasConversation)&&<div className="workspace-composer">{composer}</div>}
       </div>
     </div>}
@@ -154,8 +185,8 @@ export default function GarraApp(){
       {deleteChatError&&<p className="form-error" role="alert">{deleteChatError}</p>}
       <div className="button-row"><button className="secondary" disabled={deletingChat} onClick={()=>setDeleteChat(null)}>Cancel</button><button className="primary" disabled={deletingChat||busy} onClick={confirmChatDeletion}>{deletingChat?'Deleting…':deleteChat==='all'?'Clear history':'Delete chat'}</button></div>
     </Dialog>}
-    {auth&&!accountOpen&&<RoleDialog initialRole={auth.role} onClose={()=>setAuth(null)} onSuccess={enterWorkspace} user={user} conversation={!workspace&&messages.length>=2&&messages.at(-1)?.role==='assistant'?{messages:messages.slice(-80)}:undefined}/>}
-    {accountOpen&&<AuthDialog user={user} onClose={()=>{setAccountOpen(false);setAuthError('');}} onSignOut={signOut} conversation={!workspace&&messages.length>=2&&messages.at(-1)?.role==='assistant'?{messages:messages.slice(-80)}:undefined} initialError={authError}/>}
+    {auth&&!accountOpen&&<RoleDialog initialRole={auth.role} onClose={()=>{clearCommunityDestination();setAuth(null);}} onSuccess={enterWorkspace} user={user} conversation={!busy&&!workspace&&messages.length>=2&&messages.at(-1)?.role==='assistant'?{messages:messages.slice(-80)}:undefined}/>}
+    {accountOpen&&<AuthDialog user={user} onClose={()=>{setAccountOpen(false);setAuthError('');}} onSignOut={signOut} conversation={!busy&&!workspace&&messages.length>=2&&messages.at(-1)?.role==='assistant'?{messages:messages.slice(-80)}:undefined} initialError={authError}/>}
     {user?.chatgpt?.needsWelcome&&!accountOpen&&!auth&&<Dialog title="You’re using your ChatGPT plan" onClose={()=>{if(!welcomeBusy)void acknowledgePlan();}}><p className="dialog-lead">Eligible AI questions in Garra Rufa now use your ChatGPT plan and its usage limits. Manage your allowance and access in ChatGPT settings.</p><div className="button-row"><button className="primary" disabled={welcomeBusy} onClick={acknowledgePlan}>{welcomeBusy?'Saving…':'Got it'}</button></div></Dialog>}
     {searchOpen&&<GlobalSearch records={records} onClose={()=>setSearchOpen(false)} onRecord={r=>setRecordDialog({record:r,kind:r.kind})} onDisease={viewDisease} onAsk={ask} onView={navigate}/>}
 

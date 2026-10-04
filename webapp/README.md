@@ -4,18 +4,23 @@ A rare disease discovery workspace with a minimal, animated landing page and res
 
 ## Run locally
 
-Run the commands below from this `webapp/` directory (`cd webapp` from the repository root). The Python backend lives alongside this app; see [its integration guide](../docs/UI-BRIDGE.md). This import preserves the app's existing data access and does not yet connect it to that Python API.
-
-Requires Node.js 22.13 or newer (native `node:sqlite`).
+Requires Node.js 22.13 or newer (native `node:sqlite`) and Python 3.11 or newer.
+From the repository root, set up the backend once:
 
 ```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[research]'
+cd webapp
 npm ci
-cp -n .env.example .env.local
-# Add an OpenAI API key for landing-page questions, then:
-npm run dev
+# Copy .env.example to .env.local only if no .env.local exists.
+npm run dev:all
 ```
 
-Open http://127.0.0.1:3000. An existing `.env.local` should be preserved rather than overwritten.
+Open **http://127.0.0.1:3000**. `dev:all` starts the Python research service and
+Next.js together. In the original standalone hackathon folder, it also detects a
+backend checkout in `.backend/`. Set `GARRA_BACKEND_DIR` if your backend lives
+elsewhere. Existing `.env.local`, accounts, and local data should be preserved.
+Workspace AI uses the user's ChatGPT plan; no API key is required for that flow.
 
 Click **My space** or **Sign in**, choose a role, then **Continue with ChatGPT**. The workspace requires a verified ChatGPT sign-in; guest workspace creation and legacy password sign-in are disabled. Both entry points use the same role selector. Existing guest records remain on disk and can be adopted by a new ChatGPT registration from the same browser, but guest sessions cannot access the workspace.
 
@@ -43,7 +48,28 @@ Sign-in without the plan-use scope still authenticates the account, but cannot p
 
 `src/lib/knowledge.ts` is the reproducible seed collection: eight curated condition records (CMT, Ehlers-Danlos, Fabry, Marfan, Huntington, SMA, Pompe, Rett), with source URLs, associated genes, mechanisms, features, and patient organization links. There is no separate seed command: importing this module loads the same collection. Expand the array to add reviewed records. It is a focused prototype, not a comprehensive rare disease database.
 
-`src/lib/ai.ts` retrieves the local collection and live Europe PMC paper metadata/abstracts. The OpenAI Responses API can search knowledge, retrieve papers, and—when explicitly enabled—search only the current workspace’s authorized records. Publication and sharing require explicit UI actions.
+`src/lib/ai.ts` gives the model read-only tools for the connected Python repository:
+
+- `search_knowledge` runs the repository graph adapters (MONDO, Monarch, ClinicalTrials.gov).
+- `find_contacts` resolves source-listed Orphanet/ERN resources and related trials. It preserves the distinction between a centre, organisation, trial, and individual doctor.
+- `find_papers` uses the separate `src/query-test/literature` pipeline: PubMed, Europe PMC, PubTator, and LitVar where the query type applies, including metadata enrichment and identifier deduplication. Exact PMID and rsID searches are supported. A recent matching graph can supply additional literature queries and cited publications.
+- `search_workspace` reads only the current user's owned/shared records when explicitly enabled.
+
+`src/lib/research.ts` calls the local Python bridge, validates its response, and
+passes verified source records to the model. Retrieved records appear in compact
+grey-green cards directly after the citing paragraphs. The Research papers page
+uses the same literature pipeline through `/api/research/papers`. Cards show a bold title and short subtitle; full identifiers, authors, abstracts,
+and retrieval dates remain in the stored source records for grounding and follow-ups.
+Missing contact fields remain absent.
+
+The adapters use downloaded local indexes when available, then live public
+sources. GitHub contains the code; it does not host a running database service.
+This setup has not downloaded the complete bulk datasets. Interactive searches
+are bounded samples, with 65-second worker timeouts and three concurrent workers.
+Public results have a short memory cache; the literature provider cache expires
+after 24 hours. Provider failures and verification pages are reported as partial
+or unavailable results. They are never converted into invented records or a
+claim that no evidence exists. Publication and sharing require explicit UI actions.
 
 `src/lib/store.ts` stores users, sessions, records, sharing grants, uploads, and request limits in SQLite. Record contents and file bytes use AES-256-GCM encryption. Session tokens are hashed; legacy passwords use scrypt. Authorization checks apply to every private record and download, with guest sessions rejected at the HTTP boundary. The landing artwork is decorative and does not represent individual clinical records.
 
@@ -56,12 +82,16 @@ Sign-in without the plan-use scope still authenticates the account, but cannot p
 - `OPENAI_WORKSPACE_MODEL`: preferred ChatGPT plan model; defaults to `gpt-6-astra`, subject to the user’s live catalog.
 - `ELEVENLABS_API_KEY`: server-only credential with speech-to-text access; enables microphone input.
 - `ELEVENLABS_STT_MODEL`: defaults to `scribe_v2`.
+- `GARRA_RESEARCH_URL`: server-only backend origin, defaults to `http://127.0.0.1:8787`.
+- `GARRA_BACKEND_DIR` / `GARRA_PYTHON`: optional backend checkout and interpreter paths for `dev:all`.
+- `GARRA_RESEARCH_CACHE_DIR`: optional Python cache directory, defaults to backend `data/literature-cache`.
 - `GARRA_DATA_DIR`: persistent database directory; defaults to `./data`.
 - `DATA_ENCRYPTION_KEY`: optional 64-character hex key. If omitted, a local key is generated in the data directory. Preserve the key with the database.
 - `APP_ORIGIN`: leave unset for local use, or use the exact `http://127.0.0.1:<port>` origin. A non-loopback deployment origin disables local ChatGPT sign-in and subscription inference.
 
 ```sh
 npm run build
+# Keep npm run dev:backend running in another terminal.
 npm start
 ```
 

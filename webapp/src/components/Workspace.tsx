@@ -1,21 +1,23 @@
 'use client';
-import { useRef,useState } from 'react';
+import { useEffect,useRef,useState } from 'react';
 import { ArrowUpRight,Plus,Search,Folder,FileText,Users,BookOpen,Upload,ArrowRight,Bookmark,Stethoscope,LoaderCircle,Check } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { ChatMessages, type ComposerContext } from './Chat';
 import ThinkingIndicator from './ThinkingIndicator';
+import type { OnAnswerText } from '@/lib/search-stream';
 import Community from './Community';
+import SourceCard from './SourceCard';
 import type { User,View,WorkspaceRecord,Disease,Region,RecordKind,Message,Source } from '@/lib/types';
 const DiseaseAtlas=dynamic(()=>import('./DiseaseAtlas'),{ssr:false});
-type Props={user:User;view:View;records:WorkspaceRecord[];region:Region;setRegion:(r:Region)=>void;setView:(v:View)=>void;onDisease:(d:Disease)=>void;onNew:(k:RecordKind)=>void;onRecord:(r:WorkspaceRecord)=>void;onUpload:(f:File)=>Promise<void>;onAsk:(q:string)=>void;onBookmark:(s:Source)=>void;messages:Message[];busy:boolean;onSave:(m:Message)=>void;composer:React.ReactNode;composerContext:ComposerContext;onAskWithContext:(query:string,history:Message[])=>Promise<Message>};
+type Props={communityId:string;onCommunity:(id:string)=>void;user:User;view:View;records:WorkspaceRecord[];region:Region;setRegion:(r:Region)=>void;setView:(v:View)=>void;onDisease:(d:Disease)=>void;onNew:(k:RecordKind)=>void;onRecord:(r:WorkspaceRecord)=>void;onUpload:(f:File)=>Promise<void>;onAsk:(q:string)=>void;onBookmark:(s:Source)=>void;messages:Message[];busy:boolean;onSave:(m:Message)=>void;composer:React.ReactNode;composerContext:ComposerContext;onAskWithContext:(query:string,history:Message[],onText:OnAnswerText,signal:AbortSignal)=>Promise<Message>};
 export default function Workspace(p:Props){
   const {user,view,records,onDisease,onNew,onRecord,setView,onAsk}=p;const fileRef=useRef<HTMLInputElement>(null);const [filter,setFilter]=useState('');const [uploading,setUploading]=useState(false);const [uploadError,setUploadError]=useState('');
   const openNew=(kind:RecordKind)=>kind==='document'?fileRef.current?.click():onNew(kind);
   const fileInput=<><input hidden ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;setUploading(true);setUploadError('');try{await p.onUpload(f);}catch(e){setUploadError(e instanceof Error?e.message:'Upload failed.');}finally{setUploading(false);e.target.value='';}}}/>{uploadError&&<p role="alert" className="form-error">{uploadError}</p>}</>;
-  if(view==='overview'&&(p.messages.length>0||p.busy))return <div className="workspace-chat"><ChatMessages messages={p.messages} busy={p.busy} onDisease={onDisease} onSave={p.onSave}/></div>;
-  if(view==='atlas')return <DiseaseAtlas onDisease={onDisease} composerContext={p.composerContext} onAskWithContext={p.onAskWithContext}/>;
+  if(view==='overview'&&(p.messages.length>0||p.busy))return <div className="workspace-chat"><ChatMessages messages={p.messages} busy={p.busy} onDisease={onDisease} onSave={p.onSave} onCommunity={p.onCommunity}/></div>;
+  if(view==='atlas')return <DiseaseAtlas onDisease={onDisease} composerContext={p.composerContext} onAskWithContext={p.onAskWithContext} onCommunity={p.onCommunity}/>;
   if(view==='workbench')return <Workbench onBookmark={p.onBookmark} onAsk={onAsk} records={records} onRecord={onRecord}/>;
-  if(view==='community')return <Community user={user} onAsk={onAsk}/>;
+  if(view==='community')return <Community key={p.communityId||'directory'} user={user} onAsk={onAsk} initialConditionId={p.communityId}/>;
   if(['projects','patients','documents'].includes(view)){
     const kind=view==='projects'?'project':view==='patients'?'patient':'document';
     const title=kind==='document'?'Documents':kind==='patient'?'Patients':user.role==='patient'?'My journey':'Projects';
@@ -50,10 +52,18 @@ function EmptyState({icon:Icon,title,description,action,actionLabel}:{icon:typeo
 
 function Workbench({onBookmark,onAsk,records,onRecord}:{onBookmark:(s:Source)=>void;onAsk:(q:string)=>void;records:WorkspaceRecord[];onRecord:(r:WorkspaceRecord)=>void}){
   const [query,setQuery]=useState('');const [sources,setSources]=useState<Source[]>([]);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [searched,setSearched]=useState(false);
-  async function search(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');setSearched(true);try{const r=await fetch(`/api/knowledge?q=${encodeURIComponent(query)}&papers=1`);const d=await r.json();if(!r.ok)throw new Error(d.error);setSources(d.sources);if(!d.literatureAvailable)setError('Live literature is temporarily unavailable. Reference records are shown below.');}catch{setError('Search could not finish. Please try again.');}finally{setBusy(false);}}
-  return <div><div className="section-heading"><div><h1>Research papers</h1></div></div><form className="workbench-search glass" onSubmit={search}><Search size={20}/><input aria-label="Search literature" value={query} onChange={e=>setQuery(e.target.value)} placeholder="A condition or gene, like Fabry or MECP2…" required minLength={2}/><button className="primary" disabled={busy}>{busy?'Researching…':'Find evidence'}<ArrowRight size={17}/></button></form>{error&&<p className="service-notice">{error}</p>}
+  const active=useRef<AbortController|null>(null);
+  useEffect(()=>()=>active.current?.abort(),[]);
+  async function search(e:React.FormEvent){
+    e.preventDefault();active.current?.abort();const controller=new AbortController();active.current=controller;
+    setBusy(true);setError('');setSources([]);setSearched(true);
+    try{const response=await fetch(`/api/research/papers?q=${encodeURIComponent(query)}`,{signal:controller.signal});const data=await response.json();if(!response.ok)throw new Error(data.error||'Research could not finish.');if(active.current!==controller)return;setSources(data.sources);if(data.warning)setError(data.warning);}
+    catch(error){if(!controller.signal.aborted)setError(error instanceof Error?error.message:'Research could not finish. Please try again.');}
+    finally{if(active.current===controller)setBusy(false);}
+  }
+
+  return <div><div className="section-heading"><div><h1>Research papers</h1></div></div><form className="workbench-search glass" onSubmit={search}><Search size={20}/><input aria-label="Search literature" value={query} onChange={e=>setQuery(e.target.value)} maxLength={200} placeholder="Search a condition, gene, or research topic…" required minLength={2}/><button className="primary" disabled={busy}>{busy?'Researching…':'Find evidence'}<ArrowRight size={17}/></button></form>{error&&<p className="service-notice">{error}</p>}
     {busy&&<ThinkingIndicator label="Researching…"/>}
-    {sources.length>0?<div className="paper-list">{sources.map(s=><article className="paper-card" key={s.id}><span className="eyebrow">{s.kind==='paper'?'EUROPE PMC · RESEARCH PAPER':'MEDLINEPLUS GENETICS'}{s.year?' · '+s.year:''}</span><h3><a href={s.url} target="_blank" rel="noreferrer">{s.title}<ArrowUpRight size={16}/></a></h3><p>{s.excerpt.slice(0,310)}{s.excerpt.length>310?'…':''}</p><div className="button-row"><button className="text-button" onClick={()=>onBookmark(s)}><Bookmark size={15}/>Save to workbench</button><button className="text-button" onClick={()=>onAsk(`Explain the evidence about ${query}, including this source: ${s.title}.`)}>Explore with assistant<ArrowUpRight size={15}/></button></div></article>)}</div>:searched&&!busy?<EmptyState icon={Search} title="No matching evidence in this collection." description="Try a condition from the atlas. The current collection contains eight conditions; an empty result is a coverage gap, not proof that research does not exist."/>:<div className="workbench-sources"><span className="source-tag"><Check size={13}/>MedlinePlus Genetics</span><span className="source-tag"><Check size={13}/>Europe PMC</span></div>}
+    {sources.length>0?<div className="paper-list">{sources.map(source=><SourceCard source={source} key={source.id}><div className="button-row"><button className="text-button" onClick={()=>onBookmark(source)}><Bookmark size={15}/>Save paper</button><button className="text-button" onClick={()=>onAsk(`Find and explain this research paper: ${source.title}${source.pmid?` (PMID ${source.pmid})`:''}.`)}>Explore with assistant<ArrowUpRight size={15}/></button></div></SourceCard>)}</div>:searched&&!busy&&!error?<EmptyState icon={Search} title="No papers found for this search." description="Try a disease name, gene, or more specific research term. An empty result does not mean no research exists."/>:!searched?<div className="workbench-sources"><span className="source-tag"><Check size={13}/>PubMed</span><span className="source-tag"><Check size={13}/>Europe PMC</span><span className="source-tag"><Check size={13}/>PubTator & LitVar</span></div>:null}
     <div className="section-row"><h2>Saved evidence</h2></div>{records.filter(r=>r.kind==='bookmark'||r.kind==='note').length?<div className="recent-list">{records.filter(r=>r.kind==='bookmark'||r.kind==='note').map(r=><button key={r.id} onClick={()=>onRecord(r)}><Bookmark size={19}/><span><b>{r.title}</b><small>{r.kind==='bookmark'?'Saved source':'Research note'}</small></span><ArrowUpRight size={17}/></button>)}</div>:<p className="muted">Save a source or a research note to begin your collection.</p>}</div>;
 }
-

@@ -6,8 +6,8 @@ data/
 *.tsbuildinfo
 test-results/
 .DS_Store
-next-env.d.ts
+.backend/
+.venv/
 __pycache__/
 *.py[cod]
-.claude/
-.mcp.json
+.vercel/

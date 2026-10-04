@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { diseases } from './knowledge';
 import { db, getRecord, limit, publicProjects, saveRecord } from './store';
 import type { RecordKind, WorkspaceRecord } from './types';
+import { normalizeCondition } from './community-recommendations';
+export { normalizeCondition } from './community-recommendations';
 
 export type Condition = { id: string; name: string; curated: boolean; aliases: string[]; memberCount: number; postCount: number; joined?: boolean };
 export type CommunityProfile = { alias: string; diseaseId: string; bio: string };
@@ -13,10 +15,6 @@ const extraAliases: Record<string, string[]> = {
   huntington: ["Huntington's disease", 'Huntingtons disease'],
 };
 
-/** Punctuation and spacing variants share a community; subtype words and numbers remain significant. */
-export function normalizeCondition(value: string): string {
-  return value.normalize('NFKC').toLocaleLowerCase('en').replace(/[’'`]/g, '').replace(/\+/g, ' plus ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, ' ');
-}
 function cleanName(value: string): string {
   const name = value.normalize('NFKC').trim().replace(/\s+/g, ' ');
   if (name.length < 2 || name.length > 120 || !normalizeCondition(name) || /[\u0000-\u001f\u007f]/.test(name)) throw new ConditionError(400, 'Enter a condition name between 2 and 120 characters.');

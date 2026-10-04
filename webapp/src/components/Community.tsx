@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, LoaderCircle, Plus, Search, Send, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Heart, LoaderCircle, Plus, Search, Send, Trash2, Users } from 'lucide-react';
 import type { ConditionOption, User } from '@/lib/types';
 import { diseases } from '@/lib/knowledge';
+import { communityStyle } from '@/lib/community-colors';
 import ConditionPicker from './ConditionPicker';
 import Dialog from './Dialog';
 import styles from './Community.module.css';
@@ -22,9 +23,9 @@ type CommunityData = {
 };
 const empty: CommunityData = { conditions: [], members: [], projects: [], posts: [] };
 
-export default function Community({ user, onAsk }: { user: User; onAsk: (query: string) => void }) {
+export default function Community({ user, onAsk, initialConditionId = '' }: { user: User; onAsk: (query: string) => void; initialConditionId?: string }) {
   const [data, setData] = useState<CommunityData>(empty);
-  const [conditionId, setConditionId] = useState('');
+  const [conditionId, setConditionId] = useState(initialConditionId);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -113,19 +114,19 @@ export default function Community({ user, onAsk }: { user: User; onAsk: (query: 
 
   const filtered = data.conditions.filter(c => [c.name, ...(c.aliases || [])].join(' ').toLowerCase().includes(filter.trim().toLowerCase()));
 
-  return <div className={styles.community}>
+  return <div className={styles.community} style={conditionId ? communityStyle(conditionId) : undefined}>
     {conditionId && <button className={`text-button ${styles.back}`} disabled={busy} onClick={() => open('')}><ArrowLeft size={14}/>All communities</button>}
-    <div className="section-heading">
+    <div className={`section-heading ${conditionId ? styles.communityHeading : ''}`}>
       <div><h1>{condition?.name || (conditionId ? 'Community' : 'Communities')}</h1>{condition && <p>{condition.memberCount} {condition.memberCount === 1 ? 'member' : 'members'}</p>}</div>
-      <button className="secondary" onClick={openJoin} disabled={busy || (loading && !!conditionId)}>{conditionId ? profile ? 'Your profile' : 'Join community' : 'Join or create'}{conditionId ? <Users size={16}/> : <Plus size={16}/>}</button>
+      <button className={conditionId ? 'secondary' : `primary ${styles.joinCreate}`} onClick={openJoin} disabled={busy || (loading && !!conditionId)}>{conditionId ? profile ? 'Your profile' : 'Join community' : 'Join or create'}{conditionId ? <Users size={16}/> : <Heart className={styles.joinHeart} size={16} aria-hidden="true"/>}</button>
     </div>
     {error && <div className="form-error" role="alert">{error}<button className="text-button" onClick={() => load(conditionId)}>Try again</button></div>}
     {!conditionId ? <>
       <div className={`search-box ${styles.search}`}><Search size={17}/><input aria-label="Find a community" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Find your condition…"/></div>
       {loading ? <div className={styles.empty} role="status"><LoaderCircle className="spin" size={19}/>Loading communities…</div> : <div className={styles.directory}>
-        {filtered.map(c => <button className={styles.condition} key={c.id} onClick={() => open(c.id)}>
+        {filtered.map(c => <button className={styles.condition} style={communityStyle(c.id)} key={c.id} onClick={() => open(c.id)}>
           <span className={styles.conditionIcon}><Users size={19} strokeWidth={1.5}/></span>
-          <span><b>{c.name}</b><small>{c.memberCount} {c.memberCount === 1 ? 'member' : 'members'} · {c.postCount} {c.postCount === 1 ? 'post' : 'posts'}{c.joined || data.profiles?.some(p => p.diseaseId === c.id) ? ' · Joined' : ''}</small></span>
+          <span><b title={c.name}>{c.name}</b><small>{c.memberCount} {c.memberCount === 1 ? 'member' : 'members'} · {c.postCount} {c.postCount === 1 ? 'post' : 'posts'}{c.joined || data.profiles?.some(p => p.diseaseId === c.id) ? ' · Joined' : ''}</small></span>
           <ArrowUpRight size={16}/>
         </button>)}
         {!filtered.length && <div className={styles.empty}><p>No community found for “{filter}”.</p><button className="text-button" onClick={openJoin}>Create a community<Plus size={14}/></button></div>}

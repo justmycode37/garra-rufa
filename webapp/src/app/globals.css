@@ -41,6 +41,17 @@
 .answer-table th, .answer-table td { border-bottom: 1px solid var(--line); padding: 9px 12px; vertical-align: top; }
 .answer-next-steps { margin-top: 22px; }
 .workspace-chat .chat-messages { font-family: Arial, Helvetica, sans-serif; }
+.workspace-scroll { overflow-anchor: none; scroll-behavior: auto; }
+.answer-writing { display: block; margin-top: 8px; color: var(--quiet); font-size: 11px; }
+.answer-word { animation: answer-word-reveal .42s ease-out both; }
+@keyframes answer-word-reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .answer-word { animation: none; } }
+.answer-communities { display: grid; gap: 8px; margin-top: 16px; }
+.answer-community { display: block; padding: 12px 15px; color: var(--ink); text-decoration: none; }
+.answer-community-copy { display: grid; gap: 4px; min-width: 0; line-height: 1.45; }
+.answer-community-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; }
+.answer-community-copy > span { color: var(--ink); opacity: .75; font-size: 11px; }
+
 .workspace-chat .user-message { background: #efedf0; border-radius: 22px; font-size: 15px; }
 .workspace-chat .answer-text { font-size: 15px; line-height: 1.75; }
 .workspace-chat .answer-text p { line-height: 1.75; }
@@ -412,3 +423,17 @@ kbd { font-family: var(--font-body); font-size: 10px; color: var(--quiet); borde
 .chatgpt-account-button { max-width: 55%; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
 .chatgpt-plan-status { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 6px 12px; color: var(--muted); font-size: 10px; margin-top: 12px; }
 .chatgpt-plan-status a, .chatgpt-plan-status button { color: var(--ink); font-size: inherit; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Retrieved records stay in the answer flow, on softly frosted neutral cards. */
+.answer-part { min-width: 0; }
+.answer-evidence { display: grid; gap: 8px; margin: 12px 0 20px; }
+.evidence-card { width: 100%; max-width: 480px; min-width: 0; border: 0; border-radius: 12px; background: rgba(219,230,222,.58); box-shadow: none; color: #2d3831; overflow-wrap: anywhere; transition: transform .18s ease; transform-origin: center; }
+.evidence-card-link { display: block; padding: 12px 15px; color: inherit; text-decoration: none; }
+.evidence-card h3 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; line-height: 1.45; margin: 0; letter-spacing: -.01em; }
+.evidence-card-subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 4px 0 0; color: #68766d; font-size: 11px; line-height: 1.4; }
+.evidence-card .button-row { margin: 0; padding: 0 15px 11px; gap: 18px; flex-wrap: wrap; }
+.evidence-card .button-row .text-button { font-size: 10px; }
+.evidence-card:focus-visible,.evidence-card a:focus-visible,.evidence-card button:focus-visible { outline: 2px solid #657c6b; outline-offset: 3px; border-radius: 8px; }
+.evidence-card.answer-community { background: var(--community-color, var(--sea)); color: var(--ink); }
+@media(hover:hover) and (pointer:fine) { .evidence-card:hover { transform: scale(1.018); } }
+@media(prefers-reduced-motion:reduce) { .evidence-card { transition: none; } .evidence-card:hover { transform: none; } }

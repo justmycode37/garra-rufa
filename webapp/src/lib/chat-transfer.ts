@@ -2,14 +2,22 @@ import { z } from 'zod';
 import { diseases } from './knowledge';
 import { getRecord, saveRecord } from './store';
 import type { Disease, Message } from './types';
+import { sourceSchema } from './source-schema';
+import { listConditions } from './conditions';
 
-const sourceUrl = z.string().max(2000).refine(value => /^https?:\/\//i.test(value) || /^\/(?!\/)/.test(value));
 const messageSchema = z.object({
   id: z.string().min(1).max(100),
   role: z.enum(['user', 'assistant']),
   text: z.string().min(1).max(60000),
-  sources: z.array(z.object({ id: z.string().max(160), title: z.string().max(2000), url: sourceUrl, kind: z.enum(['reference', 'paper', 'workspace']), excerpt: z.string().max(10000), year: z.string().max(20).optional() })).max(40).optional(),
+  sources: z.array(sourceSchema).max(40).optional(),
   diseases: z.array(z.object({ id: z.string().max(80) })).max(8).transform(items => items.map(item => diseases.find(disease => disease.id === item.id)).filter((disease): disease is Disease => !!disease)).optional(),
+  communities: z.array(z.object({ id: z.string().min(1).max(80) })).max(3).transform(items => {
+    const conditions = listConditions();
+    return [...new Set(items.map(item => item.id))].flatMap(id => {
+      const condition = conditions.find(item => item.id === id);
+      return condition ? [{ id, name: condition.name, memberCount: condition.memberCount, postCount: condition.postCount }] : [];
+    });
+  }).optional(),
   steps: z.array(z.string().max(4000)).max(3).optional(),
   warning: z.string().max(4000).optional(),
   mode: z.enum(['ai', 'database']).optional(),

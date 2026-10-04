@@ -5,7 +5,9 @@ import { ArrowLeft, Maximize, Minus, Move, Plus, Rotate3D } from 'lucide-react';
 import { AnatomyScene, type AnatomyFrame, type AnatomyGraph, type AnatomyManifest } from '@/lib/anatomy-scene';
 import { atlasContextForTarget, atlasContextForDisease, discoverAtlas, type AtlasContext, type AtlasResource } from '@/lib/atlas-discovery';
 import { diseases } from '@/lib/knowledge';
-import type { Disease, Message, Source } from '@/lib/types';
+import type { ConditionOption, Disease, Message, Source } from '@/lib/types';
+import { recommendCommunities } from '@/lib/community-recommendations';
+import { updateStreamingMessage, type OnAnswerText } from '@/lib/search-stream';
 import { Composer, type ComposerContext } from './Chat';
 import LandingChat from './LandingChat';
 import styles from './DiseaseAtlas.module.css';
@@ -13,16 +15,18 @@ import styles from './DiseaseAtlas.module.css';
 const initialFrame: AnatomyFrame = { zoom: 1, labels: [], detailReady: false, detailError: false, region: '', rotated: false };
 const resourceSource = (resource: AtlasResource): Source => ({ id: resource.id, title: resource.title, kind: resource.kind === 'paper' ? 'paper' : 'reference', url: resource.url, excerpt: resource.description });
 
-export default function DiseaseAtlas({ onDisease, composerContext, onAskWithContext }: {
+export default function DiseaseAtlas({ onDisease, composerContext, onAskWithContext, onCommunity }: {
   onDisease: (disease: Disease) => void;
   composerContext: ComposerContext;
-  onAskWithContext: (query: string, history: Message[]) => Promise<Message>;
+  onAskWithContext: (query: string, history: Message[], onText: OnAnswerText, signal: AbortSignal) => Promise<Message>;
+  onCommunity: (id: string) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const scene = useRef<AnatomyScene | null>(null);
   const contextRef = useRef<AtlasContext | undefined>(undefined);
   const requestGeneration = useRef(0);
   const requestBusy = useRef(false);
+  const activeRequest = useRef<AbortController | null>(null);
   const [frame, setFrame] = useState<AnatomyFrame>(initialFrame);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -54,23 +58,38 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
     if (reply.context) applyContext(reply.context);
     setChatOpen(true);
     if (!composerContext.attached?.length && !composerContext.includeWorkspace) {
-      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'assistant', text: reply.text, sources: reply.resources.filter(r => r.kind !== 'gene').map(resourceSource), warning: 'Demo collection · Selected sources, not a live search.' }]);
+      const answerId = crypto.randomUUID();
+      const generation = requestGeneration.current;
+      setMessages(previous => [...previous, { id: answerId, role: 'assistant', text: reply.text, sources: reply.resources.filter(r => r.kind !== 'gene').map(resourceSource), warning: 'Demo collection · Selected sources, not a live search.' }]);
+      try {
+        const response = await fetch('/api/conditions');
+        if (response.ok) {
+          const data: { conditions: ConditionOption[] } = await response.json();
+          const communities = recommendCommunities(query, data.conditions);
+          if (generation === requestGeneration.current && communities.length) setMessages(previous => previous.map(message => message.id === answerId ? { ...message, communities } : message));
+        }
+      } catch { /* The local answer remains available if the directory is offline. */ }
       return;
     }
     requestBusy.current = true;
     setBusy(true);
     const generation = ++requestGeneration.current;
+    const request = new AbortController();
+    activeRequest.current = request;
+    const assistantId = crypto.randomUUID();
     try {
-      const answer = await onAskWithContext(query, history);
-      if (generation === requestGeneration.current) setMessages(previous => [...previous, answer]);
+      const answer = await onAskWithContext(query, history, text => {
+        if (generation === requestGeneration.current) setMessages(previous => updateStreamingMessage(previous, assistantId, text));
+      }, request.signal);
+      if (generation === requestGeneration.current) setMessages(previous => [...previous.filter(message => message.id !== assistantId), { ...answer, id: assistantId }]);
     } catch (error) {
-      if (generation === requestGeneration.current) setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'assistant', text: 'Your question could not be completed. Please try again.', warning: error instanceof Error ? error.message : 'Please try again.' }]);
+      if (generation === requestGeneration.current) setMessages(previous => [...previous.filter(message => message.id !== assistantId), { id: assistantId, role: 'assistant', text: 'Your question could not be completed. Please try again.', warning: error instanceof Error ? error.message : 'Please try again.' }]);
     } finally {
-      if (generation === requestGeneration.current) { requestBusy.current = false; setBusy(false); }
+      if (generation === requestGeneration.current) { activeRequest.current = null; requestBusy.current = false; setBusy(false); }
     }
   }
 
-  useEffect(() => () => { requestGeneration.current++; }, []);
+  useEffect(() => () => { requestGeneration.current++; activeRequest.current?.abort(); }, []);
 
   useEffect(() => {
     let active = true;
@@ -140,7 +159,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
         </div>
       </div>
     <div className={styles.promptDock}>
-      {chatOpen && <LandingChat messages={messages} busy={busy} onDisease={onDisease} onClose={() => setChatOpen(false)} composer={null}/>}
+      {chatOpen && <LandingChat messages={messages} busy={busy} onDisease={onDisease} onCommunity={onCommunity} onClose={() => setChatOpen(false)} composer={null}/>}
       <Composer {...composerContext} onSubmit={ask} busy={busy} compact placeholder={context ? `Ask about ${activeDisease?.shortName ?? context.label}…` : 'Ask a question…'}/>
     </div>
   </section>;

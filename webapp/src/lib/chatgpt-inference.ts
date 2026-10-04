@@ -28,8 +28,9 @@ function inferenceError(body: unknown, status?: number, requestId?: string) {
 const responseSchema = z.object({ status: z.literal('completed'), output: z.array(z.record(z.string(), z.unknown())) }).passthrough();
 const completedItemSchema = z.object({ output_index: z.number().int().nonnegative(), item: z.record(z.string(), z.unknown()) });
 export type CompletedResponse = z.infer<typeof responseSchema>;
+export type ResponseStreamOptions = { onTextDelta?: (delta: string) => void; signal?: AbortSignal };
 
-export async function readCompletedResponse(response: Response): Promise<CompletedResponse> {
+export async function readCompletedResponse(response: Response, onTextDelta?: (delta: string) => void): Promise<CompletedResponse> {
   const requestId = response.headers.get('x-request-id') || response.headers.get('openai-request-id') || undefined;
   if (!response.ok) throw inferenceError(await response.json().catch(() => ({})), response.status, requestId);
   if (!response.body) throw new ChatGPTInferenceError('incomplete_stream');
@@ -44,6 +45,7 @@ export async function readCompletedResponse(response: Response): Promise<Complet
     if (event.type === 'response.failed') throw inferenceError(event.response, undefined, requestId);
     if (event.type === 'error') throw inferenceError(event, undefined, requestId);
     if (event.type === 'response.incomplete') throw new ChatGPTInferenceError('incomplete_stream', undefined, requestId);
+    if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') onTextDelta?.(event.delta);
     if (event.type === 'response.output_item.done') {
       const { output_index, item } = completedItemSchema.parse(event);
       outputItems.set(output_index, item);
@@ -52,7 +54,7 @@ export async function readCompletedResponse(response: Response): Promise<Complet
     const completed = responseSchema.parse(event.response);
     // Some streams send the full items only in output_item.done, leaving the
     // terminal output empty. Preserve messages, tool calls and encrypted reasoning,
-    // but never return any of them until the whole response has completed.
+    // but only return authoritative output once the whole response completes.
     if (!completed.output.length) completed.output = [...outputItems.entries()].sort(([a], [b]) => a - b).map(([, item]) => item);
     return completed;
   };
@@ -94,12 +96,12 @@ export function subscriptionRequest(options: { model: string; instructions: stri
     text: { format: options.format }, include: ['reasoning.encrypted_content'], store: false, stream: true };
 }
 
-export async function chatGPTResponse(userId: string, body: ReturnType<typeof subscriptionRequest>) {
+export async function chatGPTResponse(userId: string, body: ReturnType<typeof subscriptionRequest>, options: ResponseStreamOptions = {}) {
   const { accessToken, accountId } = await chatGPTAccess(userId);
   try {
     const response = await fetch(`${CHATGPT_RESOURCE}/responses`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(150000), cache: 'no-store', redirect: 'error' });
-    return await readCompletedResponse(response);
+      body: JSON.stringify(body), signal: AbortSignal.any([AbortSignal.timeout(150000), ...(options.signal ? [options.signal] : [])]), cache: 'no-store', redirect: 'error' });
+    return await readCompletedResponse(response, options.onTextDelta);
   } catch (error) {
     // Only confirmed invalid subscriber context invalidates credentials; preserve them on infrastructure errors.
     if (error instanceof ChatGPTInferenceError && error.code === 'subscription_sharing_invalid_user') {
