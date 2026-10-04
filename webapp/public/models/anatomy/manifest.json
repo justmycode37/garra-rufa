@@ -1,0 +1,1578 @@
+{
+  "source": "BodyParts3D 4.0 with 3.0 lung lobes",
+  "license": "CC BY 4.0; lung lobes CC BY-SA 2.1 Japan",
+  "sourceToWorld": {
+    "scale": 0.004071019043529197,
+    "center": [
+      -0.6470000000000198,
+      -100.76769999999999,
+      781.6243999999999
+    ]
+  },
+  "organs": [
+    {
+      "id": "brain",
+      "name": "Brain",
+      "category": "organ",
+      "anchor": [
+        0.02361,
+        3.12078,
+        0.26025
+      ],
+      "center": [
+        0.00057,
+        3.1182,
+        -0.08583
+      ],
+      "bounds": [
+        [
+          -0.28687,
+          2.77998,
+          -0.45237
+        ],
+        [
+          0.28802,
+          3.45643,
+          0.28072
+        ]
+      ],
+      "triangles": 84964,
+      "structures": [
+        "Branch of right middle cerebral artery to right angular gyrus",
+        "Branch of left middle cerebral artery to left angular gyrus",
+        "Left angular gyrus",
+        "Right angular gyrus",
+        "Left cingulate gyrus",
+        "Right cingulate gyrus",
+        "Left inferior frontal gyrus",
+        "Right inferior frontal gyrus",
+        "Left inferior temporal gyrus",
+        "Right inferior temporal gyrus",
+        "White matter of left cerebral hemisphere",
+        "Medulla oblongata",
+        "Pons",
+        "Cerebellum",
+        "Left fusiform gyrus",
+        "Right fusiform gyrus",
+        "Left parahippocampal gyrus",
+        "Right parahippocampal gyrus",
+        "Left middle frontal gyrus",
+        "Right middle frontal gyrus",
+        "Left middle temporal gyrus",
+        "Right middle temporal gyrus",
+        "Left occipital lobe",
+        "Right occipital lobe",
+        "Orbital gyrus",
+        "Orbital gyrus",
+        "Left postcentral gyrus",
+        "Right postcentral gyrus",
+        "Left precentral gyrus",
+        "Right precentral gyrus",
+        "White matter of right cerebral hemisphere",
+        "Pons",
+        "Cerebellum",
+        "Medulla oblongata",
+        "Left superior frontal gyrus",
+        "Right superior frontal gyrus",
+        "Left superior parietal lobule",
+        "Right superior parietal lobule",
+        "Anterior part of left superior temporal gyrus",
+        "Anterior part of right superior temporal gyrus",
+        "Posterior part of left superior temporal gyrus",
+        "Posterior part of right superior temporal gyrus",
+        "Left supramarginal gyrus",
+        "Right supramarginal gyrus"
+      ]
+    },
+    {
+      "id": "heart",
+      "name": "Heart",
+      "category": "organ",
+      "anchor": [
+        0.09334,
+        1.81701,
+        0.30573
+      ],
+      "center": [
+        0.08949,
+        1.81259,
+        0.09209
+      ],
+      "bounds": [
+        [
+          -0.14583,
+          1.59815,
+          -0.12456
+        ],
+        [
+          0.32481,
+          2.02704,
+          0.30874
+        ]
+      ],
+      "triangles": 34999,
+      "structures": [
+        "Wall of ventricle",
+        "Wall of left atrium",
+        "Wall of right atrium"
+      ]
+    },
+    {
+      "id": "lungs",
+      "name": "Lungs",
+      "category": "organ",
+      "anchor": [
+        -0.03165,
+        1.85572,
+        0.31342
+      ],
+      "center": [
+        -0.00278,
+        1.88247,
+        0.02458
+      ],
+      "bounds": [
+        [
+          -0.51841,
+          1.35554,
+          -0.34402
+        ],
+        [
+          0.51286,
+          2.40939,
+          0.39319
+        ]
+      ],
+      "triangles": 49994,
+      "structures": [
+        "Upper lobe of right lung",
+        "Lower lobe of right lung",
+        "Middle lobe of right lung",
+        "Upper lobe of left lung",
+        "Lower lobe of left lung"
+      ]
+    },
+    {
+      "id": "liver",
+      "name": "Liver",
+      "category": "organ",
+      "anchor": [
+        -0.04532,
+        1.31551,
+        0.39714
+      ],
+      "center": [
+        -0.0398,
+        1.31842,
+        0.09002
+      ],
+      "bounds": [
+        [
+          -0.46656,
+          1.00242,
+          -0.23376
+        ],
+        [
+          0.38695,
+          1.63442,
+          0.41381
+        ]
+      ],
+      "triangles": 27990,
+      "structures": [
+        "Hepatovenous segment IX",
+        "Hepatovenous segment VII",
+        "Caudate lobe of liver",
+        "Hepatovenous segment II",
+        "Hepatovenous segment III",
+        "Hepatovenous segment IV",
+        "Hepatovenous segment V",
+        "Hepatovenous segment VI",
+        "Hepatovenous segment VIII",
+        "Hepatovenous segment VIII"
+      ]
+    },
+    {
+      "id": "stomach",
+      "name": "Stomach",
+      "category": "organ",
+      "anchor": [
+        0.14434,
+        1.26867,
+        0.35776
+      ],
+      "center": [
+        0.1585,
+        1.28954,
+        0.15127
+      ],
+      "bounds": [
+        [
+          -0.11523,
+          1.05136,
+          -0.07852
+        ],
+        [
+          0.43222,
+          1.52771,
+          0.38106
+        ]
+      ],
+      "triangles": 1810,
+      "structures": [
+        "Stomach"
+      ]
+    },
+    {
+      "id": "kidneys",
+      "name": "Kidneys",
+      "category": "organ",
+      "anchor": [
+        -0.13582,
+        1.05552,
+        -0.00742
+      ],
+      "center": [
+        0.00835,
+        1.00555,
+        -0.06125
+      ],
+      "bounds": [
+        [
+          -0.35389,
+          0.7539,
+          -0.16763
+        ],
+        [
+          0.37058,
+          1.25719,
+          0.04514
+        ]
+      ],
+      "triangles": 5292,
+      "structures": [
+        "Left kidney",
+        "Right kidney"
+      ]
+    },
+    {
+      "id": "intestines",
+      "name": "Intestines",
+      "category": "organ",
+      "anchor": [
+        0.01867,
+        0.648,
+        0.33427
+      ],
+      "center": [
+        -0.0163,
+        0.64964,
+        0.09298
+      ],
+      "bounds": [
+        [
+          -0.5135,
+          0.09634,
+          -0.20553
+        ],
+        [
+          0.48091,
+          1.20293,
+          0.39148
+        ]
+      ],
+      "triangles": 28140,
+      "structures": [
+        "Ascending colon",
+        "Descending colon",
+        "Transverse colon",
+        "Duodenum",
+        "Proximal part of ileum",
+        "Proximal part of ileum",
+        "Middle part of ileum",
+        "Middle part of ileum",
+        "Middle part of ileum",
+        "Middle part of ileum",
+        "Middle part of ileum",
+        "Middle part of ileum",
+        "Middle part of ileum",
+        "Middle part of ileum",
+        "Middle part of ileum",
+        "Proximal part of ileum",
+        "Middle part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Proximal part of ileum",
+        "Distal part of ileum",
+        "Distal part of ileum",
+        "Proximal part of ileum",
+        "Proximal part of ileum",
+        "Proximal part of ileum",
+        "Proximal part of ileum",
+        "Proximal part of ileum",
+        "Proximal part of ileum",
+        "Proximal part of jejunum",
+        "Middle part of jejunum",
+        "Middle part of jejunum",
+        "Middle part of jejunum",
+        "Middle part of jejunum",
+        "Distal part of jejunum",
+        "Distal part of jejunum",
+        "Distal part of jejunum",
+        "Distal part of jejunum",
+        "Distal part of jejunum",
+        "Distal part of jejunum",
+        "Proximal part of jejunum",
+        "Distal part of jejunum",
+        "Distal part of jejunum",
+        "Distal part of jejunum",
+        "Distal part of jejunum",
+        "Proximal part of jejunum",
+        "Proximal part of jejunum",
+        "Proximal part of jejunum",
+        "Proximal part of jejunum",
+        "Proximal part of jejunum",
+        "Proximal part of jejunum",
+        "Middle part of jejunum"
+      ]
+    },
+    {
+      "id": "pancreas",
+      "name": "Pancreas",
+      "category": "organ",
+      "anchor": [
+        0.05293,
+        1.05723,
+        0.17816
+      ],
+      "center": [
+        0.05304,
+        1.05725,
+        0.08196
+      ],
+      "bounds": [
+        [
+          -0.19239,
+          0.90753,
+          -0.02177
+        ],
+        [
+          0.29848,
+          1.20696,
+          0.18568
+        ]
+      ],
+      "triangles": 4272,
+      "structures": [
+        "Parenchyma of pancreas"
+      ]
+    },
+    {
+      "id": "spleen",
+      "name": "Spleen",
+      "category": "organ",
+      "anchor": [
+        0.37357,
+        1.19006,
+        0.11894
+      ],
+      "center": [
+        0.34766,
+        1.24207,
+        -0.02865
+      ],
+      "bounds": [
+        [
+          0.22912,
+          1.09912,
+          -0.22216
+        ],
+        [
+          0.46619,
+          1.38502,
+          0.16485
+        ]
+      ],
+      "triangles": 1330,
+      "structures": [
+        "Spleen"
+      ]
+    },
+    {
+      "id": "gallbladder",
+      "name": "Gallbladder",
+      "category": "organ",
+      "anchor": [
+        -0.18308,
+        1.166,
+        0.29928
+      ],
+      "center": [
+        -0.18081,
+        1.17917,
+        0.21816
+      ],
+      "bounds": [
+        [
+          -0.25499,
+          1.09692,
+          0.11962
+        ],
+        [
+          -0.10663,
+          1.26143,
+          0.31669
+        ]
+      ],
+      "triangles": 2396,
+      "structures": [
+        "Gallbladder"
+      ]
+    },
+    {
+      "id": "bladder",
+      "name": "Urinary bladder",
+      "category": "organ",
+      "anchor": [
+        -0.00152,
+        0.13065,
+        0.10042
+      ],
+      "center": [
+        -0.00047,
+        0.11495,
+        -0.03414
+      ],
+      "bounds": [
+        [
+          -0.13638,
+          0.03301,
+          -0.18011
+        ],
+        [
+          0.13545,
+          0.19689,
+          0.11184
+        ]
+      ],
+      "triangles": 226,
+      "structures": [
+        "Urinary bladder"
+      ]
+    },
+    {
+      "id": "ureters",
+      "name": "Ureters",
+      "category": "organ",
+      "anchor": [
+        0.11243,
+        0.63643,
+        0.05939
+      ],
+      "center": [
+        0.01603,
+        0.65243,
+        -0.04364
+      ],
+      "bounds": [
+        [
+          -0.29371,
+          0.12042,
+          -0.16456
+        ],
+        [
+          0.32578,
+          1.18445,
+          0.07728
+        ]
+      ],
+      "triangles": 3986,
+      "structures": [
+        "Left ureter",
+        "Right ureter"
+      ]
+    },
+    {
+      "id": "adrenals",
+      "name": "Adrenal glands",
+      "category": "organ",
+      "anchor": [
+        0.11947,
+        1.19385,
+        -0.08024
+      ],
+      "center": [
+        0.02901,
+        1.20195,
+        -0.0734
+      ],
+      "bounds": [
+        [
+          -0.25194,
+          1.07432,
+          -0.1532
+        ],
+        [
+          0.30996,
+          1.32958,
+          0.00641
+        ]
+      ],
+      "triangles": 6290,
+      "structures": [
+        "Left adrenal gland",
+        "Right adrenal gland"
+      ]
+    },
+    {
+      "id": "pituitary",
+      "name": "Pituitary gland",
+      "category": "organ",
+      "anchor": [
+        0.00099,
+        3.04209,
+        0.03862
+      ],
+      "center": [
+        5e-05,
+        3.0428,
+        0.02063
+      ],
+      "bounds": [
+        [
+          -0.02501,
+          3.0164,
+          0.00137
+        ],
+        [
+          0.0251,
+          3.0692,
+          0.03988
+        ]
+      ],
+      "triangles": 1164,
+      "structures": [
+        "Pituitary gland"
+      ]
+    },
+    {
+      "id": "esophagus",
+      "name": "Esophagus",
+      "category": "organ",
+      "anchor": [
+        0.01316,
+        1.90778,
+        -0.0999
+      ],
+      "center": [
+        0.03274,
+        1.91975,
+        -0.02215
+      ],
+      "bounds": [
+        [
+          -0.03323,
+          1.36121,
+          -0.13996
+        ],
+        [
+          0.09872,
+          2.4783,
+          0.09565
+        ]
+      ],
+      "triangles": 578,
+      "structures": [
+        "Esophagus"
+      ]
+    },
+    {
+      "id": "salivary-glands",
+      "name": "Submandibular glands",
+      "category": "organ",
+      "anchor": [
+        -0.06384,
+        2.71104,
+        0.14799
+      ],
+      "center": [
+        1e-05,
+        2.71948,
+        0.11923
+      ],
+      "bounds": [
+        [
+          -0.12582,
+          2.67391,
+          0.07256
+        ],
+        [
+          0.12585,
+          2.76506,
+          0.1659
+        ]
+      ],
+      "triangles": 456,
+      "structures": [
+        "Left submandibular gland",
+        "Right submandibular gland"
+      ]
+    },
+    {
+      "id": "rectum",
+      "name": "Rectum",
+      "category": "organ",
+      "anchor": [
+        0.02978,
+        0.18212,
+        -0.14327
+      ],
+      "center": [
+        0.0214,
+        0.1384,
+        -0.23749
+      ],
+      "bounds": [
+        [
+          -0.10409,
+          -0.09892,
+          -0.3643
+        ],
+        [
+          0.14688,
+          0.37572,
+          -0.11069
+        ]
+      ],
+      "triangles": 2118,
+      "structures": [
+        "Rectum"
+      ]
+    },
+    {
+      "id": "tongue",
+      "name": "Tongue",
+      "category": "organ",
+      "anchor": [
+        0.00078,
+        2.72699,
+        0.27096
+      ],
+      "center": [
+        0.00025,
+        2.71747,
+        0.16048
+      ],
+      "bounds": [
+        [
+          -0.07867,
+          2.64346,
+          0.03951
+        ],
+        [
+          0.07917,
+          2.79148,
+          0.28146
+        ]
+      ],
+      "triangles": 524,
+      "structures": [
+        "Tongue"
+      ]
+    },
+    {
+      "id": "diaphragm",
+      "name": "Diaphragm",
+      "category": "muscle",
+      "anchor": [
+        -0.19251,
+        1.33583,
+        0.39949
+      ],
+      "center": [
+        -0.00033,
+        1.25214,
+        0.06041
+      ],
+      "bounds": [
+        [
+          -0.49538,
+          0.83135,
+          -0.30482
+        ],
+        [
+          0.49472,
+          1.67293,
+          0.42565
+        ]
+      ],
+      "triangles": 17999,
+      "structures": [
+        "Diaphragm"
+      ]
+    },
+    {
+      "id": "eyes",
+      "name": "Eyes",
+      "category": "eye",
+      "anchor": [
+        -0.07146,
+        2.99798,
+        0.22781
+      ],
+      "center": [
+        -3e-05,
+        2.99809,
+        0.20505
+      ],
+      "bounds": [
+        [
+          -0.17494,
+          2.94467,
+          0.15486
+        ],
+        [
+          0.17487,
+          3.05152,
+          0.25524
+        ]
+      ],
+      "triangles": 21998,
+      "structures": [
+        "Left sclera",
+        "Right sclera"
+      ]
+    },
+    {
+      "id": "iris",
+      "name": "Iris",
+      "category": "iris",
+      "anchor": [
+        -0.09771,
+        2.99678,
+        0.24605
+      ],
+      "center": [
+        -4e-05,
+        2.9967,
+        0.24586
+      ],
+      "bounds": [
+        [
+          -0.15004,
+          2.97052,
+          0.23959
+        ],
+        [
+          0.14997,
+          3.02288,
+          0.25213
+        ]
+      ],
+      "triangles": 6534,
+      "structures": [
+        "Left iris",
+        "Right iris"
+      ]
+    },
+    {
+      "id": "cornea",
+      "name": "Cornea",
+      "category": "cornea",
+      "anchor": [
+        0.09558,
+        2.99711,
+        0.2546
+      ],
+      "center": [
+        -3e-05,
+        2.99684,
+        0.2558
+      ],
+      "bounds": [
+        [
+          -0.15268,
+          2.9682,
+          0.24584
+        ],
+        [
+          0.15262,
+          3.02548,
+          0.26577
+        ]
+      ],
+      "triangles": 9208,
+      "structures": [
+        "Left cornea",
+        "Right cornea"
+      ]
+    },
+    {
+      "id": "lenses",
+      "name": "Lens",
+      "category": "eye",
+      "anchor": [
+        0.10236,
+        2.99621,
+        0.23952
+      ],
+      "center": [
+        -2e-05,
+        2.99733,
+        0.23792
+      ],
+      "bounds": [
+        [
+          -0.14433,
+          2.97606,
+          0.2282
+        ],
+        [
+          0.14428,
+          3.0186,
+          0.24763
+        ]
+      ],
+      "triangles": 3204,
+      "structures": [
+        "Left lens",
+        "Right lens"
+      ]
+    },
+    {
+      "id": "optic-nerves",
+      "name": "Optic nerves",
+      "category": "nerve",
+      "anchor": [
+        0.08384,
+        3.03029,
+        0.12677
+      ],
+      "center": [
+        -4e-05,
+        3.05134,
+        0.10244
+      ],
+      "bounds": [
+        [
+          -0.13298,
+          2.99894,
+          -0.00269
+        ],
+        [
+          0.1329,
+          3.10374,
+          0.20757
+        ]
+      ],
+      "triangles": 7994,
+      "structures": [
+        "Left optic nerve",
+        "Right optic nerve",
+        "Optic chiasm",
+        "Left optic nerve",
+        "Optic chiasm",
+        "Right optic nerve"
+      ]
+    },
+    {
+      "id": "airways",
+      "name": "Airways",
+      "category": "vessel",
+      "anchor": [
+        0.03767,
+        2.15681,
+        -0.03582
+      ],
+      "center": [
+        0.12318,
+        2.14341,
+        -0.06189
+      ],
+      "bounds": [
+        [
+          -0.05079,
+          1.78797,
+          -0.16189
+        ],
+        [
+          0.29716,
+          2.49885,
+          0.03812
+        ]
+      ],
+      "triangles": 9132,
+      "structures": [
+        "Left main bronchus",
+        "Trachea"
+      ]
+    },
+    {
+      "id": "aorta",
+      "name": "Aorta",
+      "category": "vessel",
+      "anchor": [
+        0.04772,
+        1.363,
+        0.02374
+      ],
+      "center": [
+        0.05964,
+        1.43001,
+        -0.02901
+      ],
+      "bounds": [
+        [
+          -0.02517,
+          0.68013,
+          -0.20731
+        ],
+        [
+          0.14446,
+          2.17989,
+          0.14929
+        ]
+      ],
+      "triangles": 3336,
+      "structures": [
+        "Abdominal aorta",
+        "Arch of aorta",
+        "Ascending aorta"
+      ]
+    },
+    {
+      "id": "coronary",
+      "name": "Coronary vessels",
+      "category": "vessel",
+      "anchor": [
+        0.10147,
+        1.79412,
+        0.30694
+      ],
+      "center": [
+        0.12,
+        1.77647,
+        0.11583
+      ],
+      "bounds": [
+        [
+          -0.08592,
+          1.60111,
+          -0.07672
+        ],
+        [
+          0.32592,
+          1.95183,
+          0.30838
+        ]
+      ],
+      "triangles": 16045,
+      "structures": [
+        "Trunk of anterior interventricular branch of left coronary artery",
+        "First right anterior branch of anterior interventricular branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Third right anterior branch of anterior interventricular branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Conus branch of anterior interventricular branch of left coronary artery",
+        "Conus branch of anterior interventricular branch of left coronary artery",
+        "First right anterior branch of anterior interventricular branch of left coronary artery",
+        "Second right anterior branch of anterior interventricular branch of left coronary artery",
+        "Third right anterior branch of anterior interventricular branch of left coronary artery",
+        "Diagonal branch of anterior descending branch of left coronary artery",
+        "Circumflex branch of left coronary artery",
+        "Circumflex branch of left coronary artery",
+        "Circumflex branch of left coronary artery",
+        "Circumflex branch of left coronary artery",
+        "Circumflex branch of left coronary artery",
+        "Circumflex branch of left coronary artery",
+        "Great cardiac vein",
+        "Marginal branch of right coronary artery",
+        "Marginal branch of right coronary artery",
+        "First anterior ventricular branch of right coronary artery",
+        "Marginal branch of right coronary artery",
+        "First anterior ventricular branch of right coronary artery",
+        "Marginal branch of right coronary artery",
+        "Marginal branch of right coronary artery",
+        "First anterior ventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "Posterior interventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "First posterior ventricular branch of right coronary artery",
+        "Trunk of right coronary artery",
+        "Trunk of left coronary artery"
+      ]
+    },
+    {
+      "id": "skull",
+      "name": "Skull & jaw",
+      "category": "bone",
+      "anchor": [
+        -0.00427,
+        3.01002,
+        0.32998
+      ],
+      "center": [
+        -0.00028,
+        3.0422,
+        -0.0584
+      ],
+      "bounds": [
+        [
+          -0.30794,
+          2.60512,
+          -0.48345
+        ],
+        [
+          0.30738,
+          3.47928,
+          0.36666
+        ]
+      ],
+      "triangles": 64981,
+      "structures": [
+        "Ethmoid",
+        "Frontal bone",
+        "Left inferior nasal concha",
+        "Left lacrimal bone",
+        "Left maxilla",
+        "Left nasal bone",
+        "Left palatine bone",
+        "Left parietal bone",
+        "Left temporal bone",
+        "Left zygomatic bone",
+        "Mandible",
+        "Occipital bone",
+        "Right inferior nasal concha",
+        "Right lacrimal bone",
+        "Right maxilla",
+        "Right nasal bone",
+        "Right palatine bone",
+        "Right parietal bone",
+        "Right temporal bone",
+        "Right zygomatic bone",
+        "Sphenoid bone",
+        "Vomer"
+      ]
+    },
+    {
+      "id": "teeth",
+      "name": "Teeth",
+      "category": "dental",
+      "anchor": [
+        -0.00257,
+        2.74441,
+        0.33406
+      ],
+      "center": [
+        -0.00013,
+        2.74473,
+        0.21998
+      ],
+      "bounds": [
+        [
+          -0.13386,
+          2.62791,
+          0.10383
+        ],
+        [
+          0.13361,
+          2.86155,
+          0.33612
+        ]
+      ],
+      "triangles": 21976,
+      "structures": [
+        "Left lower first secondary molar tooth",
+        "Left lower first secondary premolar tooth",
+        "Left lower second secondary molar tooth",
+        "Left lower second secondary premolar tooth",
+        "Left lower central secondary incisor tooth",
+        "Left lower lateral secondary incisor tooth",
+        "Left lower secondary canine tooth",
+        "Left upper first secondary molar tooth",
+        "Left upper first secondary premolar tooth",
+        "Left upper second secondary molar tooth",
+        "Left upper second secondary premolar tooth",
+        "Left upper central secondary incisor tooth",
+        "Left upper lateral secondary incisor tooth",
+        "Left upper secondary canine tooth",
+        "Right lower first secondary molar tooth",
+        "Right lower first secondary premolar tooth",
+        "Right lower second secondary molar tooth",
+        "Right lower second secondary premolar tooth",
+        "Right lower central secondary incisor tooth",
+        "Right lower lateral secondary incisor tooth",
+        "Right lower secondary canine tooth",
+        "Right upper second secondary molar tooth",
+        "Right upper first secondary molar tooth",
+        "Right upper first secondary premolar tooth",
+        "Right upper second secondary premolar tooth",
+        "Right upper central secondary incisor tooth",
+        "Right upper lateral secondary incisor tooth",
+        "Right upper secondary canine tooth"
+      ]
+    },
+    {
+      "id": "rib-cage",
+      "name": "Rib cage & sternum",
+      "category": "bone",
+      "anchor": [
+        0.0047,
+        1.67522,
+        0.45596
+      ],
+      "center": [
+        -0.0001,
+        1.65968,
+        0.03264
+      ],
+      "bounds": [
+        [
+          -0.55557,
+          0.92179,
+          -0.39582
+        ],
+        [
+          0.55538,
+          2.39757,
+          0.4611
+        ]
+      ],
+      "triangles": 37969,
+      "structures": [
+        "Xiphoid process",
+        "Body of sternum",
+        "Left tenth rib",
+        "Left eleventh rib",
+        "Left twelfth rib",
+        "Left first rib",
+        "Left second rib",
+        "Left third rib",
+        "Left fourth rib",
+        "Left fifth rib",
+        "Left sixth rib",
+        "Left seventh rib",
+        "Left eighth rib",
+        "Left ninth rib",
+        "Manubrium",
+        "Right tenth rib",
+        "Right eleventh rib",
+        "Right twelfth rib",
+        "Right first rib",
+        "Right second rib",
+        "Right third rib",
+        "Right fourth rib",
+        "Right fifth rib",
+        "Right sixth rib",
+        "Right seventh rib",
+        "Right eighth rib",
+        "Right ninth rib"
+      ]
+    },
+    {
+      "id": "spine",
+      "name": "Spine",
+      "category": "bone",
+      "anchor": [
+        -0.00705,
+        1.62371,
+        -0.11053
+      ],
+      "center": [
+        -0.00058,
+        1.67471,
+        -0.17552
+      ],
+      "bounds": [
+        [
+          -0.20561,
+          0.5005,
+          -0.4103
+        ],
+        [
+          0.20445,
+          2.84892,
+          0.05927
+        ]
+      ],
+      "triangles": 37977,
+      "structures": [
+        "Tenth thoracic vertebra",
+        "Eleventh thoracic vertebra",
+        "Twelfth thoracic vertebra",
+        "First lumbar vertebra",
+        "First thoracic vertebra",
+        "Second lumbar vertebra",
+        "Second thoracic vertebra",
+        "Third cervical vertebra",
+        "Third lumbar vertebra",
+        "Third thoracic vertebra",
+        "Fourth cervical vertebra",
+        "Fourth lumbar vertebra",
+        "Fourth thoracic vertebra",
+        "Fifth cervical vertebra",
+        "Fifth lumbar vertebra",
+        "Fifth thoracic vertebra",
+        "Sixth cervical vertebra",
+        "Sixth thoracic vertebra",
+        "Seventh cervical vertebra",
+        "Seventh thoracic vertebra",
+        "Eighth thoracic vertebra",
+        "Ninth thoracic vertebra",
+        "Atlas",
+        "Axis"
+      ]
+    },
+    {
+      "id": "pelvis",
+      "name": "Pelvis & sacrum",
+      "category": "bone",
+      "anchor": [
+        -0.0283,
+        0.10021,
+        0.11142
+      ],
+      "center": [
+        0.00239,
+        0.2988,
+        -0.14186
+      ],
+      "bounds": [
+        [
+          -0.58714,
+          -0.1208,
+          -0.43976
+        ],
+        [
+          0.59193,
+          0.71839,
+          0.15603
+        ]
+      ],
+      "triangles": 14628,
+      "structures": [
+        "Right hip bone",
+        "Left hip bone",
+        "Sacrum"
+      ]
+    },
+    {
+      "id": "arm-bones",
+      "name": "Shoulders & arms",
+      "category": "bone",
+      "anchor": [
+        -0.72155,
+        1.09166,
+        -0.12892
+      ],
+      "center": [
+        0.00177,
+        1.21641,
+        -0.12147
+      ],
+      "bounds": [
+        [
+          -1.13454,
+          0.09587,
+          -0.43105
+        ],
+        [
+          1.13808,
+          2.33696,
+          0.18811
+        ]
+      ],
+      "triangles": 21991,
+      "structures": [
+        "Left clavicle",
+        "Left humerus",
+        "Left radius",
+        "Left scapula",
+        "Left ulna",
+        "Right radius",
+        "Right clavicle",
+        "Right humerus",
+        "Right scapula",
+        "Right ulna"
+      ]
+    },
+    {
+      "id": "hand-bones",
+      "name": "Hand bones",
+      "category": "bone",
+      "anchor": [
+        -0.88865,
+        -0.3689,
+        0.28459
+      ],
+      "center": [
+        0.00268,
+        -0.20028,
+        0.21256
+      ],
+      "bounds": [
+        [
+          -1.31603,
+          -0.52336,
+          0.03976
+        ],
+        [
+          1.32138,
+          0.1228,
+          0.38536
+        ]
+      ],
+      "triangles": 19948,
+      "structures": [
+        "Distal phalanx of left index finger",
+        "Distal phalanx of left little finger",
+        "Distal phalanx of left middle finger",
+        "Distal phalanx of left ring finger",
+        "Distal phalanx of left thumb",
+        "Distal phalanx of right index finger",
+        "Distal phalanx of right little finger",
+        "Distal phalanx of right middle finger",
+        "Distal phalanx of right ring finger",
+        "Distal phalanx of right thumb",
+        "Left first metacarpal bone",
+        "Left second metacarpal bone",
+        "Left third metacarpal bone",
+        "Left fourth metacarpal bone",
+        "Left fifth metacarpal bone",
+        "Left capitate",
+        "Left hamate",
+        "Left lunate",
+        "Left pisiform",
+        "Left scaphoid",
+        "Left trapezium",
+        "Left trapezoid",
+        "Left triquetral",
+        "Middle phalanx of left ring finger",
+        "Middle phalanx of right ring finger",
+        "Middle phalanx of left index finger",
+        "Middle phalanx of left little finger",
+        "Middle phalanx of left middle finger",
+        "Middle phalanx of right index finger",
+        "Middle phalanx of right little finger",
+        "Middle phalanx of right middle finger",
+        "Proximal phalanx of left index finger",
+        "Proximal phalanx of left little finger",
+        "Proximal phalanx of left middle finger",
+        "Proximal phalanx of left ring finger",
+        "Proximal phalanx of left thumb",
+        "Proximal phalanx of right index finger",
+        "Proximal phalanx of right little finger",
+        "Proximal phalanx of right middle finger",
+        "Proximal phalanx of right ring finger",
+        "Proximal phalanx of right thumb",
+        "Right first metacarpal bone",
+        "Right second metacarpal bone",
+        "Right third metacarpal bone",
+        "Right fourth metacarpal bone",
+        "Right fifth metacarpal bone",
+        "Right capitate",
+        "Right hamate",
+        "Right lunate",
+        "Right pisiform",
+        "Right scaphoid",
+        "Right trapezium",
+        "Right trapezoid",
+        "Right triquetral"
+      ]
+    },
+    {
+      "id": "leg-bones",
+      "name": "Leg bones",
+      "category": "bone",
+      "anchor": [
+        0.16135,
+        -1.55354,
+        -0.03363
+      ],
+      "center": [
+        0.00284,
+        -1.53534,
+        -0.06167
+      ],
+      "bounds": [
+        [
+          -0.60856,
+          -3.28492,
+          -0.21283
+        ],
+        [
+          0.61425,
+          0.21425,
+          0.08949
+        ]
+      ],
+      "triangles": 12544,
+      "structures": [
+        "Left femur",
+        "Left fibula",
+        "Left patella",
+        "Left tibia",
+        "Right femur",
+        "Right fibula",
+        "Right patella",
+        "Right tibia"
+      ]
+    },
+    {
+      "id": "foot-bones",
+      "name": "Foot bones",
+      "category": "bone",
+      "anchor": [
+        0.35581,
+        -3.40544,
+        0.36715
+      ],
+      "center": [
+        0.0027,
+        -3.31914,
+        0.11911
+      ],
+      "bounds": [
+        [
+          -0.6867,
+          -3.46893,
+          -0.3125
+        ],
+        [
+          0.69209,
+          -3.16934,
+          0.55071
+        ]
+      ],
+      "triangles": 23953,
+      "structures": [
+        "Distal phalanx of left second toe",
+        "Distal phalanx of left third toe",
+        "Distal phalanx of left fourth toe",
+        "Distal phalanx of left big toe",
+        "Distal phalanx of left little toe",
+        "Distal phalanx of right second toe",
+        "Distal phalanx of right third toe",
+        "Distal phalanx of right fourth toe",
+        "Distal phalanx of right big toe",
+        "Distal phalanx of right little toe",
+        "Left first metatarsal bone",
+        "Left second metatarsal bone",
+        "Left third metatarsal bone",
+        "Left fourth metatarsal bone",
+        "Left fifth metatarsal bone",
+        "Left calcaneus",
+        "Left cuboid bone",
+        "Left intermediate cuneiform bone",
+        "Left lateral cuneiform bone",
+        "Left medial cuneiform bone",
+        "Left talus",
+        "Middle phalanx of left second toe",
+        "Middle phalanx of left third toe",
+        "Middle phalanx of left fourth toe",
+        "Middle phalanx of left little toe",
+        "Middle phalanx of right second toe",
+        "Middle phalanx of right third toe",
+        "Middle phalanx of right fourth toe",
+        "Middle phalanx of right little toe",
+        "Navicular bone of left foot",
+        "Navicular bone of right foot",
+        "Proximal phalanx of right big toe",
+        "Proximal phalanx of left third toe",
+        "Proximal phalanx of left fourth toe",
+        "Proximal phalanx of left little toe",
+        "Proximal phalanx of right second toe",
+        "Proximal phalanx of right third toe",
+        "Proximal phalanx of right fourth toe",
+        "Proximal phalanx of right little toe",
+        "Proximal phalanx of left second toe",
+        "Proximal phalanx of left big toe",
+        "Right first metatarsal bone",
+        "Right second metatarsal bone",
+        "Right third metatarsal bone",
+        "Right fourth metatarsal bone",
+        "Right fifth metatarsal bone",
+        "Right calcaneus",
+        "Right cuboid bone",
+        "Right intermediate cuneiform bone",
+        "Right lateral cuneiform bone",
+        "Right medial cuneiform bone",
+        "Right talus"
+      ]
+    },
+    {
+      "id": "muscles",
+      "name": "Muscles",
+      "category": "muscle",
+      "anchor": [
+        0.27745,
+        -0.78949,
+        0.1495
+      ],
+      "center": [
+        0.00263,
+        -0.79482,
+        -0.00616
+      ],
+      "bounds": [
+        [
+          -1.13859,
+          -3.33999,
+          -0.49259
+        ],
+        [
+          1.14386,
+          1.75036,
+          0.48027
+        ]
+      ],
+      "triangles": 69980,
+      "structures": [
+        "Right gluteus maximus",
+        "Left gluteus maximus",
+        "Right rectus femoris",
+        "Left rectus femoris",
+        "Right soleus",
+        "Left soleus",
+        "Right tibialis anterior",
+        "Left tibialis anterior",
+        "Right vastus lateralis",
+        "Left vastus lateralis",
+        "Right vastus medialis",
+        "Left vastus medialis",
+        "Right external oblique",
+        "Left external oblique",
+        "Right brachioradialis",
+        "Left brachioradialis"
+      ]
+    }
+  ]
+}

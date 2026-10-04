@@ -1,0 +1,118 @@
+.ai-thinking {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ai-thinking > span { min-width: 0; }
+
+.ai-fish-scene {
+  --cycle: 1.5s;
+  display: block;
+  flex: 0 0 64px;
+  width: 64px;
+  height: 52px;
+  overflow: hidden;
+  color: #000;
+}
+
+.ai-fish-anchor {
+  transform: translateX(36px);
+}
+
+.ai-fish-leap {
+  transform: translateY(25px) rotate(-8deg);
+  animation: ai-fish-leap var(--cycle) infinite;
+}
+
+.ai-fish-mark {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: scale(.84);
+}
+
+.ai-fish-joints, .ai-fish-tail circle { fill: currentColor; stroke: none; }
+
+.ai-fish-tail {
+  transform-origin: -9px 0;
+  animation: ai-fish-tail-flick var(--cycle) ease-in-out infinite;
+}
+
+.ai-fish-body {
+  transform-origin: 5px 0;
+  animation: ai-fish-body-flex var(--cycle) ease-in-out infinite;
+}
+
+.ai-fish-splash {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+}
+
+.ai-fish-takeoff { --splash-delay: .08s; }
+.ai-fish-landing { --splash-delay: .98s; }
+
+.ai-fish-splash path {
+  opacity: 0;
+  animation: ai-fish-droplet var(--cycle) ease-out var(--splash-delay) infinite;
+}
+
+.ai-fish-drop-left { --drift: -6px; --rise: -6px; --fall: -9px; }
+.ai-fish-drop-middle { --drift: 0px; --rise: -9px; --fall: 1px; }
+.ai-fish-drop-right { --drift: 6px; --rise: -5px; --fall: 10px; }
+
+/* Jump vertically, resetting the tilt only below the invisible surface. */
+@keyframes ai-fish-leap {
+  0% {
+    transform: translateY(62px) rotate(-58deg);
+    animation-timing-function: cubic-bezier(.33, .67, .67, 1);
+  }
+  38% {
+    transform: translateY(14px) rotate(0deg);
+    animation-timing-function: cubic-bezier(.33, 0, .67, .33);
+  }
+  76%, 100% { transform: translateY(62px) rotate(58deg); }
+}
+
+@keyframes ai-fish-tail-flick {
+  0%, 28%, 48%, 76%, 100% { transform: rotate(0deg); }
+  10%, 38%, 62% { transform: rotate(13deg); }
+  20%, 54%, 70% { transform: rotate(-11deg); }
+}
+
+@keyframes ai-fish-body-flex {
+  0%, 38%, 76%, 100% { transform: scaleY(1); }
+  15%, 61% { transform: scaleY(.9); }
+}
+
+@keyframes ai-fish-droplet {
+  0% { opacity: 0; transform: translate(0, 0) scale(.7); }
+  3% { opacity: .8; }
+  10% { opacity: .65; transform: translate(var(--drift), var(--rise)) scale(.85); }
+  20%, 100% { opacity: 0; transform: translate(var(--fall), 1px) scale(.4); }
+}
+
+@media (max-width: 720px) {
+  .ai-thinking { gap: 8px; font-size: 10px; }
+  .ai-fish-scene { flex-basis: 58px; width: 58px; height: 47px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-fish-scene * { animation: none !important; }
+  .ai-fish-splash { display: none; }
+}
+
+.ai-fish-scene.ai-fish-compact {
+  flex-basis: 40px;
+  width: 40px;
+  height: 32px;
+}
+.composer .send-button.is-thinking:disabled { width: 44px; background: transparent; opacity: 1; }

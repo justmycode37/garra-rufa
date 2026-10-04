@@ -1,0 +1,11 @@
+export type Role = 'researcher' | 'doctor' | 'patient';
+export type Region = 'body' | 'brain' | 'heart' | 'hands' | 'legs' | 'muscles';
+export type View = 'overview' | 'atlas' | 'projects' | 'patients' | 'documents' | 'community' | 'workbench';
+export type User = { id: string; name: string; email: string; role: Role; guest?: boolean; chatgpt?: { accountId: string; planEnabled: boolean; needsWelcome: boolean } };
+export type ConditionOption = { id: string; name: string; curated: boolean; aliases?: string[]; memberCount: number; postCount: number; joined?: boolean };
+export type Source = { id: string; title: string; url: string; kind: 'reference' | 'paper' | 'workspace'; excerpt: string; year?: string };
+export type Disease = { id: string; name: string; shortName: string; category: string; region: Region; regions: Region[]; genes: string[]; summary: string; symptoms: string[]; mechanism: string; source: string; color: string; organization: {name:string;url:string}; updated: string };
+export type RecordKind = 'project' | 'patient' | 'document' | 'note' | 'chat' | 'bookmark';
+export type WorkspaceRecord = { id: string; ownerId: string; kind: RecordKind; title: string; content: string; diseaseId?: string; status: string; createdAt: string; updatedAt: string; visibility: 'private' | 'public'; sharedWith: string[]; fileName?: string; fileType?: string; fileSize?: number; messages?: Message[]; tags?: string[]; readOnly?: boolean };
+export type Message = { id: string; role: 'user' | 'assistant'; text: string; sources?: Source[]; diseases?: Disease[]; steps?: string[]; mode?: 'ai' | 'database'; model?: string; effort?: string; warning?: string; region?: Region; suggestion?: {kind:'project'|'note';title:string;content:string} | null };
+export type SearchResult = { answer: string; region: Region; sources: Source[]; diseases: Disease[]; steps: string[]; mode: 'ai' | 'database'; model?: string; effort?: string; warning?: string; suggestion?: Message['suggestion'] };

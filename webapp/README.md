@@ -1,0 +1,120 @@
+# garra rufa
+
+A rare disease discovery workspace with a minimal, animated landing page and researcher, doctor, and patient perspectives. The design reuses Bloom’s local fonts, sprout mark, and colour palette.
+
+## Run locally
+
+Run the commands below from this `webapp/` directory (`cd webapp` from the repository root). The Python backend lives alongside this app; see [its integration guide](../docs/UI-BRIDGE.md). This import preserves the app's existing data access and does not yet connect it to that Python API.
+
+Requires Node.js 22.13 or newer (native `node:sqlite`).
+
+```sh
+npm ci
+cp -n .env.example .env.local
+# Add an OpenAI API key for landing-page questions, then:
+npm run dev
+```
+
+Open http://127.0.0.1:3000. An existing `.env.local` should be preserved rather than overwritten.
+
+Click **My space** or **Sign in**, choose a role, then **Continue with ChatGPT**. The workspace requires a verified ChatGPT sign-in; guest workspace creation and legacy password sign-in are disabled. Both entry points use the same role selector. Existing guest records remain on disk and can be adopted by a new ChatGPT registration from the same browser, but guest sessions cannot access the workspace.
+
+Landing-page AI questions use the app's server-side OpenAI API key, including when an already-signed-in user returns to the landing page. Workspace AI questions use that user's ChatGPT plan only, with no fallback to API billing. Private records and attachments are accepted only through authenticated workspace requests.
+
+ChatGPT subscription access uses OpenAI's documented **local-app** flow. Open the app at **http://127.0.0.1:3000**, not `localhost`. The app dynamically registers itself, so no OAuth client secret or pre-provisioned client ID is needed for local use. Public/paid hosting requires separate approval from OpenAI; this implementation deliberately disables the local OAuth/inference flow on non-loopback origins. See [OpenAI's subscription access documentation](https://developers.openai.com/siwc/token-sharing-open-source) and [hosted sign-in requirements](https://developers.openai.com/siwc/website).
+
+The app stores the stable host ID, browser-scoped registration list, encrypted tokens and one-time OAuth transactions in SQLite. It verifies state, PKCE, signature, issuer, audience, expiry and nonce, uses the verified issuer/client/subject as identity, and never merges accounts by email. Token refresh is serialized, rotating tokens are saved together, and signing out attempts revocation before finishing locally. Session cookies are HTTP-only; OAuth secrets are never stored in browser storage. The loopback HTTP flow is restricted to local use.
+
+Sign-in without the plan-use scope still authenticates the account, but cannot perform workspace inference. Plan policy failures and usage limits appear as clear notices; the plan status and **Manage usage** link appear only beneath the workspace Home prompt; they never switch to API billing. The account menu displays the signed-in identity and sign-out action, without repeating sign-in prompts throughout the workspace.
+
+## Current experience
+
+- Sparse black 3D graphs use exclusively straight edges. A complete human figure keeps a permanent anatomical silhouette, with elliptical front/back anatomy, continuous 3D rotation, gentle breathing, and evolving short internal connections; there is no pointer control. Reduced-motion preferences are respected.
+- A common workspace shell provides global search, an assistant, recent chats, projects, documents, research papers, and community. Doctors also have patient records; patients have a journey view.
+- Individual conversations can be deleted from the sidebar; **Clear chat history** removes all chats in the current workspace after confirmation, without removing other records.
+- Projects and notes persist in SQLite. PDF, PNG, JPG, WebP, text, and CSV uploads support private storage, downloads, and explicit attachment to assistant requests.
+- **Related condition** accepts existing conditions or a new name. Saving a new condition creates its own community; normalized names and known aliases reuse the same community. Communities have opt-in profiles, conversations, and condition-specific published research. Members can join several communities and delete their own posts. Saving a private record does not join a community or share its contents.
+- Files are sent to OpenAI only when attached to a submitted question. Searching other workspace records requires enabling **My workspace**.
+- Landing-page search uses `gpt-6-luna` through the API. Workspace requests select `gpt-6-astra` when it appears in the signed-in account’s live model catalog, otherwise the first visible available model. Subscription inference uses streaming Responses requests with `store: false`; incomplete and failed streams are never treated as answers.
+- Voice input is available in every composer: record for up to two minutes, stop, choose **Transcribe**, then review and send the text. Audio goes through the server to ElevenLabs Scribe and is not saved by Garra Rufa. The ElevenLabs account’s retention settings apply. Cancelling before transcription discards the local recording; cancelling an in-flight request cannot undo audio already sent. Safari and Chrome are supported on localhost or HTTPS.
+- AI answers show retrieved sources. Provider failures fall back to explicitly labelled database search; unavailable literature is reported rather than replaced with invented papers.
+
+## Data and architecture
+
+`src/lib/knowledge.ts` is the reproducible seed collection: eight curated condition records (CMT, Ehlers-Danlos, Fabry, Marfan, Huntington, SMA, Pompe, Rett), with source URLs, associated genes, mechanisms, features, and patient organization links. There is no separate seed command: importing this module loads the same collection. Expand the array to add reviewed records. It is a focused prototype, not a comprehensive rare disease database.
+
+`src/lib/ai.ts` retrieves the local collection and live Europe PMC paper metadata/abstracts. The OpenAI Responses API can search knowledge, retrieve papers, and—when explicitly enabled—search only the current workspace’s authorized records. Publication and sharing require explicit UI actions.
+
+`src/lib/store.ts` stores users, sessions, records, sharing grants, uploads, and request limits in SQLite. Record contents and file bytes use AES-256-GCM encryption. Session tokens are hashed; legacy passwords use scrypt. Authorization checks apply to every private record and download, with guest sessions rejected at the HTTP boundary. The landing artwork is decorative and does not represent individual clinical records.
+
+`src/lib/conditions.ts` maintains the persistent condition/community registry, aliases, memberships, and shared posts. User-added condition names are community categories, separate from the eight reviewed medical reference records. Community profiles and posts are visible to people using the platform; documents and saved notes require their existing explicit sharing flows.
+
+## Configuration and hosting
+
+- `OPENAI_API_KEY`: server-only API credential for landing-page AI only. Never used for workspace inference.
+- `OPENAI_SEARCH_MODEL`: defaults to `gpt-6-luna`.
+- `OPENAI_WORKSPACE_MODEL`: preferred ChatGPT plan model; defaults to `gpt-6-astra`, subject to the user’s live catalog.
+- `ELEVENLABS_API_KEY`: server-only credential with speech-to-text access; enables microphone input.
+- `ELEVENLABS_STT_MODEL`: defaults to `scribe_v2`.
+- `GARRA_DATA_DIR`: persistent database directory; defaults to `./data`.
+- `DATA_ENCRYPTION_KEY`: optional 64-character hex key. If omitted, a local key is generated in the data directory. Preserve the key with the database.
+- `APP_ORIGIN`: leave unset for local use, or use the exact `http://127.0.0.1:<port>` origin. A non-loopback deployment origin disables local ChatGPT sign-in and subscription inference.
+
+```sh
+npm run build
+npm start
+```
+
+For the local demo, keep the server bound to loopback and persist `GARRA_DATA_DIR` outside the deployment bundle. For public hosting, first obtain OpenAI hosted access approval and implement its registered OAuth flow, then use HTTPS and a canonical `APP_ORIGIN`. SQLite requires a single application host or a deliberate database migration before horizontal scaling. The app has not been publicly deployed. Real clinical use requires further identity, governance, consent, retention, and operational work beyond this prototype.
+
+## Checks
+
+```sh
+npm run typecheck
+npm test
+npm run build
+```
+
+Tests cover session/password handling, private-record isolation, explicit read-only sharing, publication boundaries, encryption integrity, reasoning routing, guest-session isolation, OAuth identity validation, callback replay rejection, encrypted token storage, rotating refreshes, account separation, subscription stream completion, billing-path isolation, canonical condition creation, transaction rollback, community memberships, and post ownership.
+
+
+## Supabase connection
+
+The connected cloud project is `mhmbyajftzuyqffpajfb` (Europe / Zurich).
+Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in
+`.env.local`; see `.env.example`. The publishable key is intended for client use.
+Never use a Supabase secret or service-role key in a `NEXT_PUBLIC_` variable.
+
+Run `npm run check:supabase` to verify both the Database and Auth APIs without
+creating users or writing any data. Supabase project management is also available
+through the authenticated Supabase plugin.
+
+- Browser components: `createSupabaseBrowserClient()` from `src/lib/supabase/client.ts`.
+- Public server queries: `createSupabaseServerClient()` from `src/lib/supabase/server.ts`.
+
+The remote project currently has no public tables. Workspace sign-in, records,
+files, and community data still use the existing encrypted local SQLite store.
+This connection setup does not migrate them. Before using Supabase for private
+workspace data, add a schema with ownership-based RLS policies and connect the
+app's authentication to Supabase Auth; the existing local session is not a
+Supabase identity.
+
+### 3D disease atlas
+
+The atlas uses BodyParts3D surfaces converted into black node-and-edge graphs.
+Drag to rotate, scroll/pinch to zoom, and Shift-drag (or the move control) to pan.
+Select a graph node or its label to focus an organ or bone. The Skeleton label
+opens a view of the full skeleton, including the skull, teeth, rib cage, spine,
+pelvis, arms, hands, legs, and feet. Arrow keys rotate, `+`/`-` zoom, and
+`0` resets. Organ networks emerge as the body surface fades on zoom; condition
+labels attach to separate anatomical graph nodes. Labels prefer free space. Disease labels remain on screen when the body fills
+the view, falling back to positions over the anatomy without white boxes.
+
+The static assets in `public/models/anatomy` retain a shared anatomical coordinate
+system. See `NOTICE.md` there for sources and per-asset licenses, also linked from the About page. To regenerate,
+install NumPy, SciPy, and fast-simplification 0.2.0 in an isolated Python environment,
+then run `tools/build-atlas-anatomy.py` with the official 4.0 OBJ archive and the
+five 3.0 lung-lobe STL files using `--lung-dir`. Use `--skin-only` to rebuild the
+body surface. `tools/atlas_mesh.py` repairs surface winding and samples organ
+networks deterministically. The anatomy is illustrative; disease connections
+indicate a regional association rather than a precise lesion.

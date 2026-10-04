@@ -2,6 +2,22 @@
 
 Rare-disease research atlas for Hack Nation.
 
+## Web app
+
+The Next.js frontend and AI application live in [`webapp/`](webapp/). From the repository root, with Node.js 22.13 or newer:
+
+```sh
+cd webapp
+npm ci
+cp -n .env.example .env.local
+# Configure local credentials in .env.local, then:
+npm run dev
+```
+
+Open http://127.0.0.1:3000. See the [web app README](webapp/README.md) for configuration and checks. This imports the existing app; connecting it to the Python search API remains a separate integration step. The Python backend commands below still run from the repository root.
+
+## Data sources
+
 Approved downloaders for the rare-disease atlas. Every fetch starts from a row in `src/garra/sources/catalog.py`. A file is kept only when the host is allowlisted, the body is larger than the empty-stub floor, and the expected header is present. The saved `manifest.json` records the publisher, license, canonical URL, resolved URL, time, byte size, and sha256.
 
 ## Fetch the default slice
