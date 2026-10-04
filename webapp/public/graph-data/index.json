@@ -30,7 +30,9 @@
    "edges": 1417,
    "candidates": 350,
    "papers": 120
-  }
+  },
+  "presentMd": "pompe.present.md",
+  "evidenceMd": "pompe.evidence.md"
  },
  {
   "id": "marfan",
@@ -60,7 +62,9 @@
    "edges": 1262,
    "candidates": 331,
    "papers": 50
-  }
+  },
+  "presentMd": "marfan.present.md",
+  "evidenceMd": "marfan.evidence.md"
  },
  {
   "id": "pmm2",
@@ -93,6 +97,8 @@
    "edges": 1227,
    "candidates": 349,
    "papers": 50
-  }
+  },
+  "presentMd": "pmm2.present.md",
+  "evidenceMd": "pmm2.evidence.md"
  }
 ]

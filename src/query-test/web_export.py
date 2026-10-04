@@ -4,8 +4,9 @@ runs as static JSON for the webapp's graph pages (webapp/src/app/graphs).
 
 Each input is a graph JSON of main.py; the evidence graph is read from the
 <stem>.kg.json next to it when it exists (or pass a .kg.json alone for the evidence graph
-only). Per run, <out>/<stem>.present.json and <out>/<stem>.evidence.json are written and
-<out>/index.json (the list the webapp offers) is updated: entries of other runs are kept.
+only). Per run, <out>/<stem>.present.json and <out>/<stem>.evidence.json are written with their
+Markdown context (<stem>.present.md, <stem>.evidence.md: chat_context.py, what the webapp's
+graph chat answers from), and <out>/index.json (the list the webapp offers) is updated: entries of other runs are kept.
 A symptom / gene search ("HP:0001627, chest pain") is exported as the query-centred view
 (present.query_view: the ranked candidates side by side), unless --focus picks one of them.
 
@@ -24,6 +25,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from chat_context import evidence_md, present_md  # noqa: E402
 from present import Graph, Present, query_view  # noqa: E402
 from web_enrich import enrich_evidence, enrich_present  # noqa: E402
 
@@ -88,6 +90,8 @@ def main():
             entry["presentStats"] = {"items": len(view["items"]), "groups": len(view["groups"]),
                                      "links": len(view["links"])}
             size = _dump(view, args.out / entry["present"])
+            entry["presentMd"] = f"{stem}.present.md"
+            (args.out / entry["presentMd"]).write_text(present_md(view), encoding="utf-8")
             print(f"{stem}: overview of {view['focus']['label']} — {len(view['items'])} items, "
                   f"{len(view['links'])} connections ({size // 1024} KB)")
         if kg_path:
@@ -99,6 +103,8 @@ def main():
                                       "candidates": len(view["candidates"]),
                                       "papers": len(view["papers"])}
             size = _dump(view, args.out / entry["evidence"])
+            entry["evidenceMd"] = f"{stem}.evidence.md"
+            (args.out / entry["evidenceMd"]).write_text(evidence_md(view), encoding="utf-8")
             print(f"{stem}: evidence graph — {len(view['nodes'])} nodes, {len(view['edges'])} "
                   f"edges, {len(view['candidates'])} candidates ({size // 1024} KB)")
         elif graph_path:

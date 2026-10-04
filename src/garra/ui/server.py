@@ -196,12 +196,15 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) == 1:
             build = self.graphs.get(parts[0])
             return self._reply(200, build) if build else self._reply(404, {"error": "not_found"})
-        file = self.graphs.view(*parts) if len(parts) == 2 else None
+        # /api/graphs/<id>/<view> is the view JSON, /api/graphs/<id>/<view>.md its report
+        md = len(parts) == 2 and parts[1].endswith(".md")
+        file = None if len(parts) != 2 else (self.graphs.markdown(parts[0], parts[1].removesuffix(".md"))
+                                             if md else self.graphs.view(*parts))
         if not file:
             return self._reply(404, {"error": "not_found"})
         body = file.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", "text/markdown; charset=utf-8" if md else "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(body)))

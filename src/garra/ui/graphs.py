@@ -95,6 +95,24 @@ class GraphBuilds:
         path = self.root / bid / f"{kind}.json"
         return path if b and b["views"].get(kind) and path.exists() else None
 
+    def markdown(self, bid: str, kind: str) -> Path | None:
+        """The Markdown context of a view the webapp's graph chat answers from: <id>/<kind>.md
+        from web_export (chat_context.py), written from the view JSON on first use for builds
+        exported before it."""
+        view = self.view(bid, kind)
+        if not view:
+            return None
+        path = view.with_suffix(".md")
+        if path.exists() and path.stat().st_mtime >= view.stat().st_mtime:
+            return path
+        try:
+            subprocess.run([self.python, str(QUERY_TEST / "chat_context.py"), str(view), "-o", str(path)],
+                           cwd=REPO, check=True, capture_output=True, timeout=60,
+                           env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        except (subprocess.SubprocessError, OSError):
+            return None
+        return path if path.exists() else None
+
     def start(self, body) -> dict:
         if not isinstance(body, dict) or set(body) - {"query", "evidence", "label"}:
             raise InputError("Send a query and, optionally, evidence: true")
@@ -225,6 +243,8 @@ class GraphBuilds:
             if entry.get(kind):
                 (export / entry[kind]).replace(self.root / b["id"] / f"{kind}.json")
                 views[kind] = True
+                if entry.get(f"{kind}Md") and (export / entry[f"{kind}Md"]).exists():
+                    (export / entry[f"{kind}Md"]).replace(self.root / b["id"] / f"{kind}.md")
                 if entry.get(f"{kind}Stats"):
                     views[f"{kind}Stats"] = entry[f"{kind}Stats"]
         # a build named by its requester (the atlas: "Heart: chest pain") keeps that name

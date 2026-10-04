@@ -6,6 +6,7 @@ import { ArrowLeft, ChevronDown, LoaderCircle, Plus, Sparkles, X } from 'lucide-
 import { GarraMark } from '@/components/Brand';
 import type { GraphBuild } from '@/lib/graph-builds';
 import { CACHE_KEY, cachedExample, forget, isBuildId, readCache, remember, type ExampleEntry } from '@/lib/graph-cache';
+import GraphChat from './GraphChat';
 import styles from './Graphs.module.css';
 
 export type GraphRun = {
@@ -59,6 +60,7 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
   const [cache, setCache] = useState<string[]>([]);
   const [builds, setBuilds] = useState<Record<string, GraphBuild>>({});
   const [resolved, setResolved] = useState<Set<string>>(() => new Set());
+  const [allBuilds, setAllBuilds] = useState<string[]>([]);
   const [runId, setRunId] = useState('');
   const [error, setError] = useState('');
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -85,8 +87,15 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
     let stored: string | null = null;
     try { stored = localStorage.getItem(CACHE_KEY); } catch { /* no cache */ }
     setCache(readCache(stored));
-    fetch('/api/graphs').then(r => r.json()).then(d => setCaps({ enabled: !!d.enabled, evidence: !!d.evidence, notice: d.notice }))
-      .catch(() => setCaps({ enabled: false, evidence: false }));
+    fetch('/api/graphs').then(r => r.json()).then(d => {
+      setCaps({ enabled: !!d.enabled, evidence: !!d.evidence, notice: d.notice });
+      // every graph built so far is selectable: no need to fetch these one by one
+      const listed: GraphBuild[] = Array.isArray(d.builds) ? d.builds : [];
+      listed.forEach(b => requested.current.add(b.id));
+      setBuilds(s => ({ ...Object.fromEntries(listed.map(b => [b.id, b])), ...s }));
+      setResolved(s => new Set([...s, ...listed.map(b => b.id)]));
+      setAllBuilds(listed.map(b => b.id));
+    }).catch(() => setCaps({ enabled: false, evidence: false }));
     fetch('/api/auth').then(r => r.json()).then(d => setSignedIn(!!d.user && !d.user.guest)).catch(() => setSignedIn(false));
     fetch('/graph-data/index.json').then(r => (r.ok ? r.json() : []))
       .then(index => setExamples(Array.isArray(index) ? index : []))
@@ -109,7 +118,8 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
 
   const runs = useMemo<GraphRun[]>(() => {
     const exampleBy = new Map(examples.map(e => [e.id, e]));
-    return [...new Set([runId, ...cache])].flatMap<GraphRun>(id => {
+    // the graphs this browser queried first, then every other built graph and example
+    return [...new Set([runId, ...cache, ...allBuilds, ...examples.map(e => e.id)])].flatMap<GraphRun>(id => {
       const b = builds[id], e = exampleBy.get(id);
       if (b) return [{ id, label: b.label, source: 'built', build: b,
         presentUrl: b.views.present ? `/api/graphs/${b.id}/present?v=${b.done.length}` : undefined,
@@ -119,7 +129,7 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
         evidenceUrl: e.evidence ? `/graph-data/${e.evidence}` : undefined }];
       return [];
     });
-  }, [builds, examples, cache, runId]);
+  }, [builds, examples, cache, allBuilds, runId]);
 
   // ?run=<id> (a build started from the atlas) waits for its build instead of showing another graph
   const waiting = !examplesLoaded || (!!runId && isBuildId(runId) && !runs.some(r => r.id === runId) && !resolved.has(runId));
@@ -201,6 +211,7 @@ export default function GraphsShell({ children }: { children: ReactNode }) {
       <main id="graph-content" className={styles.main}>
         {error ? <p className={styles.notice} role="alert">{error}</p> : children}
       </main>
+      {run && <GraphChat key={`${run.id}:${tab}`} run={run} view={tab === 'evidence' ? 'evidence' : 'present'}/>}
     </div>
   </GraphsContext.Provider>;
 }

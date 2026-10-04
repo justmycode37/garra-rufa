@@ -27,11 +27,13 @@ if script == "main.py":
 elif script == "web_export.py":
     run = Path(args[0]); out.mkdir(exist_ok=True)
     entry = {"id": "run", "label": json.loads(run.read_text())["query"].title(),
-             "present": "run.present.json", "evidence": None}
+             "present": "run.present.json", "presentMd": "run.present.md", "evidence": None}
     (out / "run.present.json").write_text(json.dumps({"focus": {}}))
+    (out / "run.present.md").write_text("# overview report")
     if run.with_name("run.kg.json").exists():
-        entry["evidence"] = "run.evidence.json"
+        entry["evidence"], entry["evidenceMd"] = "run.evidence.json", "run.evidence.md"
         (out / "run.evidence.json").write_text(json.dumps({"nodes": []}))
+        (out / "run.evidence.md").write_text("# evidence report")
     (out / "index.json").write_text(json.dumps([entry]))
 else:  # literature/main.py and evidence/main.py
     out.write_text("{}")
@@ -189,6 +191,15 @@ class GraphBuildTests(unittest.TestCase):
         self.assertEqual(json.load(urlopen(more))["evidence"], True)
         self.wait(bid)
         self.assertEqual(json.load(urlopen(f"{base}/api/graphs/{bid}/evidence")), {"nodes": []})
+        # the views' Markdown reports, the context of the webapp's graph chat
+        for kind in ("present", "evidence"):
+            with urlopen(f"{base}/api/graphs/{bid}/{kind}.md") as r:
+                self.assertTrue(r.headers["Content-Type"].startswith("text/markdown"))
+                self.assertEqual(r.read().decode(), f"# {'overview' if kind == 'present' else 'evidence'} report")
+        for path in (f"{bid}/status.md", "nope-0123abcd/present.md", f"{bid}/../present.md"):
+            with self.subTest(path=path), self.assertRaises(HTTPError) as err:
+                urlopen(f"{base}/api/graphs/{path}")
+            self.assertEqual(err.exception.code, 404)
         missing = Request(f"{base}/api/graphs/nope-0123abcd/evidence", data=b"{}", headers={"Content-Type": "application/json"})
         with self.assertRaises(HTTPError) as err:
             urlopen(missing)

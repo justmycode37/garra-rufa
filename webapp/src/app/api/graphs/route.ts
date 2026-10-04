@@ -6,15 +6,15 @@ import { limit } from '@/lib/persistence';
 // label: a readable name for the build, e.g. "Heart: chest pain" from the atlas
 const buildRequest = z.object({ query: z.string().trim().min(2).max(120), evidence: z.boolean().default(false), label: z.string().trim().min(2).max(200).optional() }).strict();
 
-// Only what can be built: the builds themselves are a cache by query, opened by id
-// (/api/graphs/<id>) from the graphs a browser has queried, never listed as a whole.
+// What can be built, and every graph built so far that has a view to open (the graph
+// picker offers them all next to the bundled examples).
 export const GET = handler(async () => {
   if (!(await limit('graphs:list', 600, 10 * 60 * 1000))) throw new HttpError(429, 'Graphs are busy. Please try again shortly.');
   try {
-    const { enabled, evidence } = await listGraphBuilds();
-    return json({ enabled, evidence });
+    const { enabled, evidence, builds } = await listGraphBuilds();
+    return json({ enabled, evidence, builds: builds.filter(b => b.views.present || b.views.evidence) });
   } catch (error) {
-    if (error instanceof GraphBuildsUnavailable) return json({ enabled: false, evidence: false, notice: error.message });
+    if (error instanceof GraphBuildsUnavailable) return json({ enabled: false, evidence: false, builds: [], notice: error.message });
     throw error;
   }
 });

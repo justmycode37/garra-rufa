@@ -94,3 +94,11 @@ export function candidateQuery(name: string) {
   return name.replace(/[^\p{L}\p{N}_\s,.;:'()+/-]/gu, ' ').replace(/\s+/g, ' ').trim()
     .replace(/^[^\p{L}\p{N}_]+/u, '').slice(0, 120).trim();
 }
+
+/** The pipeline's Markdown report of a built view (the graph chat's context), or null. */
+export async function graphBuildMarkdown(id: string, view: 'present' | 'evidence'): Promise<string | null> {
+  const response = await call(`/api/graphs/${encodeURIComponent(id)}/${view}.md`, {}, 60000);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new GraphBuildsUnavailable('The report of this graph could not be loaded.');
+  return response.text();
+}

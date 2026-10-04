@@ -6,9 +6,11 @@ import type { Message } from '@/lib/types';
 import type { AnswerProgress, SearchResponse, SearchStreamEvent } from '@/lib/search-stream';
 import { listConditions } from "@/lib/persistence";
 import { recommendCommunities } from '@/lib/community-recommendations';
+import { graphContext, type GraphContext } from '@/lib/graph-context';
+import { GraphBuildsUnavailable } from '@/lib/graph-builds';
 export const maxDuration=180;
 export const POST=handler(async(req)=>{
-  const input=z.object({surface:z.enum(['landing','workspace']).default('workspace'),query:z.string().trim().min(2).max(16000),chatId:z.uuid().optional(),fileIds:z.array(z.uuid()).max(3).default([]),includeWorkspace:z.boolean().default(false),history:z.array(z.object({role:z.enum(['user','assistant']),text:z.string().max(8000),id:z.string()})).max(8).default([])}).parse(await body(req));
+  const input=z.object({surface:z.enum(['landing','workspace']).default('workspace'),query:z.string().trim().min(2).max(16000),chatId:z.uuid().optional(),fileIds:z.array(z.uuid()).max(3).default([]),includeWorkspace:z.boolean().default(false),history:z.array(z.object({role:z.enum(['user','assistant']),text:z.string().max(8000),id:z.string()})).max(8).default([]),graph:z.object({id:z.string().regex(/^[a-z0-9-]{1,60}$/),view:z.enum(['present','evidence'])}).optional()}).parse(await body(req));
   const u=input.surface==='workspace'?await requireUser():null;
   if(input.surface==='landing'&&(input.chatId||input.fileIds.length||input.includeWorkspace))throw new HttpError(400,'Open your workspace to use private records or attachments.');
   // A process-wide anonymous budget also prevents spoofed IP headers bypassing limits.
@@ -19,9 +21,16 @@ export const POST=handler(async(req)=>{
   if(input.fileIds.length&&!u)throw new HttpError(401,'Sign in to review a document.');
   if(u)for(const id of input.fileIds){const r=(await getRecord(id,u.id));if(!r||r.kind!=='document')throw new HttpError(404,'Attachment not found.');}
   const history=previous?.messages||input.history;
+  // The graph chat: the open graph's pipeline report is the answer's context.
+  let graph:GraphContext|null=null;
+  if(input.graph){
+    try{graph=await graphContext(input.graph.id,input.graph.view);}
+    catch(error){if(error instanceof GraphBuildsUnavailable)throw new HttpError(503,error.message);throw error;}
+    if(!graph)throw new HttpError(404,'The report of this graph is not available.');
+  }
   async function complete(signal:AbortSignal,onProgress?:(event:AnswerProgress)=>void):Promise<SearchResponse>{
     signal.throwIfAborted();
-    const result=await answerQuery({query:input.query,user:u,history,fileIds:input.fileIds,includeWorkspace:input.includeWorkspace,surface:input.surface,onProgress,signal});
+    const result=await answerQuery({query:input.query,user:u,history,fileIds:input.fileIds,includeWorkspace:input.includeWorkspace,surface:input.surface,graph,onProgress,signal});
     signal.throwIfAborted();
     const communities=recommendCommunities(input.query,(await listConditions()));
     const messages:Message[]=[...history,{id:crypto.randomUUID(),role:'user',text:input.query},{id:crypto.randomUUID(),role:'assistant',text:result.answer,sources:result.sources,diseases:result.diseases,steps:result.steps,mode:result.mode,model:result.model,effort:result.effort,warning:result.warning,region:result.region,suggestion:result.suggestion}];
