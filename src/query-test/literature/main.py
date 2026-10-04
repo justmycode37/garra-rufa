@@ -26,6 +26,7 @@ Usage:
   python src/query-test/main.py "Marfan syndrome" -o runs/marfan.json
   python src/query-test/literature/main.py runs/marfan.json -o runs/marfan.papers.json
   python src/query-test/literature/main.py runs/marfan.json --providers pubmed litvar harvest
+  python src/query-test/evidence/main.py runs/marfan.papers.json   # -> evidence graph
 """
 import argparse
 import json

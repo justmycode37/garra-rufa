@@ -215,7 +215,7 @@ class Throttle:
 class Cache:
     def __init__(self, path: Path = CACHE_PATH, refresh: bool = False):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path)
+        self.db = sqlite3.connect(path, check_same_thread=False)  # guarded by _lock
         self.db.execute("CREATE TABLE IF NOT EXISTS r (k TEXT PRIMARY KEY, url TEXT, "
                         "body TEXT, t REAL)")
         self.refresh = refresh
