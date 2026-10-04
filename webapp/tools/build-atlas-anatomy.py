@@ -11,10 +11,10 @@ import sys
 from pathlib import Path
 from zipfile import ZipFile
 
-import numpy as np
-from scipy.spatial import cKDTree
 import fast_simplification
-from atlas_mesh import orient_faces, normals, surface_graph
+import numpy as np
+from atlas_mesh import normals, orient_faces, surface_graph
+from scipy.spatial import cKDTree
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'public/models/anatomy'
@@ -199,12 +199,16 @@ for key, title, pattern, budget, category in groups:
         if len(faces) > target:
             vertices, faces = fast_simplification.simplify(vertices, faces, target_count=target)
         faces = orient_faces(vertices, faces)
-        merged_v.append(vertices); merged_f.append(faces + offset); offset += len(vertices)
-    vertices = np.concatenate(merged_v); faces = np.concatenate(merged_f)
+        merged_v.append(vertices)
+        merged_f.append(faces + offset)
+        offset += len(vertices)
+    vertices = np.concatenate(merged_v)
+    faces = np.concatenate(merged_f)
     spacing = {'brain': .015, 'heart': .018, 'lungs': .032, 'liver': .026, 'intestines': .029, 'eyes': .006, 'iris': .0028, 'cornea': .004, 'lenses': .0035, 'optic-nerves': .007, 'coronary': .009, 'skull': .019, 'teeth': .007, 'rib-cage': .028, 'spine': .022, 'pelvis': .026, 'arm-bones': .028, 'hand-bones': .013, 'leg-bones': .032, 'foot-bones': .016, 'pituitary': .004, 'adrenals': .012, 'ureters': .012, 'esophagus': .016, 'diaphragm': .032, 'muscles': .04}.get(key, .024)
     graphs[key] = surface_graph(vertices, faces, spacing)
     lo, hi = vertices.min(0), vertices.max(0)
-    target = (lo + hi) / 2; target[2] = hi[2]
+    target = (lo + hi) / 2
+    target[2] = hi[2]
     anchor = vertices[np.argmin(np.linalg.norm(vertices - target, axis=1))]
     position = accessor(vertices.astype('<f4'), 'VEC3', 5126)
     normal = accessor(normals(vertices, faces).astype('<f4'), 'VEC3', 5126)

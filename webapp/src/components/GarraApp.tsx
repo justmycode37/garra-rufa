@@ -1,6 +1,7 @@
 'use client';
 import { useEffect,useRef,useState } from 'react';
 import BodyGraph from './BodyGraph';
+import PublicAtlas from './PublicAtlas';
 import { AboutLink } from './ConnectionExperience';
 import { Trash2,ArrowUpRight,ArrowLeft,ArrowRight,BookOpen,Check,ChevronDown,ChevronRight,FileText,Folder,Heart,Home,LogOut,Menu,MessageCircle,Microscope,Network,Plus,Search,ShieldCheck,Sparkles,Stethoscope,Users,X,PanelLeftClose,Bookmark,FlaskConical,Globe } from 'lucide-react';
 import { Brand } from './Brand';
@@ -22,6 +23,7 @@ const communityDestinationKey='garra:community-destination';
 
 export default function GarraApp(){
   const [searchOpen,setSearchOpen]=useState(false);
+  const [publicAtlas,setPublicAtlas]=useState(false);
   const [communityId,setCommunityId]=useState('');const pendingCommunity=useRef('');
   const clearCommunityDestination=()=>{pendingCommunity.current='';try{sessionStorage.removeItem(communityDestinationKey);}catch{}};
   const [accountOpen,setAccountOpen]=useState(false);const [authError,setAuthError]=useState('');const [recovery,setRecovery]=useState(false);
@@ -37,6 +39,7 @@ export default function GarraApp(){
   const loadRecords=async()=>{try{const r=await fetch('/api/records');const d=await r.json();if(!r.ok)throw new Error(d.error);setRecords(d.records);setRecordError('');}catch(e){setRecordError(e instanceof Error?e.message:'Unable to load your workspace.');}};
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
+    setPublicAtlas(params.get('view')==='atlas');
     const requestedRole=params.get('role');
     const entryRole=params.get('entry')==='signup'&&(requestedRole==='researcher'||requestedRole==='doctor'||requestedRole==='patient')?requestedRole:null;
     if(entryRole)setAuth({mode:'signup',role:entryRole});
@@ -49,7 +52,7 @@ export default function GarraApp(){
     if(params.get('auth')==='error'){setAccountOpen(true);setAuthError('Sign-in could not finish. Please try again, and open email links in the browser that requested them.');}
     if(params.get('auth')==='recovery'){setRecovery(true);setAccountOpen(true);}
     if(params.get('auth')==='changed'){setAccountOpen(true);setAuthError('Please sign in with email and password or Google.');}
-    fetch('/api/auth').then(r=>r.json()).then(async d=>{if(d.user){setUser(d.user);setWorkspace(!d.user.needsRole&&!entryRole&&params.get('view')!=='explore');if(d.user.needsRole&&params.get('auth')!=='recovery')setAuth({mode:'signup'});await loadRecords();
+    fetch('/api/auth').then(r=>r.json()).then(async d=>{if(d.user){setUser(d.user);setWorkspace(!d.user.needsRole&&!entryRole&&!['explore','atlas'].includes(params.get('view')||''));if(d.user.needsRole&&params.get('auth')!=='recovery')setAuth({mode:'signup'});await loadRecords();
       if(connected)try{
         const pending=sessionStorage.getItem(authConversationKey);sessionStorage.removeItem(authConversationKey);
         if(pending){const response=await fetch('/api/chats',{method:'POST',headers:{'Content-Type':'application/json'},body:pending});const data=await response.json();if(response.ok){setChatId(data.record.id);setMessages(data.record.messages||[]);setView('overview');await loadRecords();}}
@@ -150,9 +153,12 @@ export default function GarraApp(){
   const composer=<Composer onSubmit={ask} busy={busy} {...composerContext} compact={workspace} placeholder={workspace?user?.role==='researcher'?'Ask about your research…':user?.role==='doctor'?'Ask about a condition or evidence…':'Ask a question…':undefined}/>;
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
-    {!workspace?<main className="landing" id="main-content">
+    {!workspace&&publicAtlas?<main className="public-atlas" id="main-content">
+      <header className="landing-nav"><Brand onClick={()=>{setPublicAtlas(false);window.history.replaceState(null,'','/?view=explore');}}/><nav className="nav-right" aria-label="Main navigation"><a className="text-button" href="/?view=explore">Home</a><a className="text-button" href="/?view=atlas" aria-current="page">Atlas</a><AboutLink/><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></nav></header>
+      <div className="public-atlas-content"><PublicAtlas onDisease={viewDisease} onCommunity={openCommunity}/></div>
+    </main>:!workspace?<main className="landing" id="main-content">
       
-      <header className="landing-nav"><Brand onClick={closeLandingChat}/><div className="nav-right"><AboutLink/><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></div></header>
+      <header className="landing-nav"><Brand onClick={closeLandingChat}/><div className="nav-right"><AboutLink/><a className="text-button" href="/?view=atlas">Atlas</a><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></div></header>
       <div className={`landing-intro ${messages.length||region!=='body'?'searching':''}`}><h1>A way forward.<br/>Together.</h1><p>Rare disease knowledge, connected.</p></div>
       <BodyGraph/>
       <div className="landing-search"><LandingChat onCommunity={openCommunity} messages={messages} busy={busy} composer={composer} onDisease={viewDisease} onClose={closeLandingChat} onContinue={()=>setAuth({mode:'signup',continueChat:true})}/></div>
@@ -168,7 +174,7 @@ export default function GarraApp(){
         </nav>
         <div className="history-heading"><span>Recent chats</span><div className="history-actions">{chatRecords.length>0&&<button aria-label="Clear chat history" title="Clear chat history" disabled={busy||deletingChat} onClick={()=>{setDeleteChatError('');setDeleteChat('all');}}><Trash2 size={14}/></button>}<button aria-label="New conversation" onClick={startChat}><Plus size={15}/></button></div></div>
         <div className="chat-history">{chatRecords.length?chatRecords.map(r=><div key={r.id} className={`chat-history-row ${chatId===r.id&&view==='overview'?'active':''}`}><button className="chat-history-open" onClick={()=>{if(busy||deletingChat)return;setChatId(r.id);setMessages(r.messages||[]);setAttached([]);navigate('overview');}}><MessageCircle size={14}/><span>{r.title}</span></button><button className="chat-history-delete" aria-label={`Delete chat: ${r.title}`} title="Delete chat" disabled={busy||deletingChat} onClick={()=>{setDeleteChatError('');setDeleteChat(r);}}><Trash2 size={13}/></button></div>):<p>Your conversations appear here.</p>}</div>
-        <div className="sidebar-bottom"><button className="back-to-atlas" onClick={()=>{cancelAnswer();setWorkspace(false);setMessages([]);setChatId(undefined);setRegion('body');}}><ArrowLeft size={15}/>Back to home</button><button className="workspace-role-switch" onClick={()=>setAuth({mode:'signup',role:user.role})}><span className={`avatar ${role!.color}`}>{role!.label.slice(0,1)}</span><span><b>{role!.label}</b><small>Switch perspective</small></span><ChevronDown size={16}/></button></div>
+        <div className="sidebar-bottom"><button className="back-to-atlas" onClick={()=>{cancelAnswer();setPublicAtlas(false);window.history.replaceState(null,'','/?view=explore');setWorkspace(false);setMessages([]);setChatId(undefined);setRegion('body');}}><ArrowLeft size={15}/>Back to home</button><button className="workspace-role-switch" onClick={()=>setAuth({mode:'signup',role:user.role})}><span className={`avatar ${role!.color}`}>{role!.label.slice(0,1)}</span><span><b>{role!.label}</b><small>Switch perspective</small></span><ChevronDown size={16}/></button></div>
       </aside>
       <div className="workspace-main">
         <header className="workspace-topbar"><div><button className="mobile-only icon-button" aria-label="Open navigation" onClick={()=>setSidebarOpen(true)}><Menu size={21}/></button><b>{navItems.find(n=>n.id===view)?.label||'Home'}</b></div><button className="text-button chatgpt-account-button" onClick={()=>setAccountOpen(true)}>{user.name}<ChevronDown size={14}/></button></header>

@@ -11,6 +11,7 @@ import { updateStreamingMessage, type OnAnswerText } from '@/lib/search-stream';
 import { Composer, type ComposerContext } from './Chat';
 import LandingChat from './LandingChat';
 import AtlasKnowledgeGraph from './AtlasKnowledgeGraph';
+import RegionalDiscovery from './RegionalDiscovery';
 import styles from './DiseaseAtlas.module.css';
 
 const initialFrame: AnatomyFrame = { zoom: 1, labels: [], detailReady: false, detailError: false, region: '', rotated: false };
@@ -151,6 +152,7 @@ export default function DiseaseAtlas({ onDisease, composerContext, onAskWithCont
           </div>
         </div>
       </div>
+    <RegionalDiscovery regionId={graphRegion || (context?.target && atlasRegions[context.target] ? context.target : 'brain')} onRegion={id => applyContext(atlasContextForTarget(id), true)}/>
     <div className={styles.promptDock}>
       {chatOpen && <LandingChat messages={messages} busy={busy} onDisease={onDisease} onCommunity={onCommunity} onClose={() => setChatOpen(false)} composer={null}/>}
       <Composer {...composerContext} onSubmit={ask} busy={busy} compact placeholder={graphRegion ? `Ask about ${atlasRegions[graphRegion].label}…` : context ? `Ask about ${activeDisease?.shortName ?? context.label}…` : 'Ask a question…'}/>

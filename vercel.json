@@ -4,12 +4,13 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 120,
-      "excludeFiles": "{webapp/**,.venv/**,tests/**,.git/**,data/raw/**,data/cache/**,data/hpo/*.pickle,**/__pycache__/**}"
+      "excludeFiles": "{webapp/**,.venv/**,tests/**,.git/**,data/raw/**,data/cache/**,data/hpo/*.pickle,**/__pycache__/**}",
+      "includeFiles": "{src/**,data/hosted/**,data/hpo/*.obo,data/hpo/*.hpoa}"
     }
   },
   "rewrites": [
     {
-      "source": "/api/research/:path*",
+      "source": "/api/:path*",
       "destination": "/api/index"
     },
     {

@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from scipy.spatial import cKDTree, Delaunay
+from scipy.spatial import Delaunay, cKDTree
 
 rng = np.random.default_rng(28173)
 vertices, faces, helpers = [], [], {}
@@ -137,7 +137,9 @@ a = candidate_triangles[:, :, 0]
 ab = candidate_triangles[:, :, 1] - a
 ac = candidate_triangles[:, :, 2] - a
 ap = original_p[:, None, :] - a
-dot = lambda x, y: np.sum(x * y, axis=-1)
+def dot(x, y):
+    return np.sum(x * y, axis=-1)
+
 d00, d01, d11 = dot(ab, ab), dot(ab, ac), dot(ac, ac)
 d20, d21 = dot(ap, ab), dot(ap, ac)
 denominator = np.maximum(d00 * d11 - d01 * d01, 1e-14)

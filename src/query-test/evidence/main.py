@@ -74,11 +74,10 @@ try:  # use the OS trust store; the certifi bundle fails on this machine
 except ImportError:
     pass
 
+import improvements  # noqa: E402
 from literature.base import Cache  # noqa: E402
-
 from literature.europepmc import EuropePmcProvider  # noqa: E402
 
-import improvements  # noqa: E402
 from evidence import extract, gaps, registries, screen, transfer  # noqa: E402
 from evidence.build import Graph  # noqa: E402
 from evidence.context import build_profile  # noqa: E402

@@ -1,12 +1,12 @@
 import json
 import subprocess
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from garra.research.service import ResearchService, ResearchUnavailable
-from garra.research.worker import graph_sources, bound_requests
-import time
+from garra.research.worker import bound_requests, graph_sources
 from garra.ui.service import InputError
 
 

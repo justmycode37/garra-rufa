@@ -1,13 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from sources.base import Node
+from sources.monarch import MonarchSource
 
 from garra.research.atlas import AtlasIndex
 from garra.research.worker import atlas_graph
 from garra.ui.service import InputError
-from sources.monarch import MonarchSource
-from sources.base import Node
-from unittest.mock import patch
 
 
 class AtlasTests(unittest.TestCase):

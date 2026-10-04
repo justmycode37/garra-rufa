@@ -135,11 +135,11 @@ export default function AtlasKnowledgeGraph({ regionId, frame, onAsk }: { region
         })}
         {data.edges.filter(edge => edge.from !== rootId && edge.to !== rootId && positions.has(edge.from) && positions.has(edge.to)).slice(0, 80).map((edge, index) => <line key={`cross-${index}`} className={styles.crossEdge} x1={positions.get(edge.from)!.x} y1={positions.get(edge.from)!.y} x2={positions.get(edge.to)!.x} y2={positions.get(edge.to)!.y}><title>{relationLabel(edge.relation)} · {edge.source}</title></line>)}
       </svg>
-      <button className={styles.root} style={{ left: root.x, top: root.y }} onClick={() => { setSelectedId(''); setPage(0); }} title="Return to the regional graph"><span/>{selected ? selected.label : region.label}<small>{selected ? kindLabel(selected) : 'Anatomical region'}</small></button>
+      <button className={styles.root} onPointerDown={event => { if (event.button === 0) event.currentTarget.setPointerCapture(event.pointerId); }} style={{ left: root.x, top: root.y }} onClick={() => { setSelectedId(''); setPage(0); }} title="Return to the regional graph"><span/>{selected ? selected.label : region.label}<small>{selected ? kindLabel(selected) : 'Anatomical region'}</small></button>
       {visible.map(node => {
         const position = positions.get(node.id)!;
         const path = paths.get(node.id)!;
-        return <button key={node.id} className={styles.node} data-kind={atlasNodeKind(node)} style={{ left: position.x, top: position.y, width: nodeWidth }} onClick={() => select(node)} title={node.label} aria-label={`Explore ${node.label}, ${kindLabel(node)}`}>
+        return <button key={node.id} className={styles.node} data-kind={atlasNodeKind(node)} style={{ left: position.x, top: position.y, width: nodeWidth }} onPointerDown={event => { if (event.button === 0) event.currentTarget.setPointerCapture(event.pointerId); }} onClick={() => select(node)} title={node.label} aria-label={`Explore ${node.label}, ${kindLabel(node)}`}>
           <span className={styles.nodeTitle}>{node.label}</span><small><i/>{kindLabel(node)}<span>· {path.length === 1 ? relationLabel(path[0].relation) : `${path.length} linked relationships`}</span></small>
         </button>;
       })}

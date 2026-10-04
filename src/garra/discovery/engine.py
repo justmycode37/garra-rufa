@@ -35,6 +35,7 @@ class DiscoveryEngine:
             or bridge["schema_version"] != 1
         ):
             raise ValueError("Expected a version-1 bridge snapshot")
+        self.relations = deepcopy(bridge.get("source_relations", []))
         self.nodes = self._index(bridge.get("nodes"), "nodes")
         self.claims = self._index(bridge.get("claims"), "claims")
         self.papers = self._index(bridge.get("papers"), "papers")
@@ -312,4 +313,50 @@ class DiscoveryEngine:
             "members": [self._card(x) for x in group["member_ids"]],
             "claims": claims,
             "papers": papers,
+        }
+
+    def entity_graph(self, identifier):
+        if identifier not in self.nodes:
+            return None
+        incident = [e for e in self.relations if identifier in (e["from"], e["to"])]
+        genes = {
+            x
+            for e in incident
+            for x in (e["from"], e["to"])
+            if self.nodes.get(x, {}).get("kind") == "gene"
+        }
+        incident += [
+            e
+            for e in self.relations
+            if e["from"] in genes
+            and self.nodes.get(e["to"], {}).get("kind") in {"process", "pathway"}
+        ]
+        ids = {identifier} | {x for e in incident for x in (e["from"], e["to"])}
+        edges = [
+            {
+                "from": e["from"],
+                "to": e["to"],
+                "relation": e["relation"],
+                "source": str(e.get("source") or "snapshot")[:100],
+                "evidence": [],
+            }
+            for e in incident
+            if e["from"] in self.nodes and e["to"] in self.nodes
+        ]
+        nodes = [
+            {
+                "id": x,
+                "label": self._card(x)["name"],
+                "kind": self.nodes[x]["kind"],
+                "providers": ["Loaded source snapshot"],
+                "xrefs": [],
+                "description": "",
+            }
+            for x in sorted(ids)
+            if x in self.nodes
+        ]
+        return {
+            "graph": {"nodes": nodes, "edges": edges, "focus": [identifier]},
+            "unavailableProviders": [],
+            "notice": "Source associations only; not a validated shared mechanism.",
         }

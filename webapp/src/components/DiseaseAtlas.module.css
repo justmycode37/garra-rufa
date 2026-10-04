@@ -50,3 +50,8 @@
 .promptDock :global(.composer) { background: #fffdfe9c; }
 @media (max-width: 1400px) { .dragHint { display: none; } }
 @media (max-width: 720px) { .promptDock { width: calc(100% - 32px); } }
+
+/* The evidence panel is shared by the workspace atlas and public integration view. */
+.layout { display:grid;grid-template-columns:minmax(0,1fr) 370px; }
+.promptDock { left:calc((100% - 370px) / 2); right:auto; width:min(710px, calc(100% - 430px)); }
+@media(max-width:800px){.layout{height:auto;display:flex;flex-direction:column}.layout > .atlas{height:65vh;min-height:420px}.layout > aside{height:65vh;border-top:1px solid #ddd}.promptDock{display:none}}

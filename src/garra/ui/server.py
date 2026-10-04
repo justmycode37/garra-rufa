@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from garra.community import CommunityCatalog
 from garra.discovery import DiscoveryEngine
+from garra.discovery.regions import RegionIndex
 from garra.research.service import ResearchService, ResearchUnavailable
 
 from .catalog import get_catalog
@@ -17,11 +18,14 @@ from .service import ConnectionService, InputError
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, service, origins, communities, discovery, research, **kwargs):
+    def __init__(
+        self, *args, service, origins, communities, discovery, research, regions, **kwargs
+    ):
         self.service, self.origins = service, origins
         self.communities = communities
         self.discovery = discovery
         self.research = research
+        self.regions = regions
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -96,6 +100,24 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if path == "/api/regions" or path.startswith("/api/regions/"):
+            if self.regions is None:
+                return self._reply(503, {"error": "Regional ontology data is not configured"})
+            try:
+                result = (
+                    self.regions.catalog()
+                    if path == "/api/regions"
+                    else self.regions.detail(path.removeprefix("/api/regions/"))
+                )
+                return self._reply(200, result)
+            except InputError as exc:
+                return self._reply(400, {"error": str(exc)})
+        if path == "/api/entity":
+            query = parse_qs(urlsplit(self.path).query)
+            if set(query) != {"id"} or len(query["id"]) != 1:
+                return self._reply(400, {"error": "Use one entity id"})
+            result = self.discovery.entity_graph(query["id"][0])
+            return self._reply(200, result) if result else self._reply(404, {"error": "not_found"})
         if path == "/api/clusters":
             query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
             if set(query) - {"kind", "entity_id"} or any(len(v) != 1 for v in query.values()):
@@ -114,7 +136,16 @@ class Handler(BaseHTTPRequestHandler):
                 else self._reply(404, {"error": "not_found"})
             )
         if path == "/health":
-            return self._reply(200, {"status": "ok", "service": "garra-ui-bridge", "research": True})
+            return self._reply(
+                200,
+                {
+                    "status": "ok",
+                    "service": "garra-ui-bridge",
+                    "research": True,
+                    "discovery": self.discovery.metadata(),
+                    "regions": self.regions is not None,
+                },
+            )
         if path == "/api/body-map":
             return self._reply(200, get_catalog())
         if path == "/api/communities":
@@ -169,7 +200,11 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/connections/search":
                 result = self.service.search(body)
             elif path.endswith("/atlas"):
-                result = self.research.atlas(body)
+                result = (
+                    self.regions.atlas(body)
+                    if self.regions is not None
+                    else self.research.atlas(body)
+                )
             else:
                 result = self.research.search(body, papers=path.endswith("/papers"))
         except (InputError, json.JSONDecodeError, UnicodeError) as exc:
@@ -180,7 +215,9 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": "similarity_unavailable", "message": str(exc), "retryable": True},
             )
         except ResearchUnavailable as exc:
-            return self._reply(503, {"error": "research_unavailable", "message": str(exc), "retryable": True})
+            return self._reply(
+                503, {"error": "research_unavailable", "message": str(exc), "retryable": True}
+            )
         except TimeoutError:
             return self._reply(408, {"error": "request_timeout"})
         except Exception:
@@ -197,6 +234,7 @@ def create_server(
     communities=None,
     discovery=None,
     research=None,
+    regions=None,
     origins=(
         "http://localhost:5173",
         "http://localhost:3000",
@@ -208,6 +246,7 @@ def create_server(
         Handler,
         service=service or ConnectionService(),
         research=research or ResearchService(),
+        regions=regions,
         origins=set(origins),
         communities=communities if communities is not None else CommunityCatalog(),
         discovery=discovery if discovery is not None else DiscoveryEngine(),
@@ -236,6 +275,12 @@ def main(argv=None):
         "--atlas", type=Path, help="Optional atlas SQLite database for disease/gene aliases"
     )
     parser.add_argument("--cluster-threshold", type=float, default=0.5)
+    parser.add_argument("--ontology", type=Path, help="HPO OBO file for anatomical discovery")
+    parser.add_argument(
+        "--region-map",
+        type=Path,
+        default=Path(__file__).resolve().parents[3] / "webapp/src/lib/body-regions.json",
+    )
     args = parser.parse_args(argv)
     try:
         enrichment = json.loads(args.enrichment.read_text()) if args.enrichment else None
@@ -254,6 +299,15 @@ def main(argv=None):
             "communities": communities,
             "discovery": discovery,
         }
+        if args.ontology:
+            if not args.bridge:
+                raise ValueError("--ontology requires --bridge")
+            options["regions"] = RegionIndex(
+                discovery,
+                json.loads(args.bridge.read_text()),
+                json.loads(args.region_map.read_text()),
+                args.ontology,
+            )
         if args.allow_origin:
             for origin in args.allow_origin:
                 parsed = urlsplit(origin)

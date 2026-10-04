@@ -32,16 +32,19 @@ let running = false;
 try {
   const response = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(1000) });
   const health = await response.json();
-  if (response.ok && health.service === 'garra-ui-bridge' && health.research) running = true;
+  if (response.ok && health.service === 'garra-ui-bridge' && health.research && health.regions && health.discovery?.coverage?.clusters > 0) running = true;
   else throw new Error('Unexpected service');
 } catch { /* Start the configured backend below; occupied ports fail explicitly. */ }
 if (!running) {
-  run(python, ['-m', 'garra.ui', '--port', port], backend, { PYTHONPATH: path.join(backend, 'src') });
+  const bridge = process.env.GARRA_BRIDGE || path.join(backend, 'data/derived/discovery/bridge.json');
+  const ontology = process.env.GARRA_HPO_ONTOLOGY || path.join(backend, 'data/ontology/hp.obo');
+  for (const file of [bridge, ontology]) if (!existsSync(file)) { console.error(`Required discovery dataset missing: ${file}. See docs/BODY-UI-INTEGRATION.md.`); process.exit(1); }
+  run(python, ['-m', 'garra.ui', '--port', port, '--bridge', bridge, '--ontology', ontology, '--atlas', path.join(backend, 'data/atlas.sqlite')], backend, { PYTHONPATH: path.join(backend, 'src') });
   for (let attempt = 0; attempt < 50 && !stopping; attempt++) {
     try {
       const response = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(500) });
       const health = await response.json();
-      if (health.research && health.service === 'garra-ui-bridge') { running = true; break; }
+      if (health.research && health.regions && health.service === 'garra-ui-bridge') { running = true; break; }
     } catch { /* Wait for the Python process to bind. */ }
     await new Promise(resolve => setTimeout(resolve, 200));
   }
@@ -49,7 +52,7 @@ if (!running) {
 if (!running) { console.error('Research backend did not start. Install dependencies with python3 -m pip install -e ".[research]" in the repository root.'); stop(1); }
 else {
   console.log(`Research backend: ${backendUrl}`);
-  if (!backendOnly) run(process.execPath, [path.join(app, 'node_modules/next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1'], app, { GARRA_RESEARCH_URL: backendUrl });
+  if (!backendOnly) run(process.execPath, [path.join(app, 'node_modules/next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1'], app, { GARRA_RESEARCH_URL: backendUrl, WATCHPACK_POLLING: process.env.WATCHPACK_POLLING || '1000' });
 }
 process.on('SIGINT', () => stop());
 process.on('SIGTERM', () => stop());

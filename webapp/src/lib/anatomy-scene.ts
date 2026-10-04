@@ -232,6 +232,7 @@ export class AnatomyScene {
   private pointerCancel = (event: PointerEvent) => { this.pointers.delete(event.pointerId); this.pointerMoved = true; };
   private pointerMove = (event: PointerEvent) => { if (Math.hypot(event.clientX - this.pointerStart.x, event.clientY - this.pointerStart.y) > 5) this.pointerMoved = true; };
   private pointerUp = (event: PointerEvent) => {
+    if (!this.pointers.has(event.pointerId)) return;
     this.pointers.delete(event.pointerId);
     if (this.pointerMoved || event.button !== 0 || this.pointers.size > 0) return;
     const bounds = this.canvas.getBoundingClientRect();

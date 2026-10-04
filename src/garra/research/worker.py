@@ -80,12 +80,12 @@ def bound_requests(obj, deadline, stats=None):
 
 
 def graph(query, category, deadline):
-    from main import run, parse_input, build_graph
-    from entities import Entities
-    from report import Stats
-    from sources import _MODULES
-    from sources import _groups
     from dataclasses import replace
+
+    from entities import Entities
+    from main import build_graph, parse_input, run
+    from report import Stats
+    from sources import _MODULES, _groups
 
     names = ["mondo", "monarch", "clinicaltrials"]
     if category == "contacts":
@@ -203,11 +203,11 @@ def atlas_graph(data):
 
 
 def papers(query, limit, deadline, retrieved):
-    from literature import load_providers
-    from literature.base import Cache, Collection, Concept, Query, Paper, Hit
-    from literature.harvest import harvest
-    from literature.plan import plan, MeshLookup
     import literature.base as base
+    from literature import load_providers
+    from literature.base import Cache, Collection, Concept, Hit, Paper, Query
+    from literature.harvest import harvest
+    from literature.plan import MeshLookup, plan
 
     # Interactive requests use the same providers, planner, harvest and deduper as
     # literature/main.py, with bounded result caps instead of the bulk CLI's 3000.

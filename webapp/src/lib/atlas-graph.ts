@@ -1,3 +1,4 @@
+import bodyRegions from './body-regions.json';
 import { z } from 'zod';
 import { safeSourceUrl } from './source-schema';
 
@@ -27,28 +28,7 @@ export const ATLAS_GRAPH_ZOOM = 3;
 
 // HPO terms verified against the repository's hp.obo. Substructures keep their
 // own association set instead of inheriting a nearby organ's demo conditions.
-export const atlasRegions: Record<string, { label: string; hpo: string }> = {
-  brain: { label: 'Brain & nerves', hpo: 'HP:0000707' }, heart: { label: 'Heart', hpo: 'HP:0001627' },
-  eyes: { label: 'Eyes', hpo: 'HP:0000478' }, hands: { label: 'Hands & joints', hpo: 'HP:0001155' },
-  legs: { label: 'Legs & feet', hpo: 'HP:0002814' }, muscles: { label: 'Muscles', hpo: 'HP:0003011' },
-  skeleton: { label: 'Skeleton', hpo: 'HP:0000924' }, kidneys: { label: 'Kidneys', hpo: 'HP:0000077' },
-  lungs: { label: 'Lungs & breathing', hpo: 'HP:0002086' }, liver: { label: 'Liver', hpo: 'HP:0001392' },
-  aorta: { label: 'Aorta', hpo: 'HP:0001679' }, coronary: { label: 'Coronary vessels', hpo: 'HP:0006704' },
-  stomach: { label: 'Stomach', hpo: 'HP:0002577' }, intestines: { label: 'Intestines', hpo: 'HP:0002242' },
-  pancreas: { label: 'Pancreas', hpo: 'HP:0001732' }, spleen: { label: 'Spleen', hpo: 'HP:0001743' },
-  gallbladder: { label: 'Gallbladder', hpo: 'HP:0005264' }, bladder: { label: 'Bladder', hpo: 'HP:0000014' },
-  ureters: { label: 'Ureters', hpo: 'HP:0000069' }, adrenals: { label: 'Adrenal glands', hpo: 'HP:0000834' },
-  pituitary: { label: 'Pituitary', hpo: 'HP:0000864' }, esophagus: { label: 'Esophagus', hpo: 'HP:0002031' },
-  'salivary-glands': { label: 'Salivary glands', hpo: 'HP:0010286' }, rectum: { label: 'Rectum', hpo: 'HP:0002034' },
-  tongue: { label: 'Tongue', hpo: 'HP:0000157' }, diaphragm: { label: 'Diaphragm', hpo: 'HP:0000775' },
-  spine: { label: 'Spine', hpo: 'HP:0000925' }, skull: { label: 'Skull', hpo: 'HP:0000929' },
-  teeth: { label: 'Teeth', hpo: 'HP:0000164' }, 'rib-cage': { label: 'Rib cage', hpo: 'HP:0001547' },
-  pelvis: { label: 'Pelvis', hpo: 'HP:0040163' }, 'arm-bones': { label: 'Shoulders & arms', hpo: 'HP:0002817' },
-  'hand-bones': { label: 'Hand bones', hpo: 'HP:0001155' }, 'leg-bones': { label: 'Leg bones', hpo: 'HP:0002814' },
-  'foot-bones': { label: 'Feet', hpo: 'HP:0001760' }, iris: { label: 'Iris', hpo: 'HP:0000478' },
-  cornea: { label: 'Cornea', hpo: 'HP:0000481' }, lenses: { label: 'Lens', hpo: 'HP:0000517' },
-  'optic-nerves': { label: 'Optic nerves', hpo: 'HP:0000587' }, airways: { label: 'Airways', hpo: 'HP:0002086' },
-};
+export const atlasRegions: Record<string, { label: string; hpo: string; scope?: string }> = bodyRegions;
 
 export function atlasNodeKind(node: AtlasNode) {
   if (['doctor', 'clinician', 'investigator'].includes(node.kind)) return 'doctor';

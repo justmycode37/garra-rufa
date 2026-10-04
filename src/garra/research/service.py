@@ -8,8 +8,8 @@ import threading
 import time
 from collections import OrderedDict
 
-from garra.ui.service import InputError
 from garra.research.atlas import AtlasIndex
+from garra.ui.service import InputError
 
 
 class ResearchUnavailable(Exception):

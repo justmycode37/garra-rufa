@@ -1,8 +1,14 @@
 """Fetch only the two public HPO files needed by the hosted anatomical index."""
+import sys
 from pathlib import Path
 from urllib.request import urlopen
 
-root = Path(__file__).resolve().parents[1] / "data" / "hpo"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from garra.discovery.hosted import prepare_bundle  # noqa: E402
+
+prepare_bundle(ROOT / "deploy/discovery", ROOT / "data/hosted")
+root = ROOT / "data" / "hpo"
 root.mkdir(parents=True, exist_ok=True)
 for name, url in {
     "hp.obo": "https://purl.obolibrary.org/obo/hp.obo",
