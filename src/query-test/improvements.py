@@ -32,6 +32,13 @@ with all of them off (GARRA_IMPROVEMENTS=none) the pipeline behaves exactly as b
                      symptom mode; typed symptoms bridge with SYMPTOM_W
   diverse_selection  R9 evidence/screen.py: full-text selection prefers papers that add a
                      solution not covered yet (relevance order kept within a level)
+  annotation_coverage  B1 resolve.py / sources/_hpoa.py: the symptom score of a candidate is
+                     multiplied by sqrt(share of its annotations the symptoms explain), so
+                     "hub" diseases with hundreds of annotations stop winning every query
+                     (phenobench.py rank, leave-publication-out)
+  llm_rerank         B2 main.py / rerank.py: a language model re-orders the top 20
+                     candidates of a symptom search (needs OPENROUTER_API_KEY; skipped
+                     without it)
 
 Overrides: environment variable GARRA_IMPROVEMENTS or --improvements SPEC on main.py,
 literature/main.py and evidence/main.py (the flag wins). SPEC is a comma list read left to
@@ -45,7 +52,8 @@ right from "all on": "none" / "all" reset, "-name" switches one off, "+name" or 
 import os
 
 FLAGS = ("input_identity", "canonicalize", "paper_scoring", "generic_penalty", "gap_check",
-         "query_hygiene", "symptom_anchor", "symptom_axis", "diverse_selection")
+         "query_hygiene", "symptom_anchor", "symptom_axis", "diverse_selection",
+         "annotation_coverage", "llm_rerank")
 ENV = "GARRA_IMPROVEMENTS"
 
 _state: dict[str, bool] = {}

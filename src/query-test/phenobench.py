@@ -272,12 +272,14 @@ def holdout(hpo, case: Case, enabled: bool = True):
                     removed.append((d, hp, f))
                     del hpo.ann[d][hp]
                     hpo.by_term.get(hp, set()).discard(d)
+            hpo.forget(d)
     try:
         yield len(removed)
     finally:
         for d, hp, f in removed:
             hpo.ann[d][hp] = f
             hpo.by_term.setdefault(hp, set()).add(d)
+            hpo.forget(d)
 
 
 @lru_cache(maxsize=4)
@@ -332,8 +334,9 @@ def _disease_ids(r: dict) -> list[str]:
 # -- rank --------------------------------------------------------------------------------
 def rank_case(case: Case, hpo, input: str = "hpo", top: int = 30, holdout_on: bool = True,
               max_terms: int | None = None, imprecision: float = 0.0, noise: int = 0,
-              seed: int = 0) -> dict:
-    """Rank one patient as main.py would and score where its diagnosis lands."""
+              seed: int = 0, llm=None) -> dict:
+    """Rank one patient as main.py would and score where its diagnosis lands. llm: the
+    model of the llm_rerank improvement (rerank.py), None: tool order only."""
     parts = []
     if input in ("hpo", "hpo+gene"):
         parts += [Part(t, "phenotype", t, hpo.name.get(t, t), "id")
@@ -349,6 +352,12 @@ def rank_case(case: Case, hpo, input: str = "hpo", top: int = 30, holdout_on: bo
     truth = truth_keys(case)
     with holdout(hpo, case, holdout_on) as hidden, fast_identity():
         ranking = resolve.rank(Interpretation(case.id, parts), top, hpo=hpo)
+        if llm is not None and res["n_terms"]:
+            import rerank
+            tool = find_rank(ranking, truth)
+            ranking = rerank.rerank(ranking, [p.id for p in parts if p.kind == "phenotype"],
+                                    [p.id for p in parts if p.kind == "gene"], hpo, llm=llm)
+            res["tool_rank"] = tool
         res["hidden"] = hidden
         res["rank"] = find_rank(ranking, truth)
         res["rank_related"] = find_rank(ranking, truth | related_keys(truth))
@@ -386,16 +395,56 @@ def summarize(results: list[dict], ks=(1, 3, 10)) -> dict:
             "top1_contradicted": sum(bool(r.get("top1_contradicted")) for r in rs) / len(rs),
             "truth_contradicted": sum(bool(r.get("truth_contradicted")) for r in rs) / len(rs),
             "rescuable": len(rescuable),
-            "hidden_annotations": sum(r["hidden"] for r in rs)}
+            "hidden_annotations": sum(r["hidden"] for r in rs),
+            **({"tool_order": stats([{**r, "rank": r["tool_rank"]} for r in rs])}
+               if all("tool_rank" in r for r in rs) else {})}
 
 
-def run_rank(cases: list[Case], hpo, progress: bool = False, **kw) -> list[dict]:
+def run_rank(cases: list[Case], hpo, progress: bool = False, workers: int = 8,
+             **kw) -> list[dict]:
+    llm = kw.get("llm")
+    if llm is not None and workers > 1:
+        _warm(cases, hpo, workers, progress, **kw)
     out = []
     for i, c in enumerate(cases, 1):
         out.append(rank_case(c, hpo, **kw))
         if progress and i % 25 == 0:
             print(f"  {i}/{len(cases)}", file=sys.stderr, flush=True)
     return out
+
+
+def _warm(cases: list[Case], hpo, workers: int, progress: bool, **kw):
+    """llm_rerank: ask the model about every case in parallel first (the rankings have to
+    be built one by one, holdout edits hpo); the replies land in the LLM cache, so the
+    ranking pass after this reads them back without waiting."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    llm = kw["llm"]
+    done = [0]
+    lock = threading.Lock()
+
+    class Recorder:  # stands in for the model while the prompts are collected
+        def __init__(self):
+            self.prompts = []
+
+        def chat(self, system, user, **k):
+            self.prompts.append((system, user, k))
+            return None
+    rec = Recorder()
+    for c in cases:
+        rank_case(c, hpo, **{**kw, "llm": rec})
+
+    def ask(p):
+        try:
+            llm.chat(p[0], p[1], **p[2])
+        except Exception as e:
+            print(f"  [rerank] {e}", file=sys.stderr)
+        with lock:
+            done[0] += 1
+            if progress and done[0] % 25 == 0:
+                print(f"  model {done[0]}/{len(rec.prompts)}", file=sys.stderr, flush=True)
+    with ThreadPoolExecutor(workers) as ex:
+        list(ex.map(ask, rec.prompts))
 
 
 # -- profile -----------------------------------------------------------------------------
@@ -579,6 +628,10 @@ def print_rank(summary: dict, results: list[dict], worst: int = 15):
           f"diagnosis contradicted: {_pct(summary['truth_contradicted'])}; "
           f"misses an excluded-aware score could fix: {summary['rescuable']}")
     print(f"annotations hidden (leave-publication-out): {summary['hidden_annotations']}")
+    if "tool_order" in summary:
+        t = summary["tool_order"]
+        print(f"before the language model's re-ordering (llm_rerank): top1 {_pct(t['top1'])} "
+              f"top3 {_pct(t['top3'])} top10 {_pct(t['top10'])} MRR {t['mrr']:.3f}")
     misses = [r for r in results if not r.get("skipped") and (r["rank"] or 99) > 10]
     if misses:
         print(f"\nnot in the top 10 ({len(misses)}), e.g.:")
@@ -634,6 +687,10 @@ def main(argv=None):
     r.add_argument("--noise", type=int, default=0)
     r.add_argument("--no-holdout", action="store_true")
     r.add_argument("--json", type=Path, help="write per-patient results + summary")
+    r.add_argument("--llm", action="store_true",
+                   help="also run the llm_rerank improvement (OPENROUTER_API_KEY from .env; "
+                        "off by default: one model call per patient)")
+    r.add_argument("--workers", type=int, default=8, help="parallel model calls (--llm)")
     improvements.add_argument(r)
     p = sub.add_parser("profile", help="profiles in main.py graph JSONs vs patients")
     p.add_argument("runs", nargs="+", type=Path)
@@ -656,7 +713,16 @@ def main(argv=None):
         print(f"ranking {len(cases)} patients (input {args.input}, improvements "
               f"{args.improvements}, holdout {'off' if args.no_holdout else 'on'})",
               file=sys.stderr)
-        results = run_rank(cases, hpo, progress=True, input=args.input, top=args.top,
+        llm = None
+        if args.llm:
+            import rerank
+            if not improvements.on("llm_rerank"):
+                ap.error("--llm needs the llm_rerank improvement switched on")
+            llm = rerank.default_llm()
+            if llm is None:
+                ap.error("--llm: OPENROUTER_API_KEY is not set (.env)")
+        results = run_rank(cases, hpo, progress=True, workers=args.workers, llm=llm,
+                           input=args.input, top=args.top,
                            holdout_on=not args.no_holdout, max_terms=args.max_terms,
                            imprecision=args.imprecision, noise=args.noise, seed=args.seed)
         summary = summarize(results)

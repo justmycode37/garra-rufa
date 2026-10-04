@@ -86,6 +86,15 @@ def candidate_seed(interp, top: int, stats: Stats,
             if p.kind != "unknown" else "NOT FOUND; closest HPO terms: "
             + "; ".join(f"{name} ({hp})" for hp, name in p.suggestions)))
     ranking = resolve.rank(interp, top) if interp.mode == "candidates" else []
+    if ranking and interp.of("phenotype") and improvements.on("llm_rerank"):
+        import rerank
+        ranking = rerank.rerank(resolve.rank(interp, max(top, rerank.N)),
+                                [p.id for p in interp.of("phenotype")],
+                                [p.id for p in interp.of("gene")], hpo)[:top]
+        moved = [r for r in ranking if r.get("tool_rank") not in (None, ranking.index(r) + 1)]
+        if moved:
+            print(f"(order of the top {rerank.N} revised by the language model; "
+                  "llm_rerank, tool rank in brackets)")
     stats.candidates = (interp, ranking)
     seed: list[Edge] = []
     phen = {p.id: Node(p.label, id=p.id, kind="phenotype", source="hpoa")
@@ -110,7 +119,8 @@ def candidate_seed(interp, top: int, stats: Stats,
         full = sum(m[2] for m in r["matches"])
         why = [f"{full}/{len(phen)} symptoms" if phen else "",
                ", ".join(sorted(dict(r["genes"]))), "named in the input" if r.get("pinned") else ""]
-        print(f"  {r['score']:5.1f}  {r['name']} ({r['id']})  " + "; ".join(w for w in why if w))
+        print(f"  {r['score']:5.1f}  {r['name']} ({r['id']})  " + "; ".join(w for w in why if w)
+              + (f" [{r['tool_rank']}]" if r.get("tool_rank") else ""))
         r["_key"] = dis.key()
     if improvements.on("symptom_anchor") and ranking:
         chosen = resolve.focus_gate(ranking, focus_candidates, len(phen))

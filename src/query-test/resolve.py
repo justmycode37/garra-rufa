@@ -61,6 +61,9 @@ GENE_PREFIXES = {"NCBIGENE", "ENTREZ", "HGNC", "ENSEMBL", "SYMBOL"}
 # Orphanet entry types that are read as the disease when the name is also an HPO term
 ORPHA_DISEASE_TYPES = {"Disease", "Malformation syndrome", "Clinical subtype",
                        "Histopathological subtype", "Etiological subtype"}
+# annotation_coverage: exponent of the coverage factor (_hpoa.HpoData.rank_diseases);
+# tuned on phenopacket-store patients (phenobench.py rank, leave-publication-out)
+COVERAGE = 0.5
 DISEASE_WORDS = {"syndrome", "disease", "disorder", "deficiency", "dystrophy", "cdg",
                  "anemia", "ataxia", "type", "familial", "hereditary", "congenital"}
 
@@ -388,7 +391,9 @@ def rank(interp: Interpretation, top: int, hpo=None) -> list[dict]:
     hpo = hpo or _hpoa.load()
     ranking = hpo.rank_diseases([p.id for p in interp.of("phenotype")], top=top + 5,
                                 genes=[p.id for p in interp.of("gene")],
-                                gene_assoc=orphanet_assoc)
+                                gene_assoc=orphanet_assoc,
+                                coverage=COVERAGE if improvements.on("annotation_coverage")
+                                else 0.0)
     pinned = []
     for p in interp.of("disease"):
         hit = next((r for r in ranking if p.id in (r["id"], *r["xrefs"])), None)
@@ -421,7 +426,8 @@ def _mondo_of(ids: list[str]) -> list[str]:
     if db is None or not want:
         return []
     try:
-        rows = db.execute(f"SELECT DISTINCT curie FROM xref WHERE xref IN "
+        # COLLATE NOCASE: the index on xref is case-insensitive (else a full table scan)
+        rows = db.execute(f"SELECT DISTINCT curie FROM xref WHERE xref COLLATE NOCASE IN "
                           f"({','.join('?' * len(want))}) AND curie LIKE 'MONDO:%'",
                           want).fetchall()
     except sqlite3.Error:

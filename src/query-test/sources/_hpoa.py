@@ -137,6 +137,7 @@ class HpoData:
                 self.by_term.setdefault(t, set()).add(dis)
         self._anc: dict[str, frozenset[str]] = {}
         self._desc: dict[str, frozenset[str]] = {}
+        self._prop: dict[str, dict[str, float]] = {}  # disease -> _propagated (see forget)
         self._label_words = None
 
     # -- ontology --------------------------------------------------------------
@@ -256,22 +257,49 @@ class HpoData:
 
     # -- disease ranking ----------------------------------------------------------
     def _propagated(self, dis: str) -> dict[str, float]:
+        """Every term the disease has (annotations and their ancestors) -> the highest
+        frequency of an annotation below it. Cached: call forget(dis) after editing ann."""
+        if dis in self._prop:
+            return self._prop[dis]
         out: dict[str, float] = {}
         for t, f in self.ann[dis].items():
             for a in self.ancestors(t):
                 if f > out.get(a, -1):
                     out[a] = f
+        self._prop[dis] = out
         return out
 
+    def forget(self, dis: str) -> None:
+        self._prop.pop(dis, None)
+
+    def coverage(self, dis: str, qanc: dict[str, float]) -> float:
+        """How much of the disease the query explains (0..1): its annotations weighted by
+        frequency x information content, each credited with the IC of the most informative
+        term it shares with the query (qanc: every ancestor of a query term -> its IC).
+        Low for "hub" diseases annotated with hundreds of terms of which the query touches
+        a few, high for a disease whose characteristic findings the query names."""
+        num = den = 0.0
+        for t, f in self.ann.get(dis, {}).items():
+            it = self.ic(t)
+            if it <= 0 or self.is_inheritance(t):
+                continue
+            num += f * max((qanc[a] for a in self.ancestors(t) if a in qanc), default=0.0)
+            den += f * it
+        return num / den if den else 1.0
+
     def rank_diseases(self, hps: list[str], top: int = 20, genes: list[str] = (),
-                      gene_assoc=None) -> list[dict]:
+                      gene_assoc=None, coverage: float = 0.0) -> list[dict]:
         """Diseases best explaining the symptoms and genes, best first. Each result: id,
         name, score, xrefs (same-named entries from other databases), matches
         [(query hp, matched hp, full match?, freq)], genes [(symbol, association)].
         gene_assoc(disease, symbol) may name the association more precisely than this
         file does (it calls every Orphanet link UNKNOWN), e.g. Orphanet's
-        "Disease-causing germline mutation(s) in" or "Major susceptibility factor in"."""
+        "Disease-causing germline mutation(s) in" or "Major susceptibility factor in".
+        coverage > 0 multiplies the symptom score by self.coverage() ** coverage
+        (resolve.py: improvement annotation_coverage); 0 is the plain score."""
         hps = [h for h in dict.fromkeys(hps) if h in self.name]
+        qanc = {a: self.ic(a) for q in hps for a in self.ancestors(q)
+                if not self.is_inheritance(a)} if coverage else {}
         by_gene: dict[str, list[tuple[str, str]]] = {}
         for g in dict.fromkeys(genes):
             for dis, assoc in self.gene_diseases(g):
@@ -294,6 +322,8 @@ class HpoData:
                 if best and best[0] > 0:
                     score += best[0]
                     matches.append((q, best[1], best[2], best[3]))
+            if coverage and score:
+                score *= self.coverage(dis, qanc) ** coverage
             genes_of = [(g, gene_assoc(dis, g) or a if gene_assoc else a)
                         for g, a in by_gene.get(dis, [])]
             scored.append({"id": dis, "name": self.dname.get(dis, dis), "score": score,
