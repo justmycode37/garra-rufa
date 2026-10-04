@@ -69,3 +69,12 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
 Tests use fixtures and mocked upstream calls; no downloaded datasets or live API are required.
+
+### Community discovery API
+
+The UI bridge includes separate **disease communities**, **mechanism groups**, and
+**collaboration projects** at `GET /api/communities`. It supports exact disease/process
+ID filters, public detail pages, and project-to-community links. The default catalog
+is empty; use `--communities examples/communities.demo.json` for explicitly fictional
+UI demo records. Joining and posting are not enabled. See [Community integration](docs/COMMUNITY.md)
+for the schema, endpoints, and frontend integration steps.

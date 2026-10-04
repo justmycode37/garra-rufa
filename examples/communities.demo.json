@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "demo": true,
+  "records": [
+    {
+      "description": "Fictional demonstration only; no real organization or members.",
+      "disease_ids": [
+        "MONDO:0009290"
+      ],
+      "process_ids": [],
+      "evidence": [],
+      "id": "demo-pompe",
+      "kind": "disease",
+      "name": "DEMO: Pompe disease community"
+    },
+    {
+      "description": "Fictional demonstration only; no real organization or members.",
+      "disease_ids": [],
+      "process_ids": [
+        "GO:0005980"
+      ],
+      "evidence": [],
+      "id": "demo-process",
+      "kind": "mechanism",
+      "name": "DEMO: Cross-disease mechanism group"
+    },
+    {
+      "description": "Fictional demonstration only; no real organization or members.",
+      "disease_ids": [
+        "MONDO:0009290"
+      ],
+      "process_ids": [
+        "GO:0005980"
+      ],
+      "evidence": [],
+      "id": "demo-project",
+      "kind": "project",
+      "name": "DEMO: Assess assay reuse",
+      "community_ids": [
+        "demo-pompe",
+        "demo-process"
+      ],
+      "owner": "Fictional demonstration team",
+      "goal": "Assess whether an existing assay could answer a cross-disease research question.",
+      "access_conditions": "No asset available; contact an actual owner before planning access.",
+      "reuse_checks": [
+        "Verify molecular effect and direction in each disease",
+        "Check tissue, model, measurement, and licensing compatibility"
+      ],
+      "next_step": "Identify an actual assay and supporting publications.",
+      "status": "proposed",
+      "asset_urls": []
+    }
+  ]
+}

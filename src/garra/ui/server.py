@@ -5,7 +5,9 @@ import json
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
+
+from garra.community import CommunityCatalog
 
 from .catalog import get_catalog
 from .monarch import UpstreamError
@@ -13,8 +15,9 @@ from .service import ConnectionService, InputError
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, service, origins, **kwargs):
+    def __init__(self, *args, service, origins, communities, **kwargs):
         self.service, self.origins = service, origins
+        self.communities = communities
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -60,6 +63,7 @@ class Handler(BaseHTTPRequestHandler):
                     "routes": {
                         "health": "/health",
                         "symptom_menu": "/api/body-map",
+                        "communities": "/api/communities",
                         "search": {
                             "method": "POST",
                             "path": "/api/connections/search",
@@ -72,6 +76,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(200, {"status": "ok", "service": "garra-ui-bridge"})
         if path == "/api/body-map":
             return self._reply(200, get_catalog())
+        if path == "/api/communities":
+            query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            if set(query) - {"kind", "disease_id", "process_id"} or any(
+                len(values) != 1 for values in query.values()
+            ):
+                return self._reply(400, {"error": "invalid_community_filters"})
+            try:
+                result = self.communities.list(**{k: v[0] for k, v in query.items()})
+            except ValueError as exc:
+                return self._reply(400, {"error": "invalid_request", "message": str(exc)})
+            return self._reply(200, result)
+        if path.startswith("/api/communities/"):
+            result = self.communities.get(path.removeprefix("/api/communities/"))
+            if result is not None:
+                return self._reply(200, result)
         self._reply(404, {"error": "not_found"})
 
     def do_POST(self):
@@ -111,6 +130,7 @@ def create_server(
     *,
     port=8787,
     service=None,
+    communities=None,
     origins=(
         "http://localhost:5173",
         "http://localhost:3000",
@@ -118,7 +138,12 @@ def create_server(
         "http://127.0.0.1:3000",
     ),
 ):
-    handler = partial(Handler, service=service or ConnectionService(), origins=set(origins))
+    handler = partial(
+        Handler,
+        service=service or ConnectionService(),
+        origins=set(origins),
+        communities=communities if communities is not None else CommunityCatalog(),
+    )
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 
@@ -135,11 +160,15 @@ def main(argv=None):
         action="append",
         help="Exact UI origin; repeat for multiple origins (replaces defaults)",
     )
+    parser.add_argument("--communities", type=Path, help="Public community catalog JSON")
     args = parser.parse_args(argv)
     try:
         enrichment = json.loads(args.enrichment.read_text()) if args.enrichment else None
         service = ConnectionService(enrichment=enrichment)
-        options = {"port": args.port, "service": service}
+        communities = CommunityCatalog(
+            json.loads(args.communities.read_text()) if args.communities else None
+        )
+        options = {"port": args.port, "service": service, "communities": communities}
         if args.allow_origin:
             for origin in args.allow_origin:
                 parsed = urlsplit(origin)
