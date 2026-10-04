@@ -104,6 +104,8 @@ FREQ_LABEL = [(0.99, "always"), (0.8, "very frequent (80-99%)"), (0.3, "frequent
 
 ALIAS_RELATIONS = {"xref", "xref_broader", "xref_narrower", "matches", "mesh_heading",
                    "same_as", "exact_match"}
+# one record per disease (as entities.LISTED): a node listing such an id is that record
+LISTED_PREFIXES = {"NORD", "GARD"}
 CAUSAL_GENE_RELATIONS = {"caused_by_gene", "causes_disease", "disease_has_basis_in",
                          "has_material_basis_in", "gene_associated_disease"}
 # sources whose disease-gene links are curated (OpenTargets / PrimeKG alone are not)
@@ -250,7 +252,7 @@ class Graph:
             return None
         for f in self.data.get("focus") or ():
             if f in self.nodes:
-                return f
+                return self._richer(f)
         # fallback: the disease the most sources matched to the input
         start = self.data.get("start")
         votes = Counter(o for o, rel, _, out in self.adj.get(start, ())
@@ -259,6 +261,37 @@ class Graph:
             return votes.most_common(1)[0][0]
         diseases = [n for n in self.nodes if self.nodes[n]["kind"] == "disease"]
         return max(diseases, key=lambda n: len(self.adj[n]), default=None)
+
+
+    def listing(self, nid: str) -> list[str]:
+        """Disease nodes that are the same record as `nid` by a NORD / GARD xref (one
+        lists the other's id), left unmerged by main.py."""
+        mine = {x for x in self.ids(nid) if _prefix(x) in LISTED_PREFIXES}
+        out = []
+        for o, n in self.nodes.items():
+            if o == nid or n["kind"] != "disease":
+                continue
+            theirs = {x for x in self.ids(o) if _prefix(x) in LISTED_PREFIXES}
+            if o in mine or nid in theirs:
+                out.append(o)
+        return out
+
+    def _richer(self, f: str) -> str:
+        """A focus that is a bare directory record (NORD / GARD: one source, no xrefs,
+        e.g. NORD's "Pompe Disease" picked for its label) gives an empty profile: use
+        the disease that lists it as xref, else the best-connected disease the input's
+        name search matched."""
+        n = self.nodes[f]
+        if n.get("xrefs") or len(set(n.get("sources") or ()) - {"input"}) > 1 or                _prefix(f) not in LISTED_PREFIXES:
+            return f
+        same = self.listing(f)
+        if same:
+            return max(same, key=lambda o: len(self.adj[o]))
+        start = self.data.get("start")
+        hits = [o for o, rel, _, out in self.adj.get(start, ())
+                if out and rel == "matches" and self.nodes[o]["kind"] == "disease"]
+        best = max(hits, key=lambda o: len(self.adj[o]), default=f)
+        return best if len(self.adj[best]) > 2 * len(self.adj[f]) else f
 
 
 # -- curated view ----------------------------------------------------------------------
@@ -291,6 +324,7 @@ class Present:
             n = self.g.nodes[o]
             if rel in ALIAS_RELATIONS and n["kind"] == "disease" and _norm_label(n["label"]) == name:
                 out.add(o)
+        out.update(self.g.listing(self.focus))  # unmerged NORD / GARD copy of the focus
         start = self.g.data.get("start")
         if start in self.g.nodes and self.g.nodes[start]["kind"] == "term":
             out.add(start)  # free-text input: name-searched hits hang off it

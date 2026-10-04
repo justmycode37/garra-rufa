@@ -12,7 +12,7 @@ lookup, so e.g. an OMIM-only node falls back to its label.
 """
 from urllib.parse import quote
 
-from ._ols import v1_info
+from ._ols import SEARCH_FIELDS, search_info, v1_info
 from .base import Edge, Node, Source
 
 OLS = "https://www.ebi.ac.uk/ols4/api"
@@ -66,12 +66,13 @@ class DiseaseOntologySource(Source):
         d = self.get_json(f"{OLS}/search", params={
             "q": node.label, "ontology": ONTOLOGY, "rows": limit,
             "obsoletes": "false", "type": "class",
-            "fieldList": "obo_id,label"})
+            "fieldList": SEARCH_FIELDS})
         edges = []
         for doc in d["response"]["docs"]:
             if not doc.get("obo_id", "").startswith(PREFIX + ":"):
                 continue
-            dst = Node(doc["label"], doc["obo_id"], "disease", self.name)
+            dst = Node(doc["label"], doc["obo_id"], "disease", self.name,
+                       info=search_info(doc))
             edges.append(Edge(node, dst, "matches", self.name))
         return edges[:limit]
 

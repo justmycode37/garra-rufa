@@ -1,6 +1,7 @@
 """Named switches for the pipeline improvements of runs/study/FINDINGS.md (R1-R9).
 
-Every improvement is ON by default and guarded in the code by `if improvements.on(name)`;
+Every improvement but llm_rerank is ON by default and guarded in the code by
+`if improvements.on(name)`;
 with all of them off (GARRA_IMPROVEMENTS=none) the pipeline behaves exactly as before.
 
   input_identity     R1 build.py: the input's xref-id nodes are merged into it; disease
@@ -33,16 +34,28 @@ with all of them off (GARRA_IMPROVEMENTS=none) the pipeline behaves exactly as b
   diverse_selection  R9 evidence/screen.py: full-text selection prefers papers that add a
                      solution not covered yet (relevance order kept within a level)
   annotation_coverage  B1 resolve.py / sources/_hpoa.py: the symptom score of a candidate is
-                     multiplied by sqrt(share of its annotations the symptoms explain), so
-                     "hub" diseases with hundreds of annotations stop winning every query
-                     (phenobench.py rank, leave-publication-out)
+                     multiplied by (share of its annotations the symptoms explain) ** 0.25,
+                     so "hub" diseases with hundreds of annotations stop winning every
+                     query (phenobench.py rank, leave-publication-out: MRR 0.180 -> 0.209
+                     on 300 dev patients, 0.247 -> 0.283 on 120 test patients)
   llm_rerank         B2 main.py / rerank.py: a language model re-orders the top 20
-                     candidates of a symptom search (needs OPENROUTER_API_KEY; skipped
-                     without it)
+                     candidates of a symptom search (needs OPENROUTER_API_KEY). OFF by
+                     default ("+llm_rerank" or "all" switch it on): over plain scoring it
+                     helped (dev MRR 0.180 -> 0.209), over annotation_coverage it adds
+                     almost nothing (0.209 -> 0.213) for one slow model call per search
+  name_focus         B3 main.py / entities.py / sources/mondo.py, disease_ontology.py: a
+                     free-text name is matched against the exact synonyms of ontology
+                     hits too ("Pompe disease" is a synonym of "glycogen storage disease
+                     II"), so they are not dropped as off-topic; sources agree on a hit
+                     across ids that carry the same label (MONDO / DOID before they are
+                     merged); the focus prefers such a corroborated hit over a one-source
+                     record that only happens to carry the input as label (NORD); NORD /
+                     GARD ids an entity lists as xrefs merge that record into it
 
 Overrides: environment variable GARRA_IMPROVEMENTS or --improvements SPEC on main.py,
 literature/main.py and evidence/main.py (the flag wins). SPEC is a comma list read left to
-right from "all on": "none" / "all" reset, "-name" switches one off, "+name" or "name" on:
+right from the default (all on but llm_rerank): "none" / "all" reset, "-name" switches one
+off, "+name" or "name" on:
   GARRA_IMPROVEMENTS=none                      old behaviour
   --improvements=-canonicalize,-gap_check      all but these two (note the "=": argparse
                                                reads a value starting with "-" as an option;
@@ -51,9 +64,10 @@ right from "all on": "none" / "all" reset, "-name" switches one off, "+name" or 
 """
 import os
 
+OFF_BY_DEFAULT = {"llm_rerank"}
 FLAGS = ("input_identity", "canonicalize", "paper_scoring", "generic_penalty", "gap_check",
          "query_hygiene", "symptom_anchor", "symptom_axis", "diverse_selection",
-         "annotation_coverage", "llm_rerank")
+         "annotation_coverage", "llm_rerank", "name_focus")
 ENV = "GARRA_IMPROVEMENTS"
 
 _state: dict[str, bool] = {}
@@ -61,7 +75,7 @@ _state: dict[str, bool] = {}
 
 def parse(spec: str | None) -> dict[str, bool]:
     """Flag -> on for a SPEC (see module docstring); unknown names raise ValueError."""
-    state = dict.fromkeys(FLAGS, True)
+    state = {f: f not in OFF_BY_DEFAULT for f in FLAGS}
     for tok in (spec or "").replace(" ", "").split(","):
         if not tok:
             continue

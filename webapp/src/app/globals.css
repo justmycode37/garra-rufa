@@ -449,3 +449,5 @@ kbd { font-family: var(--font-body); font-size: 10px; color: var(--quiet); borde
 .public-atlas [aria-current=page]{text-decoration:underline;text-underline-offset:5px}
 .public-atlas-content{flex:1;min-height:0}
 @media(max-width:800px){.public-atlas{height:auto;min-height:100dvh}.public-atlas>.landing-nav{padding:14px;gap:12px;flex-wrap:wrap}.public-atlas .nav-right{gap:12px;flex-wrap:wrap}.public-atlas-content{min-height:800px}}
+.sidebar-nav > a { display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 11px 13px; border-radius: 9px; font-size: 12px; color: var(--muted); }
+.sidebar-nav > a:hover { background: #14131405; color: var(--ink); }

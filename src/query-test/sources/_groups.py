@@ -186,8 +186,13 @@ def orpha_codes(node: Node) -> list[str]:
 
 def disease_names(node: Node, session, max_orpha: int = 2) -> list[str]:
     """Normalised names to match the node against a site's disease names: the node label
-    and the Orphanet preferred terms of its (first few) ORPHA ids."""
+    and the Orphanet preferred terms of its (first few) ORPHA ids; under name_focus also
+    its exact synonyms, so "glycogen storage disease II" matches trials of "Pompe
+    disease"."""
+    import improvements
     names = [node.label]
+    if improvements.on("name_focus"):
+        names += [x for x in (node.info or {}).get("synonyms") or () if len(x) >= 6]
     for code in orpha_codes(node)[:max_orpha]:
         n = orphanet_name(session, code)
         if n:

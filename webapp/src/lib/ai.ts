@@ -1,7 +1,8 @@
 import { diseases,searchDiseases,inferRegion,reasoningEffort,diseaseSource } from './knowledge';
 import { listRecords,getRecord,getFile,publicProjects } from "./persistence";
 import type { User,Source,SearchResult,Message,Region } from './types';
-import { apiRequest, openAIResponse, type ResponseStreamOptions } from './openai-response';
+import { apiRequest, type ResponseStreamOptions } from './openai-response';
+import { llmConfigured, llmModel, llmResponse } from './llm'; // provider seam: see llm.ts to switch OpenRouter <-> OpenAI
 import { createAnswerDecoder } from './streamed-answer';
 import type { AnswerProgress } from './search-stream';
 import { searchResearch, researchWarning } from './research';
@@ -30,8 +31,8 @@ export async function answerQuery(input:{query:string;user:User|null;history:Mes
   const notices=new Set<string>();
   const retrieved=new Map<string,Source>();
   if (input.surface === 'workspace' && (!user || user.guest)) return fallback(query,evidence.diseases,evidence.sources,'Sign in to use your workspace assistant.');
-  if (!process.env.OPENAI_API_KEY) return fallback(query,evidence.diseases,evidence.sources,'AI is not configured. Showing database search results.');
-  const model = input.surface === 'workspace' ? process.env.OPENAI_WORKSPACE_MODEL || 'gpt-6-astra' : process.env.OPENAI_SEARCH_MODEL || 'gpt-6-luna';
+  if (!llmConfigured()) return fallback(query,evidence.diseases,evidence.sources,'AI is not configured. Showing database search results.');
+  const model = llmModel(input.surface);
   const effort = reasoningEffort(query, fileIds.length > 0);
   const sources=new Map(evidence.sources.map(s=>[s.id,s]));
   const content:Record<string,unknown>[]=[{type:'input_text',text:query}];
@@ -53,7 +54,7 @@ export async function answerQuery(input:{query:string;user:User|null;history:Mes
       const decodeAnswer=createAnswerDecoder();
       const streamOptions:ResponseStreamOptions={signal:input.signal,onTextDelta:input.onProgress?(text)=>{const delta=decodeAnswer(text);if(delta)input.onProgress!({type:'delta',delta});}:undefined};
       const request=apiRequest({model,instructions,input:items,tools:round<3?tools:undefined,format:{type:'json_schema',name:'research_response',strict:true,schema:outputSchema}});
-      const response=await openAIResponse({...request,reasoning:{effort},max_output_tokens:effort==='max'?14000:6000},streamOptions);
+      const response=await llmResponse({...request,reasoning:{effort},max_output_tokens:effort==='max'?14000:6000},streamOptions);
       const calls=response.output.filter(o=>o.type==='function_call');
       if(calls.length){
         input.onProgress?.({type:'reset'});

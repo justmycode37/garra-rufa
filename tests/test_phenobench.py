@@ -4,8 +4,9 @@
 PhenobenchUnit      offline: the benchmark itself on a tiny synthetic HPO (parsing,
                     sampling, identity, leave-publication-out holdout, perturbation,
                     excluded-term contradictions, metrics, profile scoring)
-RankingQuality      opt-in (PHENOBENCH=1, ~5 min): ranks a fixed sample of 40 patients
-                    (one per disease) as main.py does and checks top-k floors; needs
+RankingQuality      opt-in (PHENOBENCH=1, ~2 min): ranks a fixed sample of 40 patients
+                    (one per disease) as main.py does and checks top-k floors, also with
+                    the annotation_coverage improvement off and leave-one-patient-out; needs
                     data/phenopackets/all_phenopackets.zip (phenobench.py download) and
                     data/hpo
 ProfileQuality      the focus profiles of finished runs (runs/*.json, gitignored) against
@@ -32,6 +33,7 @@ if HAS_REQUESTS:
     try:
         import improvements
         import phenobench as pb
+        import rerank  # noqa: F401  (imported here, while src/query-test is on the path)
         import resolve
         from sources import _hpoa
     finally:
@@ -177,6 +179,86 @@ class PhenobenchUnit(unittest.TestCase):
         with pb.holdout(self.hpo, case(pmid="PMID:3")) as hidden:  # other paper
             self.assertEqual(hidden, 0)
 
+    def test_holdout_patient(self):
+        """Leave-one-patient-out: the cohort count of an own-paper annotation is
+        recomputed without the patient instead of the annotation being dropped."""
+        counts = {(ALPHA, LENS): (3, 4)}
+        with patch.object(pb, "_cohort_counts", lambda: counts):
+            with pb.holdout(self.hpo, case(observed=(LENS,)), "patient") as changed:
+                self.assertEqual(changed, 1)
+                self.assertAlmostEqual(self.hpo.ann[ALPHA][LENS], 2 / 3)  # had it
+                self.assertIn(ALPHA, self.hpo.by_term[LENS])
+            self.assertEqual(self.hpo.ann[ALPHA][LENS], 0.9)
+            with pb.holdout(self.hpo, case(observed=(ARACH,), excluded=(LENS,)), "patient"):
+                self.assertAlmostEqual(self.hpo.ann[ALPHA][LENS], 1.0)  # lacked it: 3/3
+            counts[(ALPHA, LENS)] = (1, 1)  # the patient was the whole cohort
+            with pb.holdout(self.hpo, case(observed=(LENS,)), "patient"):
+                self.assertNotIn(LENS, self.hpo.ann[ALPHA])
+            with pb.holdout(self.hpo, case(), "none") as changed:
+                self.assertEqual(changed, 0)
+        self.assertEqual(self.hpo.ann[ALPHA][LENS], 0.9)
+
+    def test_annotation_coverage(self):
+        """A disease whose annotations the query explains fully keeps its score; one
+        with unexplained annotations is scaled down (improvement annotation_coverage)."""
+        h = self.hpo
+        qanc = {a: h.ic(a) for q in (ANEUR, SCOL) for a in h.ancestors(q)}
+        self.assertAlmostEqual(h.coverage(GAMMA, qanc), 1.0)
+        self.assertLess(h.coverage(ALPHA, qanc), 0.5)  # lens and fingers unexplained
+        plain = {r["id"]: r["score"] for r in h.rank_diseases([ANEUR, SCOL])}
+        cov = {r["id"]: r["score"] for r in h.rank_diseases([ANEUR, SCOL], coverage=resolve.COVERAGE)}
+        self.assertAlmostEqual(cov[GAMMA], plain[GAMMA])
+        self.assertLess(cov[ALPHA], plain[ALPHA])
+        # the switch: resolve.rank passes the factor only with the improvement on
+        interp = resolve.Interpretation("q", [resolve.Part(t, "phenotype", t)
+                                              for t in (ANEUR, SCOL)])
+        on = {r["id"]: r["score"] for r in resolve.rank(interp, 5, hpo=h)}
+        improvements.configure("all,-annotation_coverage")
+        off = {r["id"]: r["score"] for r in resolve.rank(interp, 5, hpo=h)}
+        self.assertAlmostEqual(on[ALPHA], cov[ALPHA])
+        self.assertAlmostEqual(off[ALPHA], plain[ALPHA])
+
+    def test_llm_rerank(self):
+        import rerank
+        ranking = [{"id": i, "name": n, "xrefs": [], "score": 1.0, "matches": [], "genes": []}
+                   for i, n in ((BETA, "Beta syndrome"), (GAMMA, "Gamma syndrome"),
+                                (ALPHA, "Alpha syndrome"))]
+        system, user = rerank.prompt(ranking, [LENS, ARACH], ["GENEA"], self.hpo, [SCOL])
+        self.assertIn("3. Alpha syndrome (OMIM:900001); genes: GENEA", user)
+        self.assertIn("Ectopia lentis (very frequent)", user)
+        self.assertIn("explicitly absent: Scoliosis", user)
+        # the model's order; junk and repeats ignored, left-out candidates keep order
+        out = rerank.apply(ranking, {"order": [3, "x", 3, 99]}, n=3)
+        self.assertEqual([r["id"] for r in out], [ALPHA, BETA, GAMMA])
+        self.assertEqual([r["tool_rank"] for r in out], [3, 1, 2])
+        self.assertIs(rerank.apply(ranking, {"order": []}), ranking)
+        self.assertEqual([r["id"] for r in rerank.apply(ranking, {"order": [2]}, n=1)],
+                         [BETA, GAMMA, ALPHA])  # only the top n are re-ordered
+
+        class Fake:
+            def __init__(self, reply=None, fail=False):
+                self.reply, self.fail, self.calls = reply, fail, 0
+
+            def chat(self, system, user, **kw):
+                self.calls += 1
+                if self.fail:
+                    raise RuntimeError("down")
+                return self.reply
+        pinned = [{**ranking[1], "pinned": True}, ranking[0], ranking[2]]
+        out = rerank.rerank(pinned, [LENS], [], self.hpo, llm=Fake({"order": [2, 1]}))
+        self.assertEqual([r["id"] for r in out], [GAMMA, ALPHA, BETA])  # pinned stays
+        with patch("sys.stderr"):
+            self.assertIs(rerank.rerank(ranking, [LENS], [], self.hpo, llm=Fake(fail=True)),
+                          ranking)
+        fake = Fake()
+        self.assertIs(rerank.rerank(ranking, [], ["GENEA"], self.hpo, llm=fake), ranking)
+        self.assertEqual(fake.calls, 0)  # a gene-only search is not re-ordered
+        # in the benchmark: the model's order is scored, the tool's order kept alongside
+        c = case(observed=(ANEUR,))  # coverage puts Gamma (all explained) first
+        r = pb.rank_case(c, self.hpo, holdout_on=False, llm=Fake({"order": [2, 1]}))
+        self.assertEqual((r["tool_rank"], r["rank"]), (2, 1))
+        self.assertEqual(pb.summarize([r])["tool_order"]["top1"], 0.0)
+
     def test_perturb(self):
         c = case()
         self.assertEqual(pb.perturb(c, self.hpo), [LENS, ARACH, ANEUR])
@@ -195,6 +277,7 @@ class PhenobenchUnit(unittest.TestCase):
         self.assertEqual(pb.contradicted(self.hpo, [ALPHA], [EYE]), [EYE])
         self.assertEqual(pb.contradicted(self.hpo, [ALPHA], [SCOL]), [])
         self.assertEqual(pb.contradicted(self.hpo, [GAMMA], [ANEUR]), [])
+        improvements.configure("all,-annotation_coverage")  # plain score: Alpha first
         r = pb.rank_case(case(observed=(ANEUR,), excluded=(LENS,), disease=GAMMA,
                               label="Gamma syndrome"), self.hpo, holdout_on=False)
         self.assertTrue(r["top1"].startswith("Alpha"))
@@ -245,21 +328,40 @@ HAVE_STORE = HAS_REQUESTS and pb.ZIP.exists() and (ROOT / "data" / "hpo" / "hp.o
                      "set PHENOBENCH=1 (and run phenobench.py download) for the ranking gate")
 class RankingQuality(unittest.TestCase):
     """40 patients, one per disease, seed 0; leave-publication-out unless noted.
-    Measured 2026-10-04: hpo top1/3/10 25/35/45% (no holdout 68/72/78%), gene 57/85/95%,
-    hpo+gene 75/92/98%."""
+    Measured 2026-10-04 (annotation_coverage on): hpo top1/3/10 25/40/50% MRR 0.33
+    (coverage off 25/35/45% MRR 0.31; no holdout 68/72/78%; leave-one-patient-out
+    48/65/68% MRR 0.56), gene 57/85/95%, hpo+gene 75/92/98%. The language model
+    re-ordering (llm_rerank) is not part of the gate: it needs a key and costs calls."""
 
     @classmethod
     def setUpClass(cls):
-        improvements.configure(None)
+        improvements.configure("all")
         cls.hpo = _hpoa.load()
         cls.cases = pb.sample(pb.load_cases(), per_disease=1, max_cases=40, seed=0)
         cls.res = {inp: pb.summarize(pb.run_rank(cls.cases, cls.hpo, input=inp))
                    for inp in pb.INPUTS}
+        cls.res["patient"] = pb.summarize(pb.run_rank(cls.cases, cls.hpo,
+                                                      holdout_on="patient"))
+        improvements.configure("all,-annotation_coverage")
+        cls.res["plain"] = pb.summarize(pb.run_rank(cls.cases, cls.hpo))
+        improvements.configure(None)
 
     def test_symptoms_only(self):
         s = self.res["hpo"]["micro"]
-        self.assertGreaterEqual(s["top10"], 0.40, s)
-        self.assertGreaterEqual(s["mrr"], 0.25, s)
+        self.assertGreaterEqual(s["top10"], 0.45, s)
+        self.assertGreaterEqual(s["mrr"], 0.30, s)
+
+    def test_annotation_coverage_helps(self):
+        """The improvement must not lose against the plain score it switches off."""
+        self.assertGreaterEqual(self.res["hpo"]["micro"]["mrr"],
+                                self.res["plain"]["micro"]["mrr"])
+
+    def test_new_patient_of_a_published_cohort(self):
+        """Leave-one-patient-out: the cohort paper is known, only the patient is new."""
+        s = self.res["patient"]["micro"]
+        self.assertGreaterEqual(s["top10"], 0.60, s)
+        self.assertGreaterEqual(s["mrr"], 0.50, s)
+        self.assertGreater(s["mrr"], self.res["hpo"]["micro"]["mrr"])
 
     def test_gene_only(self):
         s = self.res["gene"]["micro"]

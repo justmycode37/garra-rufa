@@ -80,7 +80,9 @@ class Base(unittest.TestCase):
 
 class FlagTests(Base):
     def test_parse(self):
-        self.assertTrue(all(improvements.parse(None).values()))
+        default = improvements.parse(None)
+        self.assertEqual({k for k, v in default.items() if not v}, improvements.OFF_BY_DEFAULT)
+        self.assertTrue(all(improvements.parse("all").values()))
         self.assertFalse(any(improvements.parse("none").values()))
         st = improvements.parse("-canonicalize,-gap_check")
         self.assertFalse(st["canonicalize"] or st["gap_check"])
@@ -103,8 +105,8 @@ class FlagTests(Base):
         improvements.apply_args(a)  # the flag wins over the environment
         self.assertFalse(improvements.on("symptom_axis"))
         self.assertTrue(improvements.on("canonicalize"))
-        self.assertEqual(a.improvements, "all,-symptom_axis")
-        self.assertEqual(os.environ[improvements.ENV], "all,-symptom_axis")
+        self.assertEqual(a.improvements, "all,-symptom_axis,-llm_rerank")
+        self.assertEqual(os.environ[improvements.ENV], "all,-symptom_axis,-llm_rerank")
         self.assertEqual(improvements.parse(a.improvements), improvements.active())
 
 
@@ -689,6 +691,84 @@ class DiverseSelectionTests(Base):
                          ["0", "4", "1"])
         improvements.configure("none")
         self.assertEqual([p["pmid"] for p in screen.select(papers, dec, 2, 2)], ["0", "1"])
+
+
+class NameFocusTests(Base):
+    """B3: "Pompe disease" is MONDO's "glycogen storage disease II" (an exact synonym),
+    not NORD's one-source record that carries the input as label."""
+
+    def search(self, ents):
+        term = Node("Pompe disease", kind="term")
+        gsd2 = Node("glycogen storage disease II", "MONDO:0009290", "disease", "mondo",
+                    info={"synonyms": ["Pompe disease", "acid maltase deficiency"]})
+        found = [Edge(term, gsd2, "matches", "mondo"),
+                 Edge(term, Node("glycogen storage disease II", "DOID:2752", "disease",
+                                 "disease_ontology"), "matches", "disease_ontology"),
+                 Edge(term, Node("Pompe Disease", "NORD:1595", "disease", "nord"),
+                      "matches", "nord"),
+                 Edge(term, Node("Unrelated thing", "MONDO:9", "disease", "mondo"),
+                      "matches", "mondo")]
+        ents.add(term)
+        for e in found:
+            ents.add(e.dst, e.source)
+        stats = Stats()
+        kept = main._filter(found, term, ents, stats, name_hits=True)
+        return term, kept, stats
+
+    def test_synonym_hit_kept_and_focused(self):
+        ents = Entities()
+        term, kept, stats = self.search(ents)
+        ids = {e.dst.id for e in kept}
+        self.assertIn("MONDO:0009290", ids)  # exact synonym, not "off-topic"
+        self.assertIn("DOID:2752", ids)  # same label as the MONDO hit: two sources agree
+        self.assertNotIn("MONDO:9", ids)
+        self.assertEqual([ents.key(r) for r in main._best_match(kept, term, ents)],
+                         ["MONDO:0009290"])
+
+    def test_off_is_old_behaviour(self):
+        improvements.configure("all,-name_focus")
+        ents = Entities()
+        term, kept, stats = self.search(ents)
+        self.assertNotIn("MONDO:0009290", {e.dst.id for e in kept})
+        self.assertEqual([ents.key(r) for r in main._best_match(kept, term, ents)],
+                         ["NORD:1595"])
+
+    def test_merge_listed(self):
+        ents = Entities()
+        nord = ents.add(Node("Pompe Disease", "NORD:1595", "disease", "nord"))
+        ents.add(Node("glycogen storage disease II", "MONDO:0009290", "disease", "monarch",
+                      xrefs=("NORD:1595", "ORPHA:365")))
+        ents.add(Node("Some subtype", "MONDO:0017694", "disease", "monarch",
+                      xrefs=("NORD:1595",)))  # second MONDO id: refused
+        self.assertEqual(ents.merge_listed(), 1)
+        self.assertEqual(ents.key(nord), "MONDO:0009290")
+        self.assertEqual(ents.key("MONDO:0017694"), "MONDO:0017694")
+
+
+@unittest.skipUnless(HAS_REQUESTS, "Install .[research] to test the research pipeline")
+class PresentFocusTests(unittest.TestCase):
+    def test_thin_directory_focus_switches_to_listing_disease(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "query-test"))
+        try:
+            import present
+        finally:
+            sys.path.pop(0)
+        node = lambda i, lab, src, xr=(): {"id": i, "label": lab, "kind": "disease",
+                                          "sources": [src], "xrefs": list(xr), "info": {}}
+        data = {"start": "term:pompe disease", "focus": ["NORD:1595"],
+                "nodes": [{"id": "term:pompe disease", "label": "Pompe disease",
+                           "kind": "term", "sources": ["input"], "info": {}},
+                          node("NORD:1595", "Pompe Disease", "nord"),
+                          node("MONDO:0009290", "glycogen storage disease II", "mondo",
+                               ["NORD:1595", "ORPHA:365"]),
+                          node("MONDO:0007947", "Marfan syndrome", "mondo")],
+                "edges": [{"from": "term:pompe disease", "to": "NORD:1595",
+                           "relation": "matches", "source": "nord"}]}
+        g = present.Graph(data)
+        self.assertEqual(g.pick_focus(None), "MONDO:0009290")
+        self.assertEqual(g.listing("MONDO:0009290"), ["NORD:1595"])  # becomes an alias
+        data["focus"] = ["MONDO:0007947"]
+        self.assertEqual(present.Graph(data).pick_focus(None), "MONDO:0007947")
 
 
 if __name__ == "__main__":

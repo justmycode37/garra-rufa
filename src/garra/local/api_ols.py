@@ -61,6 +61,11 @@ def search(req: Req) -> Reply | None:
         obs = (req.get("obsoletes") or "false").lower() == "true"
         hits = O.exact(q, ont, rows) if exact else O.search(q, ont, rows, obsoletes=obs)
         docs = [_doc(c, lab, ont) for c, lab in hits]
+        fields = {f for v in req.getall("fieldList") for f in v.split(",")}
+        if "exact_synonyms" in fields:  # as live OLS: asked for, not in the default docs
+            for d in docs:
+                d["exact_synonyms"] = [n for n, sc, _ in O.synonyms(d["obo_id"])
+                                       if sc == "EXACT"]
     else:
         return None
     return Reply({"response": {"docs": docs, "numFound": len(docs), "start": 0},

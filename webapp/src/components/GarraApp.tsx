@@ -3,7 +3,7 @@ import { useEffect,useRef,useState } from 'react';
 import BodyGraph from './BodyGraph';
 import PublicAtlas from './PublicAtlas';
 import { AboutLink } from './ConnectionExperience';
-import { Trash2,ArrowUpRight,ArrowLeft,ArrowRight,BookOpen,Check,ChevronDown,ChevronRight,FileText,Folder,Heart,Home,LogOut,Menu,MessageCircle,Microscope,Network,Plus,Search,ShieldCheck,Sparkles,Stethoscope,Users,X,PanelLeftClose,Bookmark,FlaskConical,Globe } from 'lucide-react';
+import { Trash2,ArrowUpRight,ArrowLeft,ArrowRight,BookOpen,Check,ChevronDown,ChevronRight,FileText,Folder,Heart,Home,LogOut,Menu,MessageCircle,Microscope,Network,Plus,Search,ShieldCheck,Sparkles,Stethoscope,Users,X,PanelLeftClose,Bookmark,FlaskConical,Globe,Share2 } from 'lucide-react';
 import { Brand } from './Brand';
 import AuthDialog,{roleMeta,authConversationKey} from './AuthDialog';
 import RoleDialog from './RoleDialog';
@@ -154,11 +154,11 @@ export default function GarraApp(){
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
     {!workspace&&publicAtlas?<main className="public-atlas" id="main-content">
-      <header className="landing-nav"><Brand onClick={()=>{setPublicAtlas(false);window.history.replaceState(null,'','/?view=explore');}}/><nav className="nav-right" aria-label="Main navigation"><a className="text-button" href="/?view=explore">Home</a><a className="text-button" href="/?view=atlas" aria-current="page">Atlas</a><AboutLink/><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></nav></header>
+      <header className="landing-nav"><Brand onClick={()=>{setPublicAtlas(false);window.history.replaceState(null,'','/?view=explore');}}/><nav className="nav-right" aria-label="Main navigation"><a className="text-button" href="/?view=explore">Home</a><a className="text-button" href="/?view=atlas" aria-current="page">Atlas</a><a className="text-button" href="/graphs/overview">Graphs</a><AboutLink/><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></nav></header>
       <div className="public-atlas-content"><PublicAtlas onDisease={viewDisease} onCommunity={openCommunity}/></div>
     </main>:!workspace?<main className="landing" id="main-content">
       
-      <header className="landing-nav"><Brand onClick={closeLandingChat}/><div className="nav-right"><AboutLink/><a className="text-button" href="/?view=atlas">Atlas</a><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></div></header>
+      <header className="landing-nav"><Brand onClick={closeLandingChat}/><div className="nav-right"><AboutLink/><a className="text-button" href="/?view=atlas">Atlas</a><a className="text-button" href="/graphs/overview">Graphs</a><button className="text-button" onClick={()=>setAccountOpen(true)}>{user?'Account':'Sign in'}</button><button className="primary" onClick={openWorkspace}>My space</button></div></header>
       <div className={`landing-intro ${messages.length||region!=='body'?'searching':''}`}><h1>A way forward.<br/>Together.</h1><p>Rare disease knowledge, connected.</p></div>
       <BodyGraph/>
       <div className="landing-search"><LandingChat onCommunity={openCommunity} messages={messages} busy={busy} composer={composer} onDisease={viewDisease} onClose={closeLandingChat} onContinue={()=>setAuth({mode:'signup',continueChat:true})}/></div>
@@ -169,6 +169,7 @@ export default function GarraApp(){
         <button className="sidebar-search" onClick={()=>setSearchOpen(true)}><Search size={16}/><span>Search everything</span><kbd>⌘ K</kbd></button>
         <nav className="sidebar-nav" aria-label="Workspace navigation">
           {navItems.filter(n=>['overview','atlas'].includes(n.id)).map(n=><button key={n.id} onClick={()=>navigate(n.id)} className={view===n.id?'active':''}><n.icon size={19}/>{n.label}</button>)}
+          <a href="/graphs/overview"><Share2 size={19}/>Graphs</a>
           <span className="sidebar-group-label">Workspace</span>
           {navItems.filter(n=>!['overview','atlas'].includes(n.id)&&(n.id!=='patients'||user.role==='doctor')).map(n=><button key={n.id} onClick={()=>navigate(n.id)} className={view===n.id?'active':''}><n.icon size={19}/>{n.id==='projects'&&user.role==='patient'?'My journey':n.label}{n.id==='documents'&&records.filter(r=>r.kind==='document').length>0&&<span className="nav-count">{records.filter(r=>r.kind==='document').length}</span>}</button>)}
         </nav>

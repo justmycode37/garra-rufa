@@ -63,7 +63,7 @@ ORPHA_DISEASE_TYPES = {"Disease", "Malformation syndrome", "Clinical subtype",
                        "Histopathological subtype", "Etiological subtype"}
 # annotation_coverage: exponent of the coverage factor (_hpoa.HpoData.rank_diseases);
 # tuned on phenopacket-store patients (phenobench.py rank, leave-publication-out)
-COVERAGE = 0.5
+COVERAGE = 0.25
 DISEASE_WORDS = {"syndrome", "disease", "disorder", "deficiency", "dystrophy", "cdg",
                  "anemia", "ataxia", "type", "familial", "hereditary", "congenital"}
 

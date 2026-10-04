@@ -1,0 +1,56 @@
+[
+ {
+  "id": "marfan",
+  "label": "Marfan syndrome",
+  "present": "marfan.present.json",
+  "evidence": "marfan.evidence.json",
+  "exported": "2026-10-04",
+  "presentStats": {
+   "items": 164,
+   "groups": 33,
+   "links": 260
+  },
+  "evidenceStats": {
+   "nodes": 814,
+   "edges": 1262,
+   "candidates": 331,
+   "papers": 50
+  }
+ },
+ {
+  "id": "pmm2",
+  "label": "PMM2-congenital disorder of glycosylation",
+  "present": "pmm2.present.json",
+  "evidence": "pmm2.evidence.json",
+  "exported": "2026-10-04",
+  "presentStats": {
+   "items": 136,
+   "groups": 25,
+   "links": 163
+  },
+  "evidenceStats": {
+   "nodes": 886,
+   "edges": 1227,
+   "candidates": 349,
+   "papers": 50
+  }
+ },
+ {
+  "id": "pompe",
+  "label": "Pompe Disease",
+  "present": "pompe.present.json",
+  "evidence": "pompe.evidence.json",
+  "exported": "2026-10-04",
+  "presentStats": {
+   "items": 32,
+   "groups": 2,
+   "links": 0
+  },
+  "evidenceStats": {
+   "nodes": 945,
+   "edges": 1417,
+   "candidates": 350,
+   "papers": 120
+  }
+ }
+]

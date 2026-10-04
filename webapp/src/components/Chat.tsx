@@ -52,7 +52,7 @@ export function Composer({onSubmit,busy,user,onUpload,attached=[],onDetach,inclu
     </form>
     {voiceNotice&&<p className="voice-transcript-note" role="status">{voiceNotice}</p>}
     {error&&<p className="form-error" role="alert">{error}</p>}
-    {attached.length>0&&<p className="composer-note">Attached files are sent to OpenAI only when you send your question.</p>}
+    {attached.length>0&&<p className="composer-note">Attached files are sent to the AI provider only when you send your question.</p>}
   </div>;
 }
 

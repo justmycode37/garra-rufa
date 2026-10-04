@@ -57,7 +57,7 @@ except ImportError:
 import improvements
 import quality
 import resolve
-from entities import Entities
+from entities import LISTED, PRIORITY, Entities
 from report import Stats, write_report
 from sources import Edge, Node, _hpoa, load_sources
 
@@ -220,12 +220,25 @@ def run(start: Node, sources, iterations: int, limit: int, max_frontier: int,
                 if got:
                     productive[src.name] |= ids
                 found += got
+                if is_focus and improvements.on("name_focus") and\
+                        any(e.relation == "xref" for e in got):
+                    # ids the focus gains here (MONDO's ORPHA / OMIM / NORD xrefs) reach
+                    # the sources still to come in this iteration, not just the next one
+                    for e in got:
+                        if e.relation == "xref":
+                            ents.add(e.src, e.source)
+                            ents.add(e.dst, e.source)
+                            ents.merge_xref(e.src.key(), e.dst.key())
+                    ents.merge_listed()
+                    node = ents.node(root)
         print(f"\n=== Iteration {i}: {len(frontier)} inputs -> {len(found)} edges ===")
         for e in found:
             ents.add(e.src, e.source)  # sources may return the input with extra ids/info
             ents.add(e.dst, e.source)
             if e.relation == "xref":  # exact mapping: same entity
                 ents.merge_xref(e.src.key(), e.dst.key())
+        if improvements.on("name_focus"):  # NORD / GARD records an entity maps to
+            ents.merge_listed()
         if improvements.on("symptom_anchor"):  # entities merged: one focus slot each
             stats.focus = list(dict.fromkeys(ents.find(f) for f in stats.focus))
         kept = _filter(found, start, ents, stats, name_hits=free_text and i == 1)
@@ -259,17 +272,14 @@ def _filter(found: list[Edge], start: Node, ents: Entities, stats: Stats,
     """Drop noise everywhere and, for the free-text input, name-search hits that share no
     word with it unless at least two sources agree on them (keeps true synonyms such as
     "Lou Gehrig disease" -> "amyotrophic lateral sclerosis")."""
-    agree: dict[str, set[str]] = {}
-    if name_hits:
-        for e in found:
-            if e.relation == "matches" and e.src.key() == start.key():
-                agree.setdefault(ents.find(e.dst.key()), set()).add(e.source)
+    agree = _agreement(found, start, ents) if name_hits else {}
     kept = []
     for e in found:
         if quality.is_noise(e.dst):
             stats.dropped.append((e, "non-human / taxon / lab code / model organism"))
         elif (name_hits and e.relation == "matches" and e.src.key() == start.key()
-              and not quality.similar(start.label, e.dst.label)
+              and not any(quality.similar(start.label, n)
+                          for n in _names(ents, ents.find(e.dst.key()), e.dst.label))
               and len(agree[ents.find(e.dst.key())]) < 2):
             stats.dropped.append((e, "off-topic name match"))
         else:
@@ -277,20 +287,57 @@ def _filter(found: list[Edge], start: Node, ents: Entities, stats: Stats,
     return kept
 
 
+def _agreement(edges: list[Edge], start: Node, ents: Entities) -> dict[str, set[str]]:
+    """Entity -> the sources whose name search for the input returned it. name_focus:
+    hits of different sources with the same label agree too, before their ids are merged
+    (MONDO:0009290 and DOID:2752 are both "glycogen storage disease II")."""
+    agree: dict[str, set[str]] = {}
+    by_label: dict[str, set[str]] = {}
+    labels: dict[str, set[str]] = {}
+    for e in edges:
+        if e.relation == "matches" and e.src.key() == start.key():
+            r = ents.find(e.dst.key())
+            agree.setdefault(r, set()).add(e.source)
+            if improvements.on("name_focus"):
+                lab = " ".join(re.findall(r"[a-z0-9]+", e.dst.label.lower()))
+                by_label.setdefault(lab, set()).add(e.source)
+                labels.setdefault(r, set()).add(lab)
+    for r, labs in labels.items():
+        for lab in labs:
+            agree[r] |= by_label[lab]
+    return agree
+
+
+def _names(ents: Entities, root: str, label: str) -> list[str]:
+    """A hit's label and, under name_focus, the exact synonyms its source gave."""
+    if not improvements.on("name_focus"):
+        return [label]
+    return [label, *(ents.record(root)["info"].get("synonyms") or ())]
+
+
 def _best_match(kept: list[Edge], start: Node, ents: Entities) -> list[str]:
     """The entity the free-text input means: a hit whose label equals the input, the
-    one most sources returned; else the hit most sources agree on."""
-    agree: dict[str, set[str]] = {}
-    for e in kept:
-        if e.relation == "matches" and e.src.key() == start.key():
-            agree.setdefault(ents.find(e.dst.key()), set()).add(e.source)
+    one most sources returned; else the hit most sources agree on.
+    name_focus: an exact synonym counts as an exact label; a one-source record of a
+    disease directory (NORD, GARD: no xrefs, no relations) is not preferred for its
+    label alone; ties go to the better id prefix (MONDO before ORPHA ... NORD)."""
+    agree = _agreement(kept, start, ents)
     if not agree:
         return []
     want = start.label.strip().lower()
-    exact = {e_root for e_root in agree
-             if (ents.record(e_root)["label"] or "").strip().lower() == want}
-    best = max(agree, key=lambda r: (r in exact, len(agree[r])))
-    return [best]
+    if not improvements.on("name_focus"):
+        exact = {e_root for e_root in agree
+                 if (ents.record(e_root)["label"] or "").strip().lower() == want}
+        return [max(agree, key=lambda r: (r in exact, len(agree[r])))]
+    rank = {p: i for i, p in enumerate(PRIORITY)}
+
+    def key(r):
+        rec = ents.record(r)
+        names = {n.strip().lower() for n in _names(ents, r, rec["label"] or "")}
+        thin = len(agree[r]) < 2 and all(i.split(":", 1)[0] in LISTED for i in rec["ids"])
+        return (want in names and not thin, len(agree[r]),
+                -rank.get(ents.key(r).split(":", 1)[0], len(PRIORITY)))
+    return [max(agree, key=key)]
 
 
 def build_graph(edges: list[Edge], ents: Entities) -> nx.MultiDiGraph:

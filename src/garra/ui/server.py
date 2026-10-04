@@ -13,19 +13,22 @@ from garra.discovery.regions import RegionIndex
 from garra.research.service import ResearchService, ResearchUnavailable
 
 from .catalog import get_catalog
+from .graphs import GraphBuilds
 from .monarch import UpstreamError
 from .service import ConnectionService, InputError
 
 
 class Handler(BaseHTTPRequestHandler):
     def __init__(
-        self, *args, service, origins, communities, discovery, research, regions, **kwargs
+        self, *args, service, origins, communities, discovery, research, regions, graphs=None,
+        **kwargs
     ):
         self.service, self.origins = service, origins
         self.communities = communities
         self.discovery = discovery
         self.research = research
         self.regions = regions
+        self.graphs = graphs
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -82,6 +85,8 @@ class Handler(BaseHTTPRequestHandler):
                         "atlas": "/api/research/atlas",
                         "unified_search": {"method": "POST", "path": "/api/search"},
                         "clusters": "/api/clusters",
+                        "graphs": "/api/graphs",
+                        "graph_build": {"method": "POST", "path": "/api/graphs/build"},
                         "explorer": "/explore",
                         "search": {
                             "method": "POST",
@@ -135,6 +140,8 @@ class Handler(BaseHTTPRequestHandler):
                 if result is not None
                 else self._reply(404, {"error": "not_found"})
             )
+        if path == "/api/graphs" or path.startswith("/api/graphs/"):
+            return self._graphs_get(path)
         if path == "/health":
             return self._reply(
                 200,
@@ -142,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
                     "status": "ok",
                     "service": "garra-ui-bridge",
                     "research": True,
+                    "graphs": self.graphs is not None,
                     "discovery": self.discovery.metadata(),
                     "regions": self.regions is not None,
                 },
@@ -165,6 +173,27 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(200, result)
         self._reply(404, {"error": "not_found"})
 
+    def _graphs_get(self, path):
+        if self.graphs is None:
+            return self._reply(503, {"error": "Graph builds are not configured"})
+        parts = path.removeprefix("/api/graphs").strip("/").split("/")
+        if parts == [""]:
+            return self._reply(200, self.graphs.list())
+        if len(parts) == 1:
+            build = self.graphs.get(parts[0])
+            return self._reply(200, build) if build else self._reply(404, {"error": "not_found"})
+        file = self.graphs.view(*parts) if len(parts) == 2 else None
+        if not file:
+            return self._reply(404, {"error": "not_found"})
+        body = file.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         if not self._allowed():
             return self._reply(403, {"error": "origin_not_allowed"})
@@ -175,6 +204,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/research/search",
             "/api/research/papers",
             "/api/research/atlas",
+            "/api/graphs/build",
         }:
             return self._reply(404, {"error": "not_found"})
         if self.headers.get_content_type() != "application/json":
@@ -188,7 +218,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(413, {"error": "request_body_must_be_1_to_16384_bytes"})
             self.connection.settimeout(30)
             body = json.loads(self.rfile.read(length))
-            if path == "/api/search":
+            if path == "/api/graphs/build":
+                if self.graphs is None:
+                    return self._reply(503, {"error": "Graph builds are not configured"})
+                result = self.graphs.start(body)
+            elif path == "/api/search":
                 if isinstance(body, dict) and body.get("mode") == "phenotype":
                     result = self.service.search({k: v for k, v in body.items() if k != "mode"})
                     result["mode"] = "phenotype"
@@ -235,6 +269,7 @@ def create_server(
     discovery=None,
     research=None,
     regions=None,
+    graphs=None,
     origins=(
         "http://localhost:5173",
         "http://localhost:3000",
@@ -247,6 +282,7 @@ def create_server(
         service=service or ConnectionService(),
         research=research or ResearchService(),
         regions=regions,
+        graphs=graphs,
         origins=set(origins),
         communities=communities if communities is not None else CommunityCatalog(),
         discovery=discovery if discovery is not None else DiscoveryEngine(),
@@ -275,6 +311,14 @@ def main(argv=None):
         "--atlas", type=Path, help="Optional atlas SQLite database for disease/gene aliases"
     )
     parser.add_argument("--cluster-threshold", type=float, default=0.5)
+    parser.add_argument(
+        "--graph-builds-dir",
+        type=Path,
+        help="Where graphs built from the webapp are kept (default data/web-graphs)",
+    )
+    parser.add_argument(
+        "--no-graph-builds", action="store_true", help="Disable building graphs from queries"
+    )
     parser.add_argument("--ontology", type=Path, help="HPO OBO file for anatomical discovery")
     parser.add_argument(
         "--region-map",
@@ -298,6 +342,7 @@ def main(argv=None):
             "service": service,
             "communities": communities,
             "discovery": discovery,
+            "graphs": None if args.no_graph_builds else GraphBuilds(args.graph_builds_dir),
         }
         if args.ontology:
             if not args.bridge:

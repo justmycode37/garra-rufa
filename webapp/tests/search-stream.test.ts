@@ -12,6 +12,7 @@ import * as store from '../src/lib/store';
 const temporary = mkdtempSync(path.join(tmpdir(), 'garra-stream-tests-'));
 process.env.GARRA_DATA_DIR = temporary;
 process.env.DATA_ENCRYPTION_KEY = randomBytes(32).toString('hex');
+process.env.LLM_PROVIDER = 'openai'; // these tests mock OpenAI's Responses SSE
 process.env.OPENAI_API_KEY = 'test-key';
 after(() => { store.db().close(); rmSync(temporary, { recursive: true, force: true }); });
 const encoder = new TextEncoder();

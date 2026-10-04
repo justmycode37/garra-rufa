@@ -13,7 +13,12 @@ That gives ground truth for the two things the first graph is used for:
            Also: how often the top candidate is contradicted by a term the patient was
            examined for and does not have ("excluded"); the ranking ignores excluded terms,
            so "rescuable" counts the misses where the top-1 is contradicted and the
-           diagnosis is not, i.e. what an excluded-aware score could win.
+           diagnosis is not. An upper bound only: a score penalty for excluded terms
+           made the ranking worse (2026-10-04, dev MRR 0.180 -> 0.164 at the mildest
+           setting; with annotation_coverage 0.205 -> 0.199 even when only features at
+           >= 90% count): curators record as excluded the features of the disease they
+           suspect, so the diagnosis itself is contradicted for 18% of patients (32%
+           without the holdout).
   profile  a graph JSON written by main.py (-o run.json): the focus disease's profile as
            present.py shows it, compared with the patients of that disease: which share of
            the features the patients have the profile mentions (patient-weighted;
@@ -23,11 +28,18 @@ That gives ground truth for the two things the first graph is used for:
 
 Leakage: HPO's phenotype.hpoa now includes annotations computed from phenopacket-store
 (frequencies such as 7/9 citing the cohort's PMIDs), so a patient partly describes the
-disease it is tested against. rank therefore runs leave-publication-out by default: while
-a patient is ranked, the annotations of its diagnosis whose only reference is the
-patient's own publication are removed (--no-holdout: off). Annotations aggregated over
-several publications stay, so the remaining leak is small but not zero. profile reads a
-finished graph and cannot hold out; read its recall as an upper bound.
+disease it is tested against. rank therefore holds out what HPO learned from the patient
+(--holdout): "paper" (default) removes every annotation of the diagnosis whose only
+reference is the patient's own publication: the patient stands for the first case of a
+disease nobody has described (strict: about 4 in 10 diagnoses then share no term with
+their patient at all). "patient" recomputes those annotations' cohort counts without the
+patient ("7/9" -> 6/8): a new patient of a disease known from one cohort paper. "none"
+(--no-holdout) leaks. Annotations aggregated over several publications always stay.
+profile reads a finished graph and cannot hold out; read its recall as an upper bound.
+
+--llm adds the llm_rerank improvement (rerank.py; OPENROUTER_API_KEY from .env): the
+model re-orders each patient's top 20 (calls run in parallel and are cached); the summary
+then also shows the tool's own order.
 
 Perturbations (rank, seeded per patient): --max-terms k random observed terms,
 --imprecision p replaces each term by one of its parents with probability p, --noise n
@@ -38,6 +50,8 @@ Usage:
   python src/query-test/phenobench.py rank --per-disease 2 --max-cases 200
   python src/query-test/phenobench.py rank --input hpo+gene --json runs/bench/rank.json
   python src/query-test/phenobench.py rank --max-terms 5 --noise 2 --imprecision 0.3
+  python src/query-test/phenobench.py rank --holdout patient --llm
+  python src/query-test/phenobench.py rank --improvements=-annotation_coverage,-llm_rerank
   python src/query-test/phenobench.py rank --cohort FBN1 --cohort MECP2 --per-disease 50
   python src/query-test/phenobench.py profile runs/marfan.json runs/study/*.json
 """
@@ -259,24 +273,69 @@ def find_rank(ranking: list[dict], truth: frozenset[str]) -> int | None:
 
 
 # -- holdout and perturbation ------------------------------------------------------------
+HOLDOUTS = ("paper", "patient", "none")
+
+
+@lru_cache(maxsize=1)
+def _cohort_counts() -> dict[tuple[str, str], tuple[int, int]]:
+    """(disease, HP id) -> (n, m) of the phenotype.hpoa annotations that cite one paper
+    with a count such as "7/9" (how phenopacket-store cohorts enter HPO)."""
+    import csv
+    import re
+    out: dict[tuple[str, str], tuple[int, int]] = {}
+    path = _hpoa.DATA_DIR / "phenotype.hpoa"
+    if not path.exists():
+        return out
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader((x for x in f if not x.startswith("#")), delimiter="\t"):
+            m = re.match(r"^(\d+)/(\d+)$", r.get("frequency") or "")
+            refs = [x for x in (r.get("reference") or "").split(";") if x.startswith("PMID:")]
+            if m and len(refs) == 1 and r.get("aspect") == "P" and r.get("qualifier") != "NOT":
+                d = r["database_id"].replace("ORPHANET:", "ORPHA:")
+                out[(d, r["hpo_id"])] = (int(m[1]), int(m[2]))
+    return out
+
+
 @contextmanager
-def holdout(hpo, case: Case, enabled: bool = True):
-    """Leave-publication-out: hide the annotations of the case's diagnosis whose only
-    references are the case's own publication. Yields how many were hidden."""
-    removed: list[tuple[str, str, float]] = []
-    if enabled and case.pmid:
+def holdout(hpo, case: Case, enabled: bool | str = True):
+    """Hide what HPO learned from the case itself. Yields how many annotations changed.
+
+    "paper" (or True): leave-publication-out, every annotation of the diagnosis whose
+    only reference is the case's publication is removed: the patient is the first one
+    of a disease nobody has described yet (strict; for a disease known from one cohort
+    paper nothing is left to match).
+    "patient": leave-one-patient-out, the cohort counts of those annotations ("7/9")
+    are recomputed without the patient (6/8 if it has the term, 7/8 if the term is
+    excluded in it); a 1/1 annotation goes. The patient is a new one of a published
+    cohort. Annotations without a count are removed as in "paper"."""
+    mode = "paper" if enabled is True else (enabled or "none")
+    changed: list[tuple[str, str, float | None]] = []  # (disease, hp, original freq)
+    if mode != "none" and case.pmid:
+        counts = _cohort_counts() if mode == "patient" else {}
+        obs = {hpo.canonical(t) for t in case.observed}
+        exc = {hpo.canonical(t) for t in case.excluded}
         for d in sorted(i for i in truth_keys(case) if i in hpo.ann):
             for hp, f in list(hpo.ann[d].items()):
                 refs = hpo.refs.get((d, hp))
-                if refs and set(refs) <= {case.pmid}:
-                    removed.append((d, hp, f))
+                if not refs or not set(refs) <= {case.pmid}:
+                    continue
+                nm = counts.get((d, hp))
+                new = None
+                if nm:
+                    n, m = nm
+                    n, m = (n - 1, m - 1) if hp in obs else (n, m - 1) if hp in exc else (n, m)
+                    new = n / m if n > 0 and m > 0 else None
+                changed.append((d, hp, f))
+                if new is None:
                     del hpo.ann[d][hp]
                     hpo.by_term.get(hp, set()).discard(d)
+                else:
+                    hpo.ann[d][hp] = new
             hpo.forget(d)
     try:
-        yield len(removed)
+        yield len(changed)
     finally:
-        for d, hp, f in removed:
+        for d, hp, f in changed:
             hpo.ann[d][hp] = f
             hpo.by_term.setdefault(hp, set()).add(d)
             hpo.forget(d)
@@ -332,7 +391,8 @@ def _disease_ids(r: dict) -> list[str]:
 
 
 # -- rank --------------------------------------------------------------------------------
-def rank_case(case: Case, hpo, input: str = "hpo", top: int = 30, holdout_on: bool = True,
+def rank_case(case: Case, hpo, input: str = "hpo", top: int = 30,
+              holdout_on: bool | str = True,
               max_terms: int | None = None, imprecision: float = 0.0, noise: int = 0,
               seed: int = 0, llm=None) -> dict:
     """Rank one patient as main.py would and score where its diagnosis lands. llm: the
@@ -626,7 +686,7 @@ def print_rank(summary: dict, results: list[dict], worst: int = 15):
           f"{_pct(summary['top10_related'])}")
     print(f"top-1 contradicted by an excluded term: {_pct(summary['top1_contradicted'])}; "
           f"diagnosis contradicted: {_pct(summary['truth_contradicted'])}; "
-          f"misses an excluded-aware score could fix: {summary['rescuable']}")
+          f"misses with only the top-1 contradicted: {summary['rescuable']}")
     print(f"annotations hidden (leave-publication-out): {summary['hidden_annotations']}")
     if "tool_order" in summary:
         t = summary["tool_order"]
@@ -685,7 +745,11 @@ def main(argv=None):
     r.add_argument("--max-terms", type=int)
     r.add_argument("--imprecision", type=float, default=0.0)
     r.add_argument("--noise", type=int, default=0)
-    r.add_argument("--no-holdout", action="store_true")
+    r.add_argument("--holdout", choices=HOLDOUTS, default="paper",
+                   help="what HPO may not know while a patient is ranked: its paper's "
+                        "annotations (paper, default), its own share of the cohort counts "
+                        "(patient), nothing (none)")
+    r.add_argument("--no-holdout", action="store_true", help="= --holdout none")
     r.add_argument("--json", type=Path, help="write per-patient results + summary")
     r.add_argument("--llm", action="store_true",
                    help="also run the llm_rerank improvement (OPENROUTER_API_KEY from .env; "
@@ -711,7 +775,8 @@ def main(argv=None):
         cases = sample(load_cases(ZIP, args.cohort), args.per_disease, args.max_cases,
                        args.seed)
         print(f"ranking {len(cases)} patients (input {args.input}, improvements "
-              f"{args.improvements}, holdout {'off' if args.no_holdout else 'on'})",
+              f"{args.improvements}, holdout "
+              f"{'none' if args.no_holdout else args.holdout})",
               file=sys.stderr)
         llm = None
         if args.llm:
@@ -723,7 +788,8 @@ def main(argv=None):
                 ap.error("--llm: OPENROUTER_API_KEY is not set (.env)")
         results = run_rank(cases, hpo, progress=True, workers=args.workers, llm=llm,
                            input=args.input, top=args.top,
-                           holdout_on=not args.no_holdout, max_terms=args.max_terms,
+                           holdout_on="none" if args.no_holdout else args.holdout,
+                           max_terms=args.max_terms,
                            imprecision=args.imprecision, noise=args.noise, seed=args.seed)
         summary = summarize(results)
         print_rank(summary, results)

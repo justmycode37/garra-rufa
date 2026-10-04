@@ -26,6 +26,8 @@ PAD = {"MONDO": 7, "GARD": 7, "HP": 7, "UBERON": 7, "EFO": 7, "CL": 7, "GO": 7}
 IDENTITY = set(PREFIXES.values())
 # one Orphanet/OMIM entry often maps to a MONDO term together with its subtypes
 UNIQUE = IDENTITY - {"OMIM", "ORPHA"}
+# one record per disease: an entity listing such an id as xref is that record (merge_listed)
+LISTED = {"NORD", "GARD"}
 # display id preference: the first prefix present in an entity names it
 PRIORITY = ["MONDO", "HP", "HGNC", "NCBIGene", "ENSEMBL", "DrugBank", "ChEMBL", "ORPHA", "DOID",
             "OMIM", "UBERON", "FMA", "CL", "GO", "EFO", "ClinVar", "NORD", "GARD", "SYMBOL"]
@@ -125,6 +127,21 @@ class Entities:
         if _prefix(normalize(a)) in IDENTITY and _prefix(normalize(b)) in IDENTITY:
             return self.union(a, b)
         return False
+
+    def merge_listed(self, prefixes=LISTED) -> int:
+        """Merge records of single-entry directories (NORD, GARD) into the entity that
+        lists their id among its xrefs: MONDO's "Pompe disease" maps to NORD:1595, which
+        the NORD name search returned as a separate one-source node. Returns the number
+        of merges (refused ones, e.g. two MONDO ids, do not count)."""
+        n = 0
+        for root in list(self._ent):
+            if root not in self._ent:
+                continue  # merged into another entity in this pass
+            for x in sorted(self._ent[root]["xrefs"]):
+                if _prefix(x) in prefixes and x in self._parent and\
+                        self.find(x) != self.find(root):
+                    n += self.union(root, x)
+        return n
 
     # -- adding nodes ----------------------------------------------------
     def _identity_keys(self, node: Node) -> list[str]:

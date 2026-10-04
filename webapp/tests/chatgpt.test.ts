@@ -14,6 +14,7 @@ import { answerQuery } from '../src/lib/ai';
 const temporary = mkdtempSync(path.join(tmpdir(), 'garra-chatgpt-tests-'));
 process.env.GARRA_DATA_DIR = temporary;
 process.env.DATA_ENCRYPTION_KEY = randomBytes(32).toString('hex');
+process.env.LLM_PROVIDER = 'openai'; // these tests mock OpenAI's Responses SSE
 process.env.OPENAI_API_KEY = 'must-never-be-used';
 let keyPair: Awaited<ReturnType<typeof generateKeyPair>>;
 let jwk: Awaited<ReturnType<typeof exportJWK>>;

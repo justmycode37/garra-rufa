@@ -98,6 +98,19 @@ def v2_info(d: dict, ontology: str) -> dict:
                   url=OBO_URL.format(ont=ontology, iri=quote(d.get("iri", ""), safe="")))
 
 
+# search fields of a name search (mondo / disease_ontology "matches")
+SEARCH_FIELDS = "obo_id,label,exact_synonyms"
+
+
+def search_info(doc: dict) -> dict:
+    """Node.info of an OLS search hit: its exact synonyms, so a name search for "Pompe
+    disease" can see that "glycogen storage disease II" is that disease
+    (improvements: name_focus)."""
+    import improvements
+    syn = doc.get("exact_synonyms") or []
+    return mkinfo(synonyms=list(syn)) if syn and improvements.on("name_focus") else {}
+
+
 def v1_info(term: dict, ontology: str) -> dict:
     """Node.info from an OLS v1 term record (mondo / disease_ontology): the definition,
     exact synonyms (abbreviations separately: "MFS" is useless as a search term), the

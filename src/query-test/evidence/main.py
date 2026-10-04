@@ -190,15 +190,15 @@ def read_paper(paper, *, llm, profile_text, fulltext, normalizer, max_chars,
 
 
 # -- outputs -----------------------------------------------------------------------
-def write_html(data: dict, path: Path):
-    """Embed the evidence graph, its quotes, the candidates and the papers into viewer.html
-    (next to this file)."""
+def viewer_data(data: dict) -> dict:
+    """The evidence graph, its quotes, the candidates and the papers as read by the viewers
+    (viewer.html, the webapp's evidence graph via ../web_export.py)."""
     cands = {c["id"]: c for c in data["candidates"]}
     top = data["candidates"][:40]
     papers = [{"key": r["key"], **r["meta"], "title": re.sub(r"<[^>]+>", "", r["meta"].get("title") or ""),
                "text_source": r["text_source"], "summary": r["summary"],
                "origin": r.get("origin", "core")} for r in data["papers"]]
-    view = {
+    return {
         "start": data["profile"]["disease"]["id"],
         "disease": data["profile"]["disease"]["label"],
         "settings": data["settings"],
@@ -227,8 +227,12 @@ def write_html(data: dict, path: Path):
         "papers": papers,
         "paper_links": data["paper_links"],
     }
+
+
+def write_html(data: dict, path: Path):
+    """Embed viewer_data() into viewer.html (next to this file)."""
     template = (Path(__file__).resolve().parent / "viewer.html").read_text(encoding="utf-8")
-    payload = json.dumps(view, ensure_ascii=False).replace("</", "<\\/")
+    payload = json.dumps(viewer_data(data), ensure_ascii=False).replace("</", "<\\/")
     html = re.sub(r"/\*__DATA__\*/.*?/\*__END__\*/", lambda _: payload, template, flags=re.S)
     path.write_text(html, encoding="utf-8")
 
