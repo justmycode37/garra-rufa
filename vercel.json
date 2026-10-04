@@ -8,14 +8,14 @@
       "includeFiles": "{src/**,data/hosted/**,data/hpo/*.obo,data/hpo/*.hpoa}"
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/index"
+      "src": "/api/.*",
+      "dest": "/api/index"
     },
     {
-      "source": "/health",
-      "destination": "/api/index"
+      "src": "/health",
+      "dest": "/api/index"
     }
   ],
   "buildCommand": "python3 scripts/prepare_hosted.py"
